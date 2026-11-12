@@ -277,6 +277,10 @@ def _add_vault_parsers(sub: Any) -> None:
     shapes = sub.add_parser("vault-check", help="sort each vault commit into valid or quarantined")
     shapes.add_argument("vault", help="the vault repository, bare or not")
     shapes.add_argument("--ref", default="HEAD", help="the branch or commit to read")
+    shown = sub.add_parser("vault-show", help="fold a vault and show one record's holder")
+    shown.add_argument("vault", help="the vault repository, bare or not")
+    shown.add_argument("record", help="the record id")
+    shown.add_argument("--ref", default="HEAD", help="the branch or commit to read")
 
 
 def _add_sync_parser(sub: Any) -> None:

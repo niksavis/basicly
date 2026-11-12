@@ -1,0 +1,1 @@
+- **The tracker kit can fold a vault into records.** `vault-show` shows a record's holder, status and void events: the earlier valid claim wins, a later claim and an unassign by a non-holder are void, statuses follow the config in force at their position, and an unknown holder-changing kind makes holder commands name the upgrade (basicly-gtb19bg.43.6).

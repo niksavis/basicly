@@ -41,6 +41,7 @@ mirror = _load("mirror.py", "basicly_tracker_kit_mirror")
 settings = _load("settings.py", "basicly_tracker_kit_settings")
 beans = _load("beans.py", "basicly_tracker_kit_beans")
 vault_shapes = _load("vault_shapes.py", "basicly_tracker_kit_vault_shapes")
+vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
 events = snapshot.events
 ids = events.ids
 
@@ -296,11 +297,22 @@ _REFUSABLE: dict[str, Callable[[argparse.Namespace], tuple[int, dict[str, object
 }
 
 
+def _vault_show(args: argparse.Namespace) -> dict[str, object]:
+    found = vault_shapes.valid_events(vault_shapes.read(args.vault, args.ref))
+    return vault_fold.view(vault_fold.fold(found).record(args.record))
+
+
+_VAULT: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
+    "vault-check": lambda a: vault_shapes.report(a.vault, a.ref),
+    "vault-show": _vault_show,
+}
+
+
 def _run(
     args: argparse.Namespace, redact: Callable[[str], str] | None
 ) -> tuple[int, dict[str, object]]:
-    if args.command == "vault-check":
-        return EXIT_OK, vault_shapes.report(args.vault, args.ref)
+    if (vault := _VAULT.get(args.command)) is not None:
+        return EXIT_OK, vault(args)
     starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
     args.directory = commands.resolve_ledger(args.directory, starts=starts)
     pin.require(args.directory)

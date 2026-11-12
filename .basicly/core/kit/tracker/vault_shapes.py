@@ -220,12 +220,17 @@ def valid_events(verdicts: list[Verdict]) -> list[dict]:
     return [event for verdict in verdicts if verdict.valid for event in verdict.events]
 
 
-def report(vault: Path | str, ref: str = "HEAD") -> dict[str, object]:
+def read(vault: Path | str, ref: str = "HEAD") -> list[Verdict]:
 
     try:
-        verdicts = check(vault, ref)
+        return check(vault, ref)
     except git_runner.GitRunnerError as exc:
         raise ShapeError(f"vault-check could not read {vault}: {exc}") from None
+
+
+def report(vault: Path | str, ref: str = "HEAD") -> dict[str, object]:
+
+    verdicts = read(vault, ref)
     return {
         "valid": sum(1 for verdict in verdicts if verdict.valid),
         "quarantined": [

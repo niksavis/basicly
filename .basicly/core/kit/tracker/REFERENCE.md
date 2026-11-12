@@ -156,6 +156,16 @@ version 8; this command only reads it.
 python3 .basicly/kit/tracker/cli.py vault-check path/to/vault.git
 ```
 
+### vault-show
+
+Fold a vault's valid events and show one record: its holder (writer and session), its status,
+every void event with the reason, and whether it holds an event kind this tracker cannot fold.
+The first valid claim wins; only the holder can give a record back.
+
+```sh
+python3 .basicly/kit/tracker/cli.py vault-show path/to/vault.git acme-a1b2
+```
+
 ### delete
 
 Tombstone a record. Its id is never reused.
