@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
 
 def _form(verb: str, text: str, command: str) -> argparse.ArgumentParser:
@@ -53,6 +54,14 @@ def claim() -> argparse.ArgumentParser:
     return parser
 
 
+def unassign() -> argparse.ArgumentParser:
+    parser = _form("unassign", "give a vault record back", "unassign-vault")
+    parser.add_argument("record", help="the record id")
+    parser.add_argument("--session", help="the session (default: BASICLY_TRACKER_SESSION)")
+    parser.add_argument("--take", action="store_true", help="release another session's claim")
+    return parser
+
+
 def commit_msg() -> argparse.ArgumentParser:
     parser = _form("commit-msg", "check a commit message against vault claims", "commit-msg-vault")
     parser.add_argument("message", help="the commit message file git passes to commit-msg")
@@ -86,7 +95,20 @@ FORMS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "hook": hook,
     "status": status,
     "claim": claim,
+    "unassign": unassign,
     "commit-msg": commit_msg,
     "vault-init": init,
 }
 VAULT_ONLY = frozenset({"vault-init"})
+LEDGER_FORMS = frozenset({"comment", "claim", "unassign", "sync", "fsck"})
+
+
+def names_a_ledger(argv: Sequence[str]) -> bool:
+    if len(argv) < 2 or argv[0] not in LEDGER_FORMS or argv[1].startswith("-"):
+        return False
+    given = argv[1]
+    return "/" in given or "\\" in given or Path(given).is_dir()
+
+
+def routed_verbs(argv: Sequence[str]) -> frozenset:
+    return frozenset(FORMS) - ({argv[0]} if names_a_ledger(argv) else set())

@@ -160,13 +160,15 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
         if len(args) != 4 or args[2] != "--evidence":
             raise TrackerDivergenceError("review and confirm take <id> --evidence <JSON>")
         commands = owned_store.kit(repo_root, "commands")
+        clock = commands.events.wall_clock()
+        context = commands.vault_write.WriteContext(redact.redact_committed, clock)
         try:
             landed = commands.record_process(
                 owned_store.ledger_dir(repo_root),
                 args[1],
                 json.loads(args[3]),
                 completed=args[0] == "confirm",
-                redact=redact.redact_committed,
+                redact=context,
             )
         except (commands.events.LedgerError, ValueError, OSError) as exc:
             raise TrackerDivergenceError(str(exc)) from exc

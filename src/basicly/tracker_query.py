@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -40,9 +41,18 @@ def _report(payload: object) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
 
 
-def ready_report(repo_root: Path, limit: int | None = None) -> dict[str, Any]:
+def _vault_ledger(repo_root: Path, all_projects: bool) -> Path:
 
-    return _queries().ready(owned_store.present_ledger(repo_root), limit=limit)
+    if all_projects:
+        owned_store.packaged_kit("vault_cli").configured(repo_root, "--all-projects")
+    return owned_store.present_ledger(repo_root, all_projects=all_projects)
+
+
+def ready_report(
+    repo_root: Path, limit: int | None = None, *, all_projects: bool = False
+) -> dict[str, Any]:
+
+    return _queries().ready(_vault_ledger(repo_root, all_projects), limit=limit)
 
 
 def blocked_report(repo_root: Path) -> dict[str, Any]:
@@ -50,7 +60,13 @@ def blocked_report(repo_root: Path) -> dict[str, Any]:
 
 
 def cmd_ready(args: argparse.Namespace) -> int:
-    report = ready_report(Path.cwd(), getattr(args, "limit", None))
+    try:
+        report = ready_report(
+            Path.cwd(), getattr(args, "limit", None), all_projects=args.all_projects
+        )
+    except ValueError as error:
+        ui.fail(str(error))
+        return 1
     if getattr(args, "json", False):
         _report(report)
         return 0
@@ -103,10 +119,20 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def _vault_shown(repo_root: Path, record: str) -> int:
+
+    vault_cli = owned_store.packaged_kit("vault_cli")
+    shown = vault_cli.shown(owned_store.ledger_dir(repo_root), [record], time.time)
+    _report(shown)
+    return 0 if all(one.get("found", True) for one in shown) else 1
+
+
 def cmd_show(args: argparse.Namespace) -> int:
 
     repo_root = Path.cwd()
     try:
+        if getattr(args, "json", False):
+            return _vault_shown(repo_root, args.record)
         found = owned_store.packaged_kit("record_view").read_view(
             owned_store.present_ledger(repo_root),
             args.record,
@@ -124,9 +150,13 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    repo_root = Path.cwd()
+    try:
+        ledger = _vault_ledger(Path.cwd(), args.all_projects)
+    except ValueError as error:
+        ui.fail(str(error))
+        return 1
     records = _queries().query_records(
-        owned_store.present_ledger(repo_root),
+        ledger,
         status=getattr(args, "status", None),
         limit=getattr(args, "limit", None),
         query=getattr(args, "query", ""),
@@ -243,6 +273,7 @@ def add_parsers(tracker_sub: Any) -> None:
         view.add_argument("--json", action="store_true", help="Print JSON instead of a table")
         if name == "ready":
             view.add_argument("--limit", type=int, default=None, help="At most this many")
+            owned_store.packaged_kit("arguments").all_projects_argument(view)
 
     show = tracker_sub.add_parser("show", help="Print one record's folded state")
     show.add_argument("record", help="The record id")
@@ -257,6 +288,7 @@ def add_parsers(tracker_sub: Any) -> None:
     listing.add_argument(
         "--summary", action="store_true", help="Fetch prose and history only with show"
     )
+    owned_store.packaged_kit("arguments").all_projects_argument(listing)
 
     items = tracker_sub.add_parser(
         "items",
