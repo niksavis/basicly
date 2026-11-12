@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import os
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
@@ -33,6 +35,10 @@ SCHEDULER_KIT_MODULE = "scheduler"
 
 GATES_KIT_MODULE = "gates"
 
+VAULT_CONFIG_KIT_MODULE = "vault_config"
+
+VAULT_VIEW_KIT_MODULE = "vault_view"
+
 
 class TrackerDivergenceError(RuntimeError):
     pass
@@ -43,6 +49,10 @@ class TrackerModeUnknownError(TrackerDivergenceError):
 
 
 class LedgerMissingError(TrackerDivergenceError):
+    pass
+
+
+class VaultViewError(TrackerDivergenceError):
     pass
 
 
@@ -100,8 +110,35 @@ def ledger_dir(repo_root: Path) -> Path:
     return tracker_paths.ledger_dir(Path(repo_root))
 
 
-def present_ledger(repo_root: Path) -> Path:
+def _vault_reach(repo_root: Path) -> tuple[Any, Any, Any] | None:
 
+    config_kit = packaged_kit(VAULT_CONFIG_KIT_MODULE)
+    try:
+        config = config_kit.load(Path(repo_root))
+    except config_kit.ConfigError as exc:
+        raise VaultViewError(str(exc)) from None
+    if config is None:
+        return None
+    view = packaged_kit(VAULT_VIEW_KIT_MODULE)
+    try:
+        state = view.vault_clone.state_root(os.environ, Path.home(), windows=os.name == "nt")
+        clone = view.vault_clone.locate(state, config.vault)
+    except view.vault_clone.CloneError as exc:
+        raise VaultViewError(str(exc)) from None
+    return view, clone, config
+
+
+def present_ledger(repo_root: Path, *, all_projects: bool = False) -> Path:
+
+    reach = _vault_reach(repo_root)
+    if reach is not None:
+        view, clone, config = reach
+        template = ledger_dir(repo_root)
+        want = view.Want(config.prefix, all_projects, template if template.is_dir() else None)
+        try:
+            return view.present(clone, want, clock=time.time)
+        except view.ViewError as exc:
+            raise VaultViewError(str(exc)) from None
     ledger = ledger_dir(repo_root)
     if not ledger.is_dir():
         raise LedgerMissingError(
