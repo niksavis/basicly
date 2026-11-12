@@ -112,6 +112,18 @@ def pending(queue: Path) -> list[dict[str, object]]:
     return found
 
 
+def requeue(clone: Any, lines: Sequence[Mapping[str, object]]) -> int:
+
+    vault_clone.private(clone.folder)
+    queue = clone.folder / QUEUE_NAME
+    with events.LedgerLock(clone.folder):
+        _cut_torn(queue)
+        held = {str(line.get("id")) for line in pending(queue)}
+        fresh = [line for line in lines if str(line.get("id")) not in held]
+        _append(queue, fresh)
+    return len(fresh)
+
+
 def write(
     clone: Any,
     drafts: Sequence[Mapping[str, object]],

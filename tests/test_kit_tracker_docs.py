@@ -36,6 +36,8 @@ REFUSED_ON_A_FRESH_LEDGER = {
     "fetch --vault": "is neither a local repository folder",
     "comment --vault": "is neither a local repository folder",
     "sync --vault": "is neither a local repository folder",
+    "fsck --vault": "is neither a local repository folder",
+    "reclone --vault": "is neither a local repository folder",
 }
 LEFT_BEHIND = frozenset({".basicly", ".git", ".gitattributes", ".gitignore", ".agents", ".claude"})
 LEFT_BEHIND |= {"issues.jsonl", "tracker-board.html"}

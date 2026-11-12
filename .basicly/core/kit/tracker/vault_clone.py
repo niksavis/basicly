@@ -38,6 +38,8 @@ STATE_VARIABLE = "BASICLY_TRACKER_STATE"
 FETCH_REFSPEC = "+refs/heads/main:refs/remotes/origin/main"
 HEAD_REF = "refs/remotes/origin/main"
 SEEN_REF = "refs/basicly/seen"
+RETRACTED_PREFIX = "refs/basicly/retracted/"
+REPAIRED_NAME = "repaired"
 FETCHED_NAME = "fetched"
 VALID_NAME = "valid.ids"
 COVERS_NAME = "valid.at"
@@ -117,7 +119,7 @@ def _ensure(clone: Clone, runner: Runner, timeout: float) -> None:
     partial.rename(clone.bare)
 
 
-def _ref(clone: Clone, name: str, runner: Runner, timeout: float) -> str:
+def ref(clone: Clone, name: str, runner: Runner, timeout: float) -> str:
     try:
         return runner(["rev-parse", "--verify", "-q", name], clone.bare, timeout=timeout).strip()
     except git_runner.GitCommandError:
@@ -178,11 +180,43 @@ def _verdicts(clone: Clone, commits: list[str], stop: dict | None) -> tuple:
     return ids, held, stop
 
 
+def retracted(clone: Clone, runner: Runner, timeout: float) -> dict[str, str]:
+    listed = ["for-each-ref", "--format=%(refname) %(objectname)", RETRACTED_PREFIX]
+    out = runner(listed, clone.bare, timeout=timeout)
+    return dict(line.split(" ", 1) for line in out.splitlines() if line)
+
+
+def unrepaired(clone: Clone, runner: Runner, timeout: float) -> dict[str, str]:
+    done = set(_read(clone.folder / REPAIRED_NAME).split())
+    return {
+        name: tip for name, tip in retracted(clone, runner, timeout).items() if name not in done
+    }
+
+
+def _retract(clone: Clone, tip: str, runner: Runner, timeout: float) -> None:
+    held = retracted(clone, runner, timeout)
+    if tip in held.values():
+        return
+    name = f"{RETRACTED_PREFIX}{len(held) + 1}"
+    runner(["update-ref", name, tip, "0" * len(tip)], clone.bare, timeout=timeout)
+
+
+def rebuild(
+    clone: Clone, runner: Runner, timeout: float, *, keep_seen: bool = False
+) -> dict[str, object]:
+
+    (clone.folder / COVERS_NAME).unlink(missing_ok=True)
+    if not keep_seen:
+        runner(["update-ref", "-d", SEEN_REF], clone.bare, timeout=timeout)
+    return _advance(clone, ref(clone, HEAD_REF, runner, timeout), runner, timeout)
+
+
 def _advance(clone: Clone, head: str, runner: Runner, timeout: float) -> dict[str, object]:
 
-    seen = _ref(clone, SEEN_REF, runner, timeout)
+    seen = ref(clone, SEEN_REF, runner, timeout)
     chain = vault_shapes.first_parent_chain(clone.bare, head)
     if seen and seen not in chain:
+        _retract(clone, seen, runner, timeout)
         return {"seen": seen, "moved": False, "retracted": True, "quarantined": []}
     whole = not seen or _read(clone.folder / COVERS_NAME).strip() != seen
     new = chain if whole else chain[chain.index(seen) + 1 :]
@@ -207,7 +241,7 @@ def settle(
 ) -> dict[str, object]:
 
     with events.LedgerLock(clone.folder / "fetch", timeout_s=lock_wait):
-        return _advance(clone, _ref(clone, HEAD_REF, runner, timeout), runner, timeout)
+        return _advance(clone, ref(clone, HEAD_REF, runner, timeout), runner, timeout)
 
 
 def fetch(
@@ -225,14 +259,14 @@ def fetch(
     with events.LedgerLock(clone.folder / "fetch", timeout_s=lock_wait):
         _ensure(clone, runner, timeout)
         fetched = _fetch_twice(clone, runner, timeout)
-        head = _ref(clone, HEAD_REF, runner, timeout)
+        head = ref(clone, HEAD_REF, runner, timeout)
         if not head:
             raise CloneError(f"could not fetch {clone.url} and no earlier fetch exists; retry")
         if fetched:
             stamp.write_text(f"{clock()}\n", encoding="utf-8")
             seen = _advance(clone, head, runner, timeout)
         else:
-            seen = {"seen": _ref(clone, SEEN_REF, runner, timeout), "moved": False}
+            seen = {"seen": ref(clone, SEEN_REF, runner, timeout), "moved": False}
     stamped = _read(stamp).strip()
     age = round(max(0.0, clock() - float(stamped)), 1) if stamped else None
     return {

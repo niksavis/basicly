@@ -386,6 +386,21 @@ Fold the whole log and report anything broken. Exit 0 clean, 1 stale derivative,
 python3 .basicly/kit/tracker/cli.py fsck .basicly/ledger
 ```
 
+With `--vault`, `fsck` reports the vault clone instead: the head, `refs/basicly/seen`, every
+retracted ref and whether it is repaired, every quarantined commit with its rule, and the queue
+size. When a fetched head no longer holds the commit `seen` named, the old tip is kept as
+`refs/basicly/retracted/N` and every share is refused until a repair. `--repair` works from the
+local clone only: your own lost lines go back in the queue as they were, other writers' lost
+lines go in one `requeue` event that changes no holder, and each claim that no longer holds gets
+a `claim-lost` event. Kept quarantine entries are processed the same way.
+`--accept-rewrite HEAD --purge` accepts the fetched head and drops the retracted refs.
+`reclone --vault` clones again and keeps `refs/basicly/*` and the writer id.
+
+```sh
+python3 .basicly/kit/tracker/cli.py fsck --vault path/to/vault.git --repair
+python3 .basicly/kit/tracker/cli.py reclone --vault path/to/vault.git
+```
+
 ### acknowledge-loss
 
 Record proven unrecoverable history without inventing a missing event.

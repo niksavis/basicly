@@ -183,8 +183,11 @@ def share(
             budget = _budget(plan, started, clock)
             fetched = vault_clone.fetch(clone, runner=runner, timeout=budget, lock_wait=budget)
             head = str(fetched["head"])
-            if fetched.get("retracted"):
-                raise ShareError("refs/basicly/seen is not on the fetched head; run fsck --repair")
+            if fetched.get("retracted") or vault_clone.unrepaired(clone, runner, budget):
+                raise ShareError(
+                    "the vault head dropped commits this clone had seen; "
+                    "run fsck --repair --vault with the same vault, then sync again"
+                )
             stop = vault_clone.ended(clone)
             if stop is not None:
                 return _stopped(head, stop, clone)

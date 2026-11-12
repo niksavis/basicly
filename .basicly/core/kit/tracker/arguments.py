@@ -287,31 +287,6 @@ def _add_vault_parsers(sub: Any) -> None:
     fetched.add_argument("--timeout", type=float, default=30.0, help="seconds per git call")
 
 
-def vault_comment() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="cli.py comment", description="queue a vault comment")
-    parser.add_argument("verb", choices=["comment"])
-    parser.add_argument("record", help="the record id")
-    parser.add_argument("--vault", required=True, help="the vault URL or local repository")
-    parser.add_argument("--text", required=True, help="the comment, redacted before it is queued")
-    parser.add_argument("--state", help="the machine state folder (default: per user)")
-    parser.set_defaults(command="comment-vault")
-    return parser
-
-
-def vault_sync() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="cli.py sync", description="share a vault's queue")
-    parser.add_argument("verb", choices=["sync"])
-    parser.add_argument("--vault", required=True, help="the vault URL or local repository")
-    parser.add_argument("--state", help="the machine state folder (default: per user)")
-    parser.add_argument("--urgent", action="store_true", help="retry until --deadline passes")
-    parser.add_argument("--deadline", type=float, default=10.0, help="seconds for an urgent share")
-    parser.set_defaults(command="sync-vault")
-    return parser
-
-
-VAULT_FORMS = {"comment": vault_comment, "sync": vault_sync}
-
-
 def _add_sync_parser(sub: Any) -> None:
     mirrored = sub.add_parser("sync", help="re-import the tracker this ledger mirrors")
     mirrored.add_argument("directory", help=DIRECTORY_HELP)

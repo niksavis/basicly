@@ -38,6 +38,7 @@ record_view = _load("record_view.py", "basicly_tracker_kit_record_view")
 board = _load("board.py", "basicly_tracker_kit_board")
 fields = _load("fields.py", "basicly_tracker_kit_fields")
 arguments = _load("arguments.py", "basicly_tracker_kit_arguments")
+vault_arguments = _load("vault_arguments.py", "basicly_tracker_kit_vault_arguments")
 pin = _load("pin.py", "basicly_tracker_kit_pin")
 mirror = _load("mirror.py", "basicly_tracker_kit_mirror")
 settings = _load("settings.py", "basicly_tracker_kit_settings")
@@ -47,6 +48,7 @@ vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
 vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
 vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
 vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
+vault_repair = _load("vault_repair.py", "basicly_tracker_kit_vault_repair")
 events = snapshot.events
 ids = events.ids
 
@@ -336,6 +338,10 @@ _VAULT: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
     "vault-show": _vault_show,
     "fetch": _fetch_vault,
     "comment-vault": _queue_comment,
+    "fsck-vault": lambda a: vault_repair.check(
+        vault_clone.locate(_state(a), a.vault), _state(a), vars(a)
+    ),
+    "reclone-vault": lambda a: vault_repair.reclone(vault_clone.locate(_state(a), a.vault)),
     "sync-vault": lambda a: vault_share.share(
         vault_clone.locate(_state(a), a.vault),
         _state(a),
@@ -405,7 +411,7 @@ def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None)
 def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | None = None) -> int:
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    form = arguments.VAULT_FORMS.get(argv[0]) if argv and "--vault" in argv else None
+    form = vault_arguments.FORMS.get(argv[0]) if argv and "--vault" in argv else None
     args = (form or arguments.parser)().parse_args(argv)
     code, report = invoke(args, redact)
     reconfigure = getattr(sys.stdout, "reconfigure", None)
