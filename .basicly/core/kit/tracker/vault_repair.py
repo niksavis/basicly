@@ -4,7 +4,6 @@ import importlib.util
 import json
 import shutil
 import sys
-import time
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -144,7 +143,9 @@ def _claims_lost(clone: Any, lost: list[dict]) -> list[dict[str, object]]:
     return gone
 
 
-def repair(clone: Any, state: Path, *, runner: Runner = git_runner.run) -> dict[str, object]:
+def repair(
+    clone: Any, state: Path, *, clock: Callable[[], float], runner: Runner = git_runner.run
+) -> dict[str, object]:
 
     writer = vault_queue.writer_of(state)
     git = _git(clone, runner)
@@ -162,7 +163,7 @@ def repair(clone: Any, state: Path, *, runner: Runner = git_runner.run) -> dict[
             drafts.append({"kind": REQUEUE, "payload": {"events": others}})
         requeued = vault_queue.requeue(clone, own)
         if drafts:
-            origin = vault_queue.Origin("repair", False, time.time)
+            origin = vault_queue.Origin("repair", False, clock)
             vault_queue.write(clone, drafts, state=state, origin=origin)
         vault_clone.durable(clone.folder / vault_clone.REPAIRED_NAME, _lines(refs), append=True)
         commits = [str(e["commit"]) for e in entries]
@@ -198,7 +199,9 @@ def accept_rewrite(
     return {"purged": sorted(refs), "head": current}
 
 
-def reclone(clone: Any, *, runner: Runner = git_runner.run) -> dict[str, object]:
+def reclone(
+    clone: Any, *, clock: Callable[[], float], runner: Runner = git_runner.run
+) -> dict[str, object]:
 
     old = clone.folder / "clone.old"
     with events.LedgerLock(clone.folder / vault_share.SHARE_LOCK):
@@ -206,7 +209,7 @@ def reclone(clone: Any, *, runner: Runner = git_runner.run) -> dict[str, object]
             if old.exists():
                 shutil.rmtree(old)
             clone.bare.rename(old)
-        vault_clone.fetch(clone, runner=runner)
+        vault_clone.fetch(clone, clock=clock, runner=runner)
         with events.LedgerLock(clone.folder / "fetch"):
             copied = [
                 "fetch",
@@ -221,10 +224,12 @@ def reclone(clone: Any, *, runner: Runner = git_runner.run) -> dict[str, object]
     return {"clone": str(clone.bare), "refs": refs.split(), **shown}
 
 
-def check(clone: Any, state: Path, args: Mapping[str, Any]) -> dict[str, object]:
+def check(
+    clone: Any, state: Path, args: Mapping[str, Any], clock: Callable[[], float]
+) -> dict[str, object]:
 
     if args.get("accept_rewrite"):
         return accept_rewrite(clone, args["accept_rewrite"], purge=bool(args.get("purge")))
     if args.get("repair"):
-        return repair(clone, state)
+        return repair(clone, state, clock=clock)
     return report(clone)

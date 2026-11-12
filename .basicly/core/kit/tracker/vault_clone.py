@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import sys
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -268,7 +267,7 @@ def fetch(
     runner: Runner = git_runner.run,
     timeout: float = git_runner.DEFAULT_TIMEOUT,
     lock_wait: float = LOCK_WAIT,
-    clock: Callable[[], float] = time.time,
+    clock: Callable[[], float],
 ) -> dict[str, object]:
 
     private(clone.folder.parent.parent)

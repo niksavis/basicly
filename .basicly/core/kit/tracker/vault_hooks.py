@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -72,9 +71,9 @@ def due_share(clone: Any, state: Path, clock: Clock, *, now: bool = False) -> di
 
     if not _queued(clone) or not (now or slot_due(clone, clock)):
         return None
-    plan = vault_share.Plan(urgent=True, deadline_s=HOOK_DEADLINE)
+    plan = vault_share.Plan(clock, urgent=not now, deadline_s=HOOK_DEADLINE)
     try:
-        return vault_share.share(clone, state, plan=None if now else plan)
+        return vault_share.share(clone, state, plan=plan)
     except _KEPT as exc:
         return {"skipped": str(exc), "queued": len(_queued(clone))}
 
@@ -86,7 +85,7 @@ def _fetch_if_stale(clone: Any, clock: Clock) -> dict | None:
     return vault_clone.fetch(clone, timeout=HOOK_DEADLINE, lock_wait=HOOK_DEADLINE, clock=clock)
 
 
-def hook(event: str, clone: Any, state: Path, *, clock: Clock = time.time) -> dict[str, object]:
+def hook(event: str, clone: Any, state: Path, *, clock: Clock) -> dict[str, object]:
 
     if event not in EVENTS:
         raise ValueError(f"hook takes one of {', '.join(EVENTS)}; it got {event!r}")
@@ -96,13 +95,13 @@ def hook(event: str, clone: Any, state: Path, *, clock: Clock = time.time) -> di
             shared = due_share(clone, state, clock)
         else:
             fetched = None
-            shared = vault_share.share(clone, state)
+            shared = vault_share.share(clone, state, plan=vault_share.Plan(clock))
     except _KEPT as exc:
         return {"hook": event, "skipped": str(exc), "queued": len(_queued(clone))}
     return {"hook": event, "fetched": fetched, "shared": shared, "queued": len(_queued(clone))}
 
 
-def status(clone: Any, *, clock: Clock = time.time) -> dict[str, object]:
+def status(clone: Any, *, clock: Clock) -> dict[str, object]:
 
     queued = _queued(clone)
     times = [at for line in queued if isinstance(at := line.get("at"), (int, float))]

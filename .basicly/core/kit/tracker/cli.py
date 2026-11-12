@@ -5,7 +5,6 @@ import importlib.util
 import json
 import os
 import sys
-import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -316,41 +315,42 @@ def _state(args: argparse.Namespace) -> Path:
     )
 
 
-def _fetch_vault(args: argparse.Namespace) -> dict[str, object]:
+Clock = Callable[[], float]
+
+
+def _fetch_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
     state = _state(args)
     clone = vault_clone.locate(state, args.vault)
-    fetched = vault_clone.fetch(clone, timeout=args.timeout)
-    return {**fetched, "shared": vault_hooks.due_share(clone, state, time.time)}
+    fetched = vault_clone.fetch(clone, clock=clock, timeout=args.timeout)
+    return {**fetched, "shared": vault_hooks.due_share(clone, state, clock)}
 
 
-def _queue_comment(args: argparse.Namespace) -> dict[str, object]:
+def _queue_comment(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
     state = _state(args)
     clone = vault_clone.locate(state, args.vault)
     now = any(os.environ.get(name) for name in ("CI", "BASICLY_TRACKER_EPHEMERAL"))
-    origin = vault_queue.Origin(os.environ.get("BASICLY_TRACKER_SESSION", ""), now, time.time)
+    origin = vault_queue.Origin(os.environ.get("BASICLY_TRACKER_SESSION", ""), now, clock)
     queued = vault_queue.write(
         clone, [vault_queue.comment(args.record, args.text)], state=state, origin=origin
     )
-    return {**queued, "shared": vault_hooks.due_share(clone, state, time.time, now=now)}
+    return {**queued, "shared": vault_hooks.due_share(clone, state, clock, now=now)}
 
 
-_VAULT: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
-    "vault-check": lambda a: vault_shapes.report(a.vault, a.ref),
-    "vault-show": _vault_show,
+def _clone(args: argparse.Namespace) -> Any:
+    return vault_clone.locate(_state(args), args.vault)
+
+
+_VAULT: dict[str, Callable[[argparse.Namespace, Clock], dict[str, object]]] = {
+    "vault-check": lambda a, _c: vault_shapes.report(a.vault, a.ref),
+    "vault-show": lambda a, _c: _vault_show(a),
     "fetch": _fetch_vault,
     "comment-vault": _queue_comment,
-    "hook-vault": lambda a: vault_hooks.hook(
-        a.event, vault_clone.locate(_state(a), a.vault), _state(a)
-    ),
-    "status-vault": lambda a: vault_hooks.status(vault_clone.locate(_state(a), a.vault)),
-    "fsck-vault": lambda a: vault_repair.check(
-        vault_clone.locate(_state(a), a.vault), _state(a), vars(a)
-    ),
-    "reclone-vault": lambda a: vault_repair.reclone(vault_clone.locate(_state(a), a.vault)),
-    "sync-vault": lambda a: vault_share.share(
-        vault_clone.locate(_state(a), a.vault),
-        _state(a),
-        plan=vault_share.Plan(urgent=a.urgent, deadline_s=a.deadline),
+    "hook-vault": lambda a, c: vault_hooks.hook(a.event, _clone(a), _state(a), clock=c),
+    "status-vault": lambda a, c: vault_hooks.status(_clone(a), clock=c),
+    "fsck-vault": lambda a, c: vault_repair.check(_clone(a), _state(a), vars(a), c),
+    "reclone-vault": lambda a, c: vault_repair.reclone(_clone(a), clock=c),
+    "sync-vault": lambda a, c: vault_share.share(
+        _clone(a), _state(a), plan=vault_share.Plan(c, urgent=a.urgent, deadline_s=a.deadline)
     ),
 }
 
@@ -359,7 +359,7 @@ def _run(
     args: argparse.Namespace, redact: Callable[[str], str] | None
 ) -> tuple[int, dict[str, object]]:
     if (vault := _VAULT.get(args.command)) is not None:
-        return EXIT_OK, vault(args)
+        return EXIT_OK, vault(args, events.wall_clock())
     starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
     args.directory = commands.resolve_ledger(args.directory, starts=starts)
     pin.require(args.directory)

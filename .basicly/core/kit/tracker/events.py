@@ -1091,6 +1091,10 @@ def append_lines(path: Path, lines: Sequence[str]) -> None:
             stream.write(line + "\n")
 
 
+def wall_clock(clock: Callable[[], float] | None = None) -> Callable[[], float]:
+    return time.time if clock is None else clock
+
+
 def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit may not read
     directory: Path | str,
     drafts: Iterable[Draft],
@@ -1114,7 +1118,7 @@ def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit
             raise InvalidEventError(f"kind {draft.kind!r} must match {KIND_PATTERN.pattern}")
     ledger = Path(directory)
     ledger.mkdir(parents=True, exist_ok=True)
-    now = time.time if clock is None else clock
+    now = wall_clock(clock)
     lock = held_lock if held_lock is not None else LedgerLock(ledger, timeout_s=lock_timeout_s)
     acquired = held_lock is None
     if acquired:

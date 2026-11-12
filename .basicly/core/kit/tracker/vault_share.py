@@ -50,6 +50,7 @@ class ShareError(ValueError):
 
 @dataclass(frozen=True)
 class Plan:
+    wall: Callable[[], float]
     urgent: bool = False
     deadline_s: float = 10.0
     attempts: int = BULK_ATTEMPTS
@@ -168,12 +169,11 @@ def share(
     clone: Any,
     state: Path,
     *,
-    plan: Plan | None = None,
+    plan: Plan,
     runner: Runner = git_runner.run,
     clock: Callable[[], float] = time.monotonic,
 ) -> dict[str, object]:
 
-    plan = plan or Plan()
     started = clock()
     writer = vault_queue.writer_of(state)
     wait = _budget(plan, started, clock) if plan.urgent else vault_clone.LOCK_WAIT
@@ -186,7 +186,9 @@ def share(
         while True:
             attempt += 1
             budget = _budget(plan, started, clock)
-            fetched = vault_clone.fetch(clone, runner=runner, timeout=budget, lock_wait=budget)
+            fetched = vault_clone.fetch(
+                clone, clock=plan.wall, runner=runner, timeout=budget, lock_wait=budget
+            )
             head = str(fetched["head"])
             if fetched.get("retracted") or vault_clone.unrepaired(clone, runner, budget):
                 raise ShareError(
@@ -215,7 +217,7 @@ def share(
                     f"the vault refused the share {attempt} times; "
                     f"{len(batch)} events stay queued; run sync again"
                 ) from None
-            vault_clone.durable(clone.folder / SHARED_AT, f"{time.time()}\n")
+            vault_clone.durable(clone.folder / SHARED_AT, f"{plan.wall()}\n")
             vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
             left = len(prune(clone))
             return {"shared": len(batch), "head": commit, "pending": left, "lock_wait_s": waited}

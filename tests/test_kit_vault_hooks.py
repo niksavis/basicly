@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import time
 from collections import Counter
 from pathlib import Path
 from types import ModuleType
@@ -13,12 +14,22 @@ from typing import Any
 
 import pytest
 
+from tests.test_kit_vault_clone import _fetch
 from tests.test_kit_vault_shapes import Vault
 from tests.test_kit_vault_share import _ids, _machine, _write, bare
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 KIT = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 __all__ = ["bare"]
+
+
+def _hook(event: str, clone: Any, state: Path, **options: Any) -> dict:
+    options.setdefault("clock", time.time)
+    return vault_hooks.hook(event, clone, state, **options)
+
+
+def _status(clone: Any) -> dict:
+    return vault_hooks.status(clone, clock=time.time)
 
 
 def _load(name: str, file_name: str) -> ModuleType:
@@ -55,9 +66,9 @@ def _cli(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, dict
 def test_a_start_hook_fetches_at_most_once_every_20_seconds(tmp_path: Path, bare: Path) -> None:
     clone, state = _machine(tmp_path, bare, "m")
 
-    first = vault_hooks.hook("session-start", clone, state, clock=lambda: 1000.0)
-    soon = vault_hooks.hook("prompt", clone, state, clock=lambda: 1010.0)
-    later = vault_hooks.hook("prompt", clone, state, clock=lambda: 1021.0)
+    first = _hook("session-start", clone, state, clock=lambda: 1000.0)
+    soon = _hook("prompt", clone, state, clock=lambda: 1010.0)
+    later = _hook("prompt", clone, state, clock=lambda: 1021.0)
 
     assert first["fetched"] is not None
     assert soon["fetched"] is None
@@ -71,8 +82,8 @@ def test_a_start_hook_shares_only_when_the_bulk_slot_is_due(tmp_path: Path, bare
     clone.folder.mkdir(parents=True, exist_ok=True)
     stamp.write_text("1000.0\n", encoding="utf-8")
 
-    early = vault_hooks.hook("prompt", clone, state, clock=lambda: 1100.0)
-    due = vault_hooks.hook("prompt", clone, state, clock=lambda: 1200.0)
+    early = _hook("prompt", clone, state, clock=lambda: 1100.0)
+    due = _hook("prompt", clone, state, clock=lambda: 1200.0)
 
     assert early["shared"] is None
     assert early["queued"] == 2
@@ -85,7 +96,7 @@ def test_an_end_hook_shares_the_whole_queue(tmp_path: Path, bare: Path, event: s
     clone, state = _machine(tmp_path, bare, "m")
     written = _write(clone, state, 5, "a")
 
-    shown = vault_hooks.hook(event, clone, state)
+    shown = _hook(event, clone, state)
 
     assert shown["shared"]["shared"] == 5
     assert sorted(_ids(bare)) == sorted(written)
@@ -94,11 +105,11 @@ def test_an_end_hook_shares_the_whole_queue(tmp_path: Path, bare: Path, event: s
 def test_status_shows_the_data_age_without_a_network_call(tmp_path: Path, bare: Path) -> None:
     clone, state = _machine(tmp_path, bare, "m")
     _write(clone, state, 1, "a")
-    vault_hooks.hook("stop", clone, state)
+    _hook("stop", clone, state)
     _write(clone, state, 1, "b")
     bare.rename(tmp_path / "gone.git")
 
-    shown = vault_hooks.status(clone)
+    shown = _status(clone)
 
     assert shown["fetch_age_s"] is not None
     assert shown["queued"] == 1
@@ -131,7 +142,7 @@ def test_the_demonstration_hook_stop_exits_0_and_status_prints_the_age(
     state = str(tmp_path / "s")
 
     stop, stopped = _cli(["hook", "stop", "--vault", str(bare), "--state", state], capsys)
-    vault_hooks.hook("session-start", vault_clone.locate(Path(state), str(bare)), Path(state))
+    _hook("session-start", vault_clone.locate(Path(state), str(bare)), Path(state))
     status, shown = _cli(["status", "--vault", str(bare), "--state", state], capsys)
 
     assert stop == status == cli.EXIT_OK
@@ -146,9 +157,9 @@ def test_proof_t_visible_b_sees_a_comment_after_a_stops_and_b_starts(
     b_clone, b_state = _machine(tmp_path, bare, "b")
     written = _write(a_clone, a_state, 1, "hello")
 
-    vault_hooks.hook("stop", a_clone, a_state)
-    vault_hooks.hook("session-start", b_clone, b_state)
-    shown = vault_hooks.status(b_clone)
+    _hook("stop", a_clone, a_state)
+    _hook("session-start", b_clone, b_state)
+    shown = _status(b_clone)
 
     writer = vault_queue.writer_of(a_state)
     assert shown["writers"][writer]["id"] == written[0]
@@ -262,7 +273,7 @@ def test_a_write_whose_share_fails_still_succeeds_and_says_the_share_was_skipped
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     state = str(tmp_path / "s")
-    vault_clone.fetch(vault_clone.locate(Path(state), str(bare)))
+    _fetch(vault_clone.locate(Path(state), str(bare)))
     bare.rename(tmp_path / "gone.git")
     (tmp_path / "vault.git").mkdir()
 

@@ -21,6 +21,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 KIT = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 
 
+def _share(clone: Any, state: Path, **options: Any) -> dict:
+    options.setdefault("plan", vault_share.Plan(time.time))
+    return vault_share.share(clone, state, **options)
+
+
 def _load(name: str, file_name: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, KIT / file_name)
     assert spec and spec.loader
@@ -71,7 +76,7 @@ def test_a_share_pushes_one_batch_commit_and_empties_the_queue(tmp_path: Path, b
     clone, state = _machine(tmp_path, bare, "m1")
     written = _write(clone, state, 3, "a")
 
-    shown = vault_share.share(clone, state)
+    shown = _share(clone, state)
     head = git_runner.run(["rev-parse", "main"], bare).strip()
 
     assert {key: shown[key] for key in ("shared", "head", "pending")} == {
@@ -90,10 +95,10 @@ def test_a_share_pushes_one_batch_commit_and_empties_the_queue(tmp_path: Path, b
 def test_a_second_share_appends_to_the_same_segment(tmp_path: Path, bare: Path) -> None:
     clone, state = _machine(tmp_path, bare, "m1")
     _write(clone, state, 2, "a")
-    vault_share.share(clone, state)
+    _share(clone, state)
     _write(clone, state, 2, "b")
 
-    vault_share.share(clone, state)
+    _share(clone, state)
     head = git_runner.run(["rev-parse", "main"], bare).strip()
     listed = git_runner.run(["ls-tree", "-r", "--name-only", head, "log/"], bare).split()
 
@@ -111,7 +116,7 @@ def test_proof_t_share_smoke_three_clones_share_concurrently_and_each_event_land
     def drain(clone: Any, state: Path) -> None:
         for _round in range(20):
             try:
-                if vault_share.share(clone, state)["pending"] == 0:
+                if _share(clone, state)["pending"] == 0:
                     return
             except vault_share.ShareError as exc:
                 failures.append(str(exc))
@@ -148,7 +153,7 @@ def test_a_refused_bulk_share_rebuilds_at_most_five_times_and_keeps_the_queue(
     pushes: list[int] = []
 
     with pytest.raises(vault_share.ShareError, match="refused the share 5 times"):
-        vault_share.share(clone, state, runner=_refusing(pushes))
+        _share(clone, state, runner=_refusing(pushes))
 
     assert len(pushes) == 5
     assert len(vault_queue.pending(clone.folder / vault_queue.QUEUE_NAME)) == 2
@@ -162,10 +167,10 @@ def test_an_urgent_share_retries_until_its_deadline(tmp_path: Path, bare: Path) 
     step = 0.25
 
     with pytest.raises(vault_share.ShareError, match=r"deadline|refused"):
-        vault_share.share(
+        _share(
             clone,
             state,
-            plan=vault_share.Plan(urgent=True, deadline_s=12),
+            plan=vault_share.Plan(time.time, urgent=True, deadline_s=12),
             runner=_refusing(pushes),
             clock=lambda: next(ticks) * step,
         )
@@ -190,7 +195,7 @@ def test_a_valid_ended_event_stops_the_share_and_keeps_the_queue(
     clone, state = _machine(tmp_path, bare, "m1")
     _write(clone, state, 2, "a")
 
-    shown = vault_share.share(clone, state)
+    shown = _share(clone, state)
 
     assert shown["ended"] == {"reason": "rolled-back", "successor": "ledger"}
     assert shown["pending"] == 2
@@ -224,8 +229,8 @@ def test_a_share_that_crashes_at_any_step_leaves_each_event_once_after_the_next_
     written = _write(clone, state, 4, "a")
 
     with pytest.raises(CrashError):
-        vault_share.share(clone, state, runner=_crashing(point))
-    shown = vault_share.share(clone, state)
+        _share(clone, state, runner=_crashing(point))
+    shown = _share(clone, state)
 
     assert shown["pending"] == 0
     assert _ids(bare) == Counter(dict.fromkeys(written, 1))
@@ -299,7 +304,7 @@ def test_an_unknown_writer_line_in_the_queue_is_never_pushed(tmp_path: Path, bar
     with queue.open("a", encoding="utf-8") as stream:
         stream.write(_line(kind="comment", writer=WRITER_B, id="foreign", record="r"))
 
-    vault_share.share(clone, state)
+    _share(clone, state)
 
     assert "foreign" not in _ids(bare)
 
@@ -323,7 +328,7 @@ def test_a_vault_that_requires_signed_commits_is_refused_by_name_without_retry(
     _write(clone, state, 1, "a")
 
     with pytest.raises(vault_share.ShareError, match="refused unsigned commits"):
-        vault_share.share(clone, state)
+        _share(clone, state)
 
     assert len(vault_queue.pending(clone.folder / vault_queue.QUEUE_NAME)) == 1
 
@@ -346,7 +351,7 @@ def test_the_share_settings_never_reach_the_global_or_a_code_repository_config(
     clone, state = _machine(tmp_path, bare, "m1")
     _write(clone, state, 1, "a")
 
-    shown = vault_share.share(clone, state)
+    shown = _share(clone, state)
     code.write("a.txt", "a\n")
     code.commit("code change")
 

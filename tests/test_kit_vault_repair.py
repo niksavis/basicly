@@ -10,12 +10,22 @@ from typing import Any
 
 import pytest
 
+from tests.test_kit_vault_clone import _fetch
 from tests.test_kit_vault_shapes import WRITER_A, WRITER_B, Vault, _segment
-from tests.test_kit_vault_share import _ids, _machine, _write, bare
+from tests.test_kit_vault_share import _ids, _machine, _share, _write, bare
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 KIT = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 __all__ = ["bare"]
+
+
+def _repair(clone: Any, state: Path, **options: Any) -> dict:
+    options.setdefault("clock", time.time)
+    return vault_repair.repair(clone, state, **options)
+
+
+def _reclone(clone: Any) -> dict:
+    return vault_repair.reclone(clone, clock=time.time)
 
 
 def _load(name: str, file_name: str) -> ModuleType:
@@ -50,13 +60,13 @@ def _rewritten(tmp_path: Path, bare: Path) -> dict[str, Any]:
     claim = {"kind": "claim", "record": "acme-a1b2"}
     drafts = [claim, vault_queue.comment("acme-a1b2", "w note")]
     lost = vault_queue.write(w_clone, drafts, state=w_state, origin=origin)["events"]
-    vault_share.share(w_clone, w_state)
+    _share(w_clone, w_state)
     b_clone, b_state = _machine(tmp_path, bare, "b")
-    vault_clone.fetch(b_clone)
+    _fetch(b_clone)
     git_runner.run(["update-ref", "refs/heads/main", genesis], bare)
     x_clone, x_state = _machine(tmp_path, bare, "x")
     _write(x_clone, x_state, 1, "x")
-    vault_share.share(x_clone, x_state)
+    _share(x_clone, x_state)
     return {"lost": lost, "clone": b_clone, "state": b_state, "w_state": w_state}
 
 
@@ -69,12 +79,12 @@ def test_proof_t_seen_a_rewrite_is_refused_repaired_and_survives_a_reclone(
     _write(clone, state, 1, "b")
 
     with pytest.raises(vault_share.ShareError, match="fsck --repair"):
-        vault_share.share(clone, state)
+        _share(clone, state)
     retracted = vault_clone.retracted(clone, git_runner.run, 30)
-    repaired = vault_repair.repair(clone, state)
+    repaired = _repair(clone, state)
     requeue = [line for line in _queued(clone) if line["kind"] == "requeue"]
-    shared = vault_share.share(clone, state)
-    recloned = vault_repair.reclone(clone)
+    shared = _share(clone, state)
+    recloned = _reclone(clone)
 
     assert list(retracted) == ["refs/basicly/retracted/1"]
     assert repaired["requeue_event"] == 2
@@ -92,8 +102,8 @@ def test_a_retracted_tip_is_stored_once_however_often_fetch_runs(
 ) -> None:
     case = _rewritten(tmp_path, bare)
 
-    vault_clone.fetch(case["clone"])
-    vault_clone.fetch(case["clone"])
+    _fetch(case["clone"])
+    _fetch(case["clone"])
 
     assert len(vault_clone.retracted(case["clone"], git_runner.run, 30)) == 1
 
@@ -102,18 +112,18 @@ def test_own_lost_lines_are_requeued_as_they_were(tmp_path: Path, bare: Path) ->
     genesis = _rev(bare, "main")
     clone, state = _machine(tmp_path, bare, "b")
     mine = _write(clone, state, 2, "mine")
-    vault_share.share(clone, state)
+    _share(clone, state)
     git_runner.run(["update-ref", "refs/heads/main", genesis], bare)
     other, other_state = _machine(tmp_path, bare, "x")
     _write(other, other_state, 1, "x")
-    vault_share.share(other, other_state)
-    vault_clone.fetch(clone)
+    _share(other, other_state)
+    _fetch(clone)
 
-    shown = vault_repair.repair(clone, state)
+    shown = _repair(clone, state)
 
     assert shown["requeued"] == 2
     assert sorted(line["id"] for line in _queued(clone)) == sorted(mine)
-    assert vault_share.share(clone, state)["pending"] == 0
+    assert _share(clone, state)["pending"] == 0
     assert all(_ids(bare)[i] == 1 for i in mine)
 
 
@@ -132,7 +142,7 @@ def test_proof_t_quarantine_kept_fsck_names_it_and_repair_needs_no_fetch(
 ) -> None:
     bad = _quarantined(tmp_path, bare)
     clone, state = _machine(tmp_path, bare, "b")
-    vault_clone.fetch(clone)
+    _fetch(clone)
     calls: list[str] = []
 
     def offline(args: list[str], cwd: Path, **options: Any) -> str:
@@ -142,7 +152,7 @@ def test_proof_t_quarantine_kept_fsck_names_it_and_repair_needs_no_fetch(
         return git_runner.run(args, cwd, **options)
 
     before = vault_repair.report(clone)
-    repaired = vault_repair.repair(clone, state, runner=offline)
+    repaired = _repair(clone, state, runner=offline)
     after = vault_repair.report(clone)
     requeue = [line for line in _queued(clone) if line["kind"] == "requeue"]
 
@@ -159,7 +169,7 @@ def test_accept_rewrite_needs_purge_and_the_fetched_head_then_rebuilds_the_ids(
 ) -> None:
     case = _rewritten(tmp_path, bare)
     clone = case["clone"]
-    vault_clone.fetch(clone)
+    _fetch(clone)
     head = _rev(clone.bare, vault_clone.HEAD_REF)
 
     with pytest.raises(vault_repair.RepairError, match="--purge"):
@@ -172,14 +182,14 @@ def test_accept_rewrite_needs_purge_and_the_fetched_head_then_rebuilds_the_ids(
     assert vault_clone.retracted(clone, git_runner.run, 30) == {}
     assert vault_clone.valid_ids(clone) == set(_ids(bare))
     assert (clone.folder / vault_clone.COVERS_NAME).read_text().strip() == head
-    assert vault_share.share(clone, case["state"])["shared"] == 0
+    assert _share(clone, case["state"])["shared"] == 0
 
 
 def test_fsck_repair_through_the_cli_prints_the_counts(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     case = _rewritten(tmp_path, bare)
-    vault_clone.fetch(case["clone"])
+    _fetch(case["clone"])
     vault = str(bare)
     state = str(case["state"])
 
@@ -196,12 +206,12 @@ def test_no_basicly_ref_ever_reaches_the_remote_after_share_repair_and_reclone(
 ) -> None:
     case = _rewritten(tmp_path, bare)
     clone, state = case["clone"], case["state"]
-    vault_clone.fetch(clone)
+    _fetch(clone)
 
-    vault_repair.repair(clone, state)
-    vault_share.share(clone, state)
-    vault_repair.reclone(clone)
-    vault_share.share(clone, state)
+    _repair(clone, state)
+    _share(clone, state)
+    _reclone(clone)
+    _share(clone, state)
     local = git_runner.run(["for-each-ref", "--format=%(refname)", "refs/basicly/"], clone.bare)
     remote = git_runner.run(["for-each-ref", "--format=%(refname)"], bare).split()
 

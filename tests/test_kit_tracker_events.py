@@ -319,7 +319,9 @@ def test_the_recorded_timestamp_is_exactly_what_the_injected_clock_said(
 
 WALL_CLOCK_ATTRIBUTES = frozenset({"time.time", "time.time_ns", "datetime.now", "datetime.utcnow"})
 
-PERMITTED_CLOCK_READS = [("append", "time.time")]
+PERMITTED_CLOCK_READS = [("wall_clock", "time.time")]
+
+WALL_CLOCK_CALLERS = [("cli.py", "_run"), ("events.py", "append")]
 
 
 def _dotted(node: ast.expr) -> str:
@@ -353,6 +355,29 @@ def test_no_wall_clock_is_read_outside_the_one_injected_default() -> None:
     assert sorted(found) == sorted(PERMITTED_CLOCK_READS), (
         f"wall-clock read(s) in the tracker kit: {sorted(found)}"
     )
+
+
+def test_every_caller_of_the_one_wall_clock_is_named() -> None:
+
+    found: list[tuple[str, str]] = []
+    for path in sorted(KIT_DIR.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        owners: dict[int, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                for line in range(node.lineno, (node.end_lineno or node.lineno) + 1):
+                    owners[line] = node.name
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = (
+                node.func.attr
+                if isinstance(node.func, ast.Attribute)
+                else getattr(node.func, "id", "")
+            )
+            if name == "wall_clock":
+                found.append((path.name, owners.get(node.lineno, "module")))
+    assert sorted(found) == sorted(WALL_CLOCK_CALLERS), f"wall_clock callers: {sorted(found)}"
 
 
 def test_contention_waits_on_an_injected_monotonic_clock(tmp_path: Path) -> None:

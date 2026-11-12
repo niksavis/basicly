@@ -18,6 +18,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 KIT = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 
 
+def _fetch(clone: Any, **options: Any) -> dict:
+    options.setdefault("clock", time.time)
+    return vault_clone.fetch(clone, **options)
+
+
 def _load(name: str, file_name: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, KIT / file_name)
     assert spec and spec.loader
@@ -95,7 +100,7 @@ def test_the_first_fetch_clones_bare_with_mode_0700_and_the_main_refspec(
 ) -> None:
     clone = _clone(tmp_path, origin)
 
-    shown = vault_clone.fetch(clone)
+    shown = _fetch(clone)
 
     assert _git(clone, "rev-parse", "--is-bare-repository") == "true"
     assert _git(clone, "config", "remote.origin.fetch") == vault_clone.FETCH_REFSPEC
@@ -111,11 +116,11 @@ def test_proof_t_refspec_a_pushed_batch_moves_the_head_and_seen(
     bare = tmp_path / "vault.git"
     origin.git("clone", "-q", "--bare", str(origin.root), str(bare))
     clone = vault_clone.locate(tmp_path / "state", str(bare))
-    vault_clone.fetch(clone)
+    _fetch(clone)
     new_head = _batch(origin)
     origin.git("push", "-q", str(bare), "main")
 
-    shown = vault_clone.fetch(clone)
+    shown = _fetch(clone)
 
     assert shown["head"] == new_head
     assert _git(clone, "rev-parse", vault_clone.HEAD_REF) == new_head
@@ -124,12 +129,12 @@ def test_proof_t_refspec_a_pushed_batch_moves_the_head_and_seen(
 
 def test_a_quarantined_commit_is_listed_and_seen_still_moves(tmp_path: Path, origin: Vault) -> None:
     clone = _clone(tmp_path, origin)
-    vault_clone.fetch(clone)
+    _fetch(clone)
     origin.write("notes.txt", "x\n")
     bad = origin.commit("outside the log")
     good = _batch(origin, WRITER_B)
 
-    shown = vault_clone.fetch(clone)
+    shown = _fetch(clone)
 
     assert [q["commit"] for q in shown["quarantined"]] == [bad]
     assert shown["seen"] == good
@@ -142,11 +147,11 @@ def test_a_head_that_lost_the_seen_commit_leaves_seen_and_says_retracted(
     clone = _clone(tmp_path, origin)
     first = origin.git("rev-parse", "HEAD")
     seen = _batch(origin)
-    vault_clone.fetch(clone)
+    _fetch(clone)
     origin.git("reset", "-q", "--hard", first)
     _batch(origin, WRITER_B)
 
-    shown = vault_clone.fetch(clone)
+    shown = _fetch(clone)
 
     assert shown["retracted"] is True
     assert _git(clone, "rev-parse", vault_clone.SEEN_REF) == seen
@@ -163,7 +168,7 @@ def test_a_failed_fetch_is_retried_once(tmp_path: Path, origin: Vault) -> None:
                 raise git_runner.GitCommandError("fetch", 128, "")
         return git_runner.run(args, cwd, **options)
 
-    shown = vault_clone.fetch(clone, runner=flaky)
+    shown = _fetch(clone, runner=flaky)
 
     assert len(fetches) == 2
     assert shown["fetched"] is True
@@ -171,7 +176,7 @@ def test_a_failed_fetch_is_retried_once(tmp_path: Path, origin: Vault) -> None:
 
 def test_two_failed_fetches_show_the_last_state_and_its_age(tmp_path: Path, origin: Vault) -> None:
     clone = _clone(tmp_path, origin)
-    vault_clone.fetch(clone, clock=lambda: 1000.0)
+    _fetch(clone, clock=lambda: 1000.0)
     head = origin.git("rev-parse", "HEAD")
     _batch(origin)
 
@@ -180,7 +185,7 @@ def test_two_failed_fetches_show_the_last_state_and_its_age(tmp_path: Path, orig
             raise git_runner.GitTimeoutError("git fetch did not finish")
         return git_runner.run(args, cwd, **options)
 
-    shown = vault_clone.fetch(clone, runner=down, clock=lambda: 1042.0)
+    shown = _fetch(clone, runner=down, clock=lambda: 1042.0)
 
     assert shown["fetched"] is False
     assert shown["head"] == head
@@ -193,14 +198,14 @@ def test_a_first_fetch_that_fails_twice_is_refused_by_name(tmp_path: Path) -> No
     clone = vault_clone.locate(tmp_path / "state", str(empty))
 
     with pytest.raises(vault_clone.CloneError, match="no earlier fetch exists"):
-        vault_clone.fetch(clone)
+        _fetch(clone)
 
 
 def test_proof_t_fetch_lock_a_stalled_fetch_makes_the_second_one_wait(
     tmp_path: Path, origin: Vault
 ) -> None:
     clone = _clone(tmp_path, origin)
-    vault_clone.fetch(clone)
+    _fetch(clone)
     _batch(origin)
     release = threading.Event()
     spans: dict[str, list[float]] = {}
@@ -222,7 +227,7 @@ def test_proof_t_fetch_lock_a_stalled_fetch_makes_the_second_one_wait(
 
     def worker(name: str, stall: bool) -> None:
         try:
-            shown = vault_clone.fetch(clone, runner=runner_for(name, stall))
+            shown = _fetch(clone, runner=runner_for(name, stall))
             heads.append(shown["head"] if shown["fetched"] else "not fetched")
         except (
             ValueError,
