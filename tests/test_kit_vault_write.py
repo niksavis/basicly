@@ -44,6 +44,7 @@ vault_shapes = vault_clone.vault_shapes
 CLI = KIT / "cli.py"
 SEED_PREFIX = "seed"
 VAULT_PREFIX = "acme"
+CONTEXT = vault_write.WriteContext(None, time.time)
 
 
 @dataclass(frozen=True)
@@ -138,30 +139,34 @@ Write = Callable[[Repo, Any], list]
 WRITES: dict[str, tuple[Callable[[Repo], Any], Write]] = {
     "update": (
         lambda _r: None,
-        lambda r, _s: commands.update(r.ledger, r.record, fields={"priority": 1}),
+        lambda r, _s: commands.update(r.ledger, r.record, fields={"priority": 1}, context=CONTEXT),
     ),
     "close": (
         lambda _r: None,
         lambda r, _s: commands.close(
-            r.ledger, [r.record], reason="dropped", resolution="cancelled"
+            r.ledger, [r.record], reason="dropped", resolution="cancelled", context=CONTEXT
         ),
     ),
     "comment": (
         lambda _r: None,
-        lambda r, _s: commands.comment(r.ledger, r.record, "a note through the vault"),
+        lambda r, _s: commands.comment(
+            r.ledger, r.record, "a note through the vault", context=CONTEXT
+        ),
     ),
     "dep": (
         lambda _r: None,
-        lambda r, _s: commands.add_dependency(r.ledger, r.record, r.other, edge_type="blocks"),
+        lambda r, _s: commands.add_dependency(
+            r.ledger, r.record, r.other, edge_type="blocks", context=CONTEXT
+        ),
     ),
     "review": (
         _review,
-        lambda r, payload: commands.record_process(r.ledger, r.record, payload),
+        lambda r, payload: commands.record_process(r.ledger, r.record, payload, redact=CONTEXT),
     ),
     "confirm": (
         _confirm,
         lambda r, checks: commands.record_process(
-            r.ledger, r.record, {"checks": checks}, completed=True
+            r.ledger, r.record, {"checks": checks}, completed=True, redact=CONTEXT
         ),
     ),
 }
@@ -208,7 +213,7 @@ def test_a_carried_ledger_event_parses_back_as_the_event_the_ledger_would_hold(
     repo = _seeded(tmp_path, bare)
     _hold_the_share_slot(repo)
 
-    (written,) = commands.update(repo.ledger, repo.record, fields={"priority": 2})
+    (written,) = commands.update(repo.ledger, repo.record, fields={"priority": 2}, context=CONTEXT)
 
     carried = _queued(repo)[0][vault_write.LEDGER_FIELD]
     parsed = events.from_json(json.dumps(carried))
@@ -227,7 +232,9 @@ def test_create_with_a_vault_mints_the_config_prefix_and_queues_without_the_ledg
     _hold_the_share_slot(repo)
     before = _ledger_bytes(repo.ledger)
 
-    written = commands.create_root(repo.ledger, {"title": "vault born"}, prefix=SEED_PREFIX)
+    written = commands.create_root(
+        repo.ledger, {"title": "vault born"}, prefix=SEED_PREFIX, context=CONTEXT
+    )
 
     assert written[0].record.startswith(f"{VAULT_PREFIX}-")
     assert _ledger_bytes(repo.ledger) == before
@@ -244,7 +251,7 @@ def test_a_queued_ledger_line_redacts_before_the_id_so_the_id_still_matches(
     _hold_the_share_slot(repo)
     secret = "ghp" + "_" + "Q7v2Lm9Rk4Tz8Wp1Xc6Bn3Hs5Jd0Fg2Ya7Ue"
 
-    commands.comment(repo.ledger, repo.record, f"the token {secret} leaked")
+    commands.comment(repo.ledger, repo.record, f"the token {secret} leaked", context=CONTEXT)
 
     carried = _queued(repo)[0][vault_write.LEDGER_FIELD]
     assert secret not in json.dumps(carried)
@@ -256,7 +263,7 @@ def test_a_queued_ledger_line_redacts_before_the_id_so_the_id_still_matches(
 def test_a_shared_ledger_line_is_a_valid_vault_event(tmp_path: Path, bare: Path) -> None:
     repo = _seeded(tmp_path, bare)
     _hold_the_share_slot(repo)
-    (written,) = commands.update(repo.ledger, repo.record, fields={"priority": 3})
+    (written,) = commands.update(repo.ledger, repo.record, fields={"priority": 3}, context=CONTEXT)
 
     vault_share.share(repo.clone, repo.state, plan=vault_share.Plan(time.time))
 
@@ -283,13 +290,17 @@ def test_a_vault_claim_answers_with_the_built_exit_codes_and_queues_no_ledger_li
     repo = _seeded(tmp_path, bare)
     before = _ledger_bytes(repo.ledger)
 
-    (landed,) = commands.claim(repo.ledger, repo.record, "someone")
-    again = _refusal(lambda: commands.claim(repo.ledger, repo.record, "someone"))
-    taken = _refusal(lambda: commands.claim(repo.ledger, repo.record, "someone", take=True))
+    (landed,) = commands.claim(repo.ledger, repo.record, "someone", context=CONTEXT)
+    again = _refusal(lambda: commands.claim(repo.ledger, repo.record, "someone", context=CONTEXT))
+    taken = _refusal(
+        lambda: commands.claim(repo.ledger, repo.record, "someone", take=True, context=CONTEXT)
+    )
     monkeypatch.setenv("BASICLY_TRACKER_SESSION", "s2")
-    lost = _refusal(lambda: commands.claim(repo.ledger, repo.record, "someone"))
+    lost = _refusal(lambda: commands.claim(repo.ledger, repo.record, "someone", context=CONTEXT))
     monkeypatch.setenv("BASICLY_TRACKER_SESSION", "")
-    nameless = _refusal(lambda: commands.claim(repo.ledger, repo.record, "someone"))
+    nameless = _refusal(
+        lambda: commands.claim(repo.ledger, repo.record, "someone", context=CONTEXT)
+    )
 
     assert landed.record == repo.record
     assert landed.id
@@ -310,10 +321,10 @@ def _share(repo: Repo) -> None:
 
 def test_a_vault_unassign_by_the_holder_gives_the_record_back(tmp_path: Path, bare: Path) -> None:
     repo = _seeded(tmp_path, bare)
-    commands.claim(repo.ledger, repo.record, "someone")
+    commands.claim(repo.ledger, repo.record, "someone", context=CONTEXT)
     before = _ledger_bytes(repo.ledger)
 
-    (given,) = commands.unassign(repo.ledger, repo.record, "someone")
+    (given,) = commands.unassign(repo.ledger, repo.record, "someone", context=CONTEXT)
     _share(repo)
 
     assert given.record == repo.record
@@ -325,11 +336,11 @@ def test_a_vault_unassign_by_another_exits_3_and_with_take_releases(
     tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _seeded(tmp_path, bare)
-    commands.claim(repo.ledger, repo.record, "someone")
+    commands.claim(repo.ledger, repo.record, "someone", context=CONTEXT)
     monkeypatch.setenv("BASICLY_TRACKER_SESSION", "s2")
 
-    lost = _refusal(lambda: commands.unassign(repo.ledger, repo.record, "other"))
-    commands.unassign(repo.ledger, repo.record, "other", take=True)
+    lost = _refusal(lambda: commands.unassign(repo.ledger, repo.record, "other", context=CONTEXT))
+    commands.unassign(repo.ledger, repo.record, "other", take=True, context=CONTEXT)
     _share(repo)
 
     assert lost["exit"] == vault_claim.LOST
@@ -341,12 +352,16 @@ def test_a_vault_unassign_of_an_unheld_record_exits_1_and_an_unreachable_vault_e
     tmp_path: Path, bare: Path
 ) -> None:
     repo = _seeded(tmp_path, bare)
-    unheld = _refusal(lambda: commands.unassign(repo.ledger, repo.record, "someone"))
+    unheld = _refusal(
+        lambda: commands.unassign(repo.ledger, repo.record, "someone", context=CONTEXT)
+    )
     nowhere = tmp_path / "not-a-vault"
     nowhere.mkdir()
     _with_vault(repo, nowhere)
 
-    unreachable = _refusal(lambda: commands.unassign(repo.ledger, repo.record, "someone"))
+    unreachable = _refusal(
+        lambda: commands.unassign(repo.ledger, repo.record, "someone", context=CONTEXT)
+    )
 
     assert unheld["exit"] == vault_claim.FIX
     assert unreachable["exit"] == vault_claim.UNREACHABLE

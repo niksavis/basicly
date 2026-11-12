@@ -5,7 +5,7 @@ import importlib.util
 import json
 import os
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -403,7 +403,7 @@ def record_process(
     evidence: object,
     *,
     completed: bool = False,
-    redact: Callable[[str], str] | None = None,
+    redact: Any = None,
 ) -> list:
     commands = _load("commands")
     ledger = commands._ledger(directory)

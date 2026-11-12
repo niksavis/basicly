@@ -321,7 +321,7 @@ WALL_CLOCK_ATTRIBUTES = frozenset({"time.time", "time.time_ns", "datetime.now", 
 
 PERMITTED_CLOCK_READS = [("wall_clock", "time.time")]
 
-WALL_CLOCK_CALLERS = [("cli.py", "_run"), ("events.py", "append"), ("vault_write.py", "target_of")]
+WALL_CLOCK_CALLERS = [("cli.py", "_run"), ("events.py", "append")]
 
 
 def _dotted(node: ast.expr) -> str:

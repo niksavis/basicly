@@ -53,6 +53,22 @@ Clock = Callable[[], float]
 Redactor = Callable[[str], str]
 
 
+class NoClockError(events.LedgerError):
+    pass
+
+
+@dataclass(frozen=True)
+class WriteContext:
+    redactor: Redactor | None
+    clock: Clock
+
+
+def parts(given: WriteContext | Redactor | None) -> tuple[Redactor | None, Clock | None]:
+    if isinstance(given, WriteContext):
+        return given.redactor, given.clock
+    return given, None
+
+
 class VaultRefusedError(events.LedgerError):
     def __init__(self, report: Mapping[str, object]) -> None:
         super().__init__(json.dumps(dict(report), sort_keys=True, ensure_ascii=False))
@@ -81,20 +97,23 @@ def config_of(ledger: Path | str) -> Any:
     return vault_config.load(Path(ledger).resolve())
 
 
-def target_of(
-    ledger: Path | str, environ: Mapping[str, str], clock: Clock | None = None
-) -> Target | None:
+def target_of(ledger: Path | str, environ: Mapping[str, str], clock: Clock | None) -> Target | None:
 
     config = config_of(ledger)
     if config is None:
         return None
+    if clock is None:
+        raise NoClockError(
+            f"{config.path} names a vault, and a vault write needs the clock of the write "
+            "context that cli.py builds; run the write through cli.py"
+        )
     state = vault_clone.state_root(environ, Path.home(), windows=os.name == "nt")
     return Target(
         vault_clone.locate(state, config.vault),
         state,
         environ.get(SESSION, ""),
         any(environ.get(name) for name in IMMEDIATE),
-        events.wall_clock(clock),
+        clock,
     )
 
 
@@ -151,10 +170,9 @@ def line_of(event: Any) -> dict[str, object]:
 @dataclass(frozen=True)
 class Write:
     ledger: Path
-    redactor: Redactor | None
+    given: WriteContext | Redactor | None
     lock: Any
     environ: Mapping[str, str]
-    clock: Clock | None = None
 
 
 def land(write: Write, drafts: Sequence[Any], *, repeat: bool = False) -> list:
@@ -162,14 +180,15 @@ def land(write: Write, drafts: Sequence[Any], *, repeat: bool = False) -> list:
     ledger = write.ledger
     actor = writers.writer_class(write.environ)
     drafts = _refused(ledger, drafts, actor)
-    target = target_of(ledger, write.environ, write.clock)
-    with_redact = write.redactor if target is None else _redactor(write.redactor)
+    redactor, clock = parts(write.given)
+    target = target_of(ledger, write.environ, clock)
+    with_redact = redactor if target is None else _redactor(redactor)
     resolved = recurrence.at_the_generation_this_write_needs(
         events, ledger, drafts, repeat=repeat, redact=with_redact
     )
     if target is None:
         return events.append(
-            ledger, resolved, actor=actor, redact=with_redact, held_lock=write.lock
+            ledger, resolved, actor=actor, redact=with_redact, held_lock=write.lock, clock=clock
         )
     clock = target.clock
     minted = _minted(target, ledger, resolved, actor=actor, redact=with_redact, clock=clock)
@@ -190,12 +209,12 @@ def claim(
     ledger: Path,
     record: str,
     environ: Mapping[str, str],
+    given: WriteContext | Redactor | None,
     *,
     take: bool = False,
-    clock: Clock | None = None,
 ) -> list | None:
 
-    target = target_of(ledger, environ, clock)
+    target = target_of(ledger, environ, parts(given)[1])
     if target is None:
         return None
     if take:
@@ -255,12 +274,12 @@ def unassign(
     ledger: Path,
     record: str,
     environ: Mapping[str, str],
+    given: WriteContext | Redactor | None,
     *,
     take: bool = False,
-    clock: Clock | None = None,
 ) -> list | None:
 
-    target = target_of(ledger, environ, clock)
+    target = target_of(ledger, environ, parts(given)[1])
     if target is None:
         return None
     return _answered(release(target, record, take=take), "unassign")

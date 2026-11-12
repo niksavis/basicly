@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +44,7 @@ def assign(
     holder: str,
     *,
     take: bool = False,
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     commands = _load("commands")
@@ -53,7 +52,7 @@ def assign(
     drafts = [_holder_draft(record, holder, take)]
     with events.LedgerLock(ledger) as lock:
         commands._require(ledger, record)
-        return commands._append(ledger, drafts, redact, lock)
+        return commands._append(ledger, drafts, context, lock)
 
 
 def claim(
@@ -62,13 +61,13 @@ def claim(
     holder: str,
     *,
     take: bool = False,
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     commands = _load("commands")
     ledger = commands._ledger(directory)
     environ = commands.environment()
-    if (landed := vault_write.claim(ledger, record, environ, take=take)) is not None:
+    if (landed := vault_write.claim(ledger, record, environ, context, take=take)) is not None:
         return landed
     drafts = [
         _holder_draft(record, holder, take),
@@ -77,7 +76,7 @@ def claim(
     with events.LedgerLock(ledger) as lock:
         state = commands._require(ledger, record)
         holders.refuse_a_claim_on_a_closed_record(state, ledger, record)
-        return commands._append(ledger, drafts, redact, lock)
+        return commands._append(ledger, drafts, context, lock)
 
 
 def unassign(
@@ -86,13 +85,13 @@ def unassign(
     by: str,
     *,
     take: bool = False,
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     commands = _load("commands")
     ledger = commands._ledger(directory)
     environ = commands.environment()
-    if (landed := vault_write.unassign(ledger, record, environ, take=take)) is not None:
+    if (landed := vault_write.unassign(ledger, record, environ, context, take=take)) is not None:
         return landed
     with events.LedgerLock(ledger) as lock:
         holders.refuse_a_release_by_another(commands._require(ledger, record), record, by, take)
@@ -100,4 +99,4 @@ def unassign(
         if take:
             payload[holders.TAKE_KEY] = True
         drafts = [events.Draft(record, events.KIND_FIELD, payload)]
-        return commands._append(ledger, drafts, redact, lock)
+        return commands._append(ledger, drafts, context, lock)
