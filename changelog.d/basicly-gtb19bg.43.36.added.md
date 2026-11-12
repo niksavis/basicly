@@ -1,0 +1,1 @@
+- **The tracker reads a vault repository through its vault view.** When `.basicly-tracker.toml` names a vault, the board, the dependency graph, the gate and label readers and the record readers read the vault view, not `.basicly/ledger`. A vault write mints the seq and id of a record that only the vault holds from that view (basicly-gtb19bg.43.36).

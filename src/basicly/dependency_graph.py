@@ -9,7 +9,7 @@ from basicly import owned_store
 
 def _views(repo_root: Path) -> tuple[Any, Mapping[str, Any]]:
     kit_module = owned_store.kit(repo_root)
-    found = kit_module.read_ledger(owned_store.ledger_dir(repo_root))
+    found = kit_module.read_ledger(owned_store.present_ledger(repo_root))
     return kit_module, kit_module.views_from_events(found)
 
 

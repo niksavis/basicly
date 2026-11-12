@@ -42,6 +42,7 @@ vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
 vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
 vault_hooks = _load("vault_hooks.py", "basicly_tracker_kit_vault_hooks")
 vault_claim = _load("vault_claim.py", "basicly_tracker_kit_vault_claim")
+vault_view = _load("vault_view.py", "basicly_tracker_kit_vault_view")
 
 LEDGER_KIND = "ledger"
 LEDGER_FIELD = "ledger"
@@ -69,6 +70,10 @@ def parts(given: WriteContext | Redactor | None) -> tuple[Redactor | None, Clock
     return given, None
 
 
+class VaultUnreadError(events.LedgerError):
+    pass
+
+
 class VaultRefusedError(events.LedgerError):
     def __init__(self, report: Mapping[str, object]) -> None:
         super().__init__(json.dumps(dict(report), sort_keys=True, ensure_ascii=False))
@@ -88,6 +93,7 @@ class Target:
     session: str
     immediate: bool
     clock: Clock
+    prefix: str
 
     def origin(self) -> Any:
         return vault_queue.Origin(self.session, self.immediate, self.clock)
@@ -114,6 +120,7 @@ def target_of(ledger: Path | str, environ: Mapping[str, str], clock: Clock | Non
         environ.get(SESSION, ""),
         any(environ.get(name) for name in IMMEDIATE),
         clock,
+        config.prefix,
     )
 
 
@@ -147,19 +154,44 @@ def _refused(ledger: Path, drafts: Sequence[Any], actor: str) -> Sequence[Any]:
     return drafts
 
 
-def _minted(target: Target, ledger: Path, drafts: Sequence[Any], **options: Any) -> list:
+def view_of(target: Target, ledger: Path) -> Path:
 
-    records = {draft.record for draft in drafts}
-    seed = [
-        events.to_json(event)
-        for event in events.read_events(ledger)[0]
-        if event.record in records or events.WITHDRAWN_FROM in event.payload
-    ]
+    template = ledger if ledger.is_dir() else None
+    want = vault_view.Want(target.prefix, False, template)
+    try:
+        return vault_view.present(target.clone, want, clock=target.clock)
+    except vault_view.ViewError as exc:
+        raise VaultUnreadError(
+            f"{exc}; the write needs the vault view to mint its seq and id, so nothing is queued"
+        ) from None
+
+
+def _seed(view: Path, ledger: Path, records: set[str]) -> list[str]:
+
+    shown = events.read_events(view)[0]
+    in_view = {event.record for event in shown}
+    held = events.read_events(ledger)[0] if ledger.is_dir() else []
+    found = [event for event in shown if event.record in records]
+    found += [event for event in held if event.record in records - in_view]
+    found += [event for event in (*shown, *held) if events.WITHDRAWN_FROM in event.payload]
+    lines = {event.id: events.to_json(event) for event in found}
+    return list(lines.values())
+
+
+def _minted(
+    target: Target, view: Path, ledger: Path, drafts: Sequence[Any], *, repeat: bool, **options: Any
+) -> list:
+
+    seed = _seed(view, ledger, {draft.record for draft in drafts})
     vault_clone.private(target.clone.folder)
     with tempfile.TemporaryDirectory(dir=target.clone.folder) as scratch:
+        folder = Path(scratch)
         if seed:
-            events.append_lines(Path(scratch) / events.INITIAL_LOG_NAME, seed)
-        return events.append(scratch, drafts, **options)
+            events.append_lines(folder / events.INITIAL_LOG_NAME, seed)
+        resolved = recurrence.at_the_generation_this_write_needs(
+            events, folder, drafts, repeat=repeat, redact=options["redact"]
+        )
+        return events.append(folder, resolved, **options)
 
 
 def line_of(event: Any) -> dict[str, object]:
@@ -182,16 +214,25 @@ def land(write: Write, drafts: Sequence[Any], *, repeat: bool = False) -> list:
     drafts = _refused(ledger, drafts, actor)
     redactor, clock = parts(write.given)
     target = target_of(ledger, write.environ, clock)
-    with_redact = redactor if target is None else _redactor(redactor)
-    resolved = recurrence.at_the_generation_this_write_needs(
-        events, ledger, drafts, repeat=repeat, redact=with_redact
-    )
     if target is None:
+        resolved = recurrence.at_the_generation_this_write_needs(
+            events, ledger, drafts, repeat=repeat, redact=redactor
+        )
         return events.append(
-            ledger, resolved, actor=actor, redact=with_redact, held_lock=write.lock, clock=clock
+            ledger, resolved, actor=actor, redact=redactor, held_lock=write.lock, clock=clock
         )
     clock = target.clock
-    minted = _minted(target, ledger, resolved, actor=actor, redact=with_redact, clock=clock)
+    view = view_of(target, ledger)
+    minted = _minted(
+        target,
+        view,
+        ledger,
+        drafts,
+        repeat=repeat,
+        actor=actor,
+        redact=_redactor(redactor),
+        clock=clock,
+    )
     if minted:
         lines = [line_of(event) for event in minted]
         vault_queue.write(target.clone, lines, state=target.state, origin=target.origin())

@@ -10,7 +10,7 @@ LABELS_FIELD = tracker_argv.LABELS_FIELD
 def owned_labelled(repo_root: Path, label: str) -> dict[str, str]:
 
     kit_module = owned_store.kit(repo_root)
-    found = kit_module.read_ledger(owned_store.ledger_dir(repo_root))
+    found = kit_module.read_ledger(owned_store.present_ledger(repo_root))
     records = kit_module.events.fold(found).records
     return {
         record: state.status or ""

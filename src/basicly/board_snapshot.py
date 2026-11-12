@@ -79,7 +79,7 @@ def _read_and_fold(
 
     try:
         kit = owned_store.kit(repo_root)
-        events = kit.read_ledger(owned_store.ledger_dir(repo_root))
+        events = kit.read_ledger(owned_store.present_ledger(repo_root))
     except owned_store.TrackerDivergenceError, OSError, ValueError:
         return None
     return (
