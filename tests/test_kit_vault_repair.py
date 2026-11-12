@@ -189,3 +189,21 @@ def test_fsck_repair_through_the_cli_prints_the_counts(
     assert code == cli.EXIT_OK
     assert shown["requeue_event"] == 2
     assert shown["claim_lost"] == 1
+
+
+def test_no_basicly_ref_ever_reaches_the_remote_after_share_repair_and_reclone(
+    tmp_path: Path, bare: Path
+) -> None:
+    case = _rewritten(tmp_path, bare)
+    clone, state = case["clone"], case["state"]
+    vault_clone.fetch(clone)
+
+    vault_repair.repair(clone, state)
+    vault_share.share(clone, state)
+    vault_repair.reclone(clone)
+    vault_share.share(clone, state)
+    local = git_runner.run(["for-each-ref", "--format=%(refname)", "refs/basicly/"], clone.bare)
+    remote = git_runner.run(["for-each-ref", "--format=%(refname)"], bare).split()
+
+    assert "refs/basicly/retracted/1" in local.split()
+    assert remote == ["refs/heads/main"]
