@@ -83,20 +83,20 @@ def test_a_missing_session_or_record_exits_1_with_the_fix(
     assert shown["fix"]
 
 
-def test_an_unanswered_ls_remote_exits_5_queues_nothing_and_prints_the_command(
+def test_an_unanswered_fetch_exits_5_queues_nothing_and_prints_the_command(
     tmp_path: Path, bare: Path
 ) -> None:
     clone, state = _machine(tmp_path, bare, "m")
 
     def silent(args: list[str], cwd: Path, **options: Any) -> str:
-        if args[0] == "ls-remote":
-            raise git_runner.GitTimeoutError("git ls-remote did not finish within 5 s")
+        if args[0] == "fetch":
+            raise git_runner.GitTimeoutError("git fetch did not finish within 5 s")
         return git_runner.run(args, cwd, **options)
 
     shown = vault_claim.claim(_ask(clone, state, "s1", runner=silent))
 
     assert shown["exit"] == vault_claim.UNREACHABLE
-    assert shown["check"].startswith("git ls-remote ")
+    assert shown["check"].startswith("git fetch ")
     assert _queued(clone) == []
 
 
@@ -129,9 +129,9 @@ def test_every_git_call_gets_only_the_time_that_remains(tmp_path: Path, bare: Pa
 
     vault_claim.claim(_ask(clone, state, "s1", runner=slow), deadline=4.0)
 
-    probe = timeouts[0]
+    probe = next(t for name, t in timeouts if name == "fetch")
     later = [t for name, t in timeouts if name == "push"]
-    assert probe == ("ls-remote", 4.0) or probe[1] <= vault_claim.PROBE
+    assert probe <= vault_claim.PROBE
     assert all(t <= 4.0 for _name, t in timeouts)
     assert later and all(t < 3.6 for t in later)
 
@@ -271,3 +271,21 @@ def test_proof_t_claim_burst_at_one_tenth_scale_answers_in_time_and_settles(
     assert None not in holders
     assert all(code in (0, 3, 4) for code, _spent in answers)
     assert sum(1 for code, _spent in answers if code == 0) <= 1
+
+
+def test_an_uncontended_claim_fetches_once_and_never_probes_with_ls_remote(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    verbs: list[str] = []
+
+    def counting(args: list[str], cwd: Path, **options: Any) -> str:
+        verbs.append("push" if "push" in args else args[0])
+        return git_runner.run(args, cwd, **options)
+
+    shown = vault_claim.claim(_ask(clone, state, "s1", runner=counting))
+
+    assert shown["exit"] == vault_claim.LANDED
+    assert verbs.count("fetch") == 1
+    assert "ls-remote" not in verbs
+    assert verbs.count("push") == 1

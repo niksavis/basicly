@@ -59,6 +59,7 @@ class Plan:
     deadline_s: float = 10.0
     attempts: int = BULK_ATTEMPTS
     lock_wait: float | None = None
+    fresh: bool = False
 
 
 def _text(lines: Sequence[Mapping[str, object]]) -> str:
@@ -193,9 +194,12 @@ def share(
         while True:
             attempt += 1
             budget = _budget(plan, started, clock)
-            fetched = vault_clone.fetch(
-                clone, clock=plan.wall, runner=runner, timeout=budget, lock_wait=budget
-            )
+            if attempt == 1 and plan.fresh:
+                fetched = {"head": vault_clone.ref(clone, vault_clone.HEAD_REF, runner, budget)}
+            else:
+                fetched = vault_clone.fetch(
+                    clone, clock=plan.wall, runner=runner, timeout=budget, lock_wait=budget
+                )
             head = str(fetched["head"])
             if fetched.get("retracted") or vault_clone.unrepaired(clone, runner, budget):
                 raise ShareError(

@@ -35,6 +35,7 @@ vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
 
 DEADLINE = 30.0
 PROBE = 5.0
+FRESH = 1.0
 LANDED = 0
 FIX = 1
 LOST = 3
@@ -107,13 +108,19 @@ def _check(ask: Ask, budget: _Budget, writer: str) -> dict[str, object] | None:
 
     clone = ask.clone
     vault_clone.private(clone.folder)
-    probe = ["ls-remote", clone.url, "refs/heads/main"]
+    check = f"git fetch {clone.url} refs/heads/main"
     try:
-        ask.runner(probe, clone.folder, timeout=budget.left(PROBE), allow_file=clone.allow_file)
-    except git_runner.GitRunnerError:
-        return {"exit": UNREACHABLE, "record": ask.record, "check": "git " + " ".join(probe)}
-    left = budget.left()
-    vault_clone.fetch(clone, clock=ask.clock, runner=ask.runner, timeout=left, lock_wait=left)
+        fetched = vault_clone.fetch(
+            clone,
+            clock=ask.clock,
+            runner=ask.runner,
+            timeout=budget.left(PROBE),
+            lock_wait=budget.left(),
+        )
+    except vault_clone.CloneError:
+        fetched = {"fetched": False}
+    if not fetched.get("fetched"):
+        return {"exit": UNREACHABLE, "record": ask.record, "check": check}
     held = holder(clone, ask.record)
     if held == (writer, ask.session):
         mine = {"writer": writer, "session": ask.session}
@@ -121,13 +128,14 @@ def _check(ask: Ask, budget: _Budget, writer: str) -> dict[str, object] | None:
     return None if held is None else _held_elsewhere(ask.record, clone.url, held)
 
 
-def _land(ask: Ask, budget: _Budget, writer: str) -> dict[str, object]:
+def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[str, object]:
 
     clone, record = ask.clone, ask.record
     origin = vault_queue.Origin(ask.session, False, ask.clock)
     draft = {"kind": "claim", "record": record}
     made = vault_queue.write(clone, [draft], state=ask.state, origin=origin)["events"][0]
-    plan = vault_share.Plan(ask.clock, urgent=True, deadline_s=budget.left())
+    fresh = fetched_left - budget.left() < FRESH
+    plan = vault_share.Plan(ask.clock, urgent=True, deadline_s=budget.left(), fresh=fresh)
     try:
         vault_share.share(clone, ask.state, plan=plan, runner=ask.runner)
     except (
@@ -147,7 +155,7 @@ def _land(ask: Ask, budget: _Budget, writer: str) -> dict[str, object]:
 def _attempt(ask: Ask, budget: _Budget) -> dict[str, object]:
     writer = vault_queue.writer_of(ask.state)
     early = _check(ask, budget, writer)
-    return early if early is not None else _land(ask, budget, writer)
+    return early if early is not None else _land(ask, budget, writer, budget.left())
 
 
 def claim(
