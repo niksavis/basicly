@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -153,7 +154,9 @@ def write(
             cap = events.MAX_TEXT_BYTES
             raise QueueError(f"the {line['kind']} is above {cap} bytes after redaction; shorten it")
     queue = clone.folder / QUEUE_NAME
+    asked = time.monotonic()
     with events.LedgerLock(clone.folder):
+        waited = time.monotonic() - asked
         torn = _cut_torn(queue)
         _append(queue, lines)
         waiting = pending(queue)
@@ -165,4 +168,5 @@ def write(
         "oldest_age_s": round(max(0.0, now - min(times)), 1) if times else 0.0,
         "share": "immediate" if origin.immediate else SHARED_BY,
         "torn": torn,
+        "lock_wait_s": round(waited, 3),
     }

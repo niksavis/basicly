@@ -49,6 +49,7 @@ vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
 vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
 vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
 vault_repair = _load("vault_repair.py", "basicly_tracker_kit_vault_repair")
+vault_hooks = _load("vault_hooks.py", "basicly_tracker_kit_vault_hooks")
 events = snapshot.events
 ids = events.ids
 
@@ -316,21 +317,21 @@ def _state(args: argparse.Namespace) -> Path:
 
 
 def _fetch_vault(args: argparse.Namespace) -> dict[str, object]:
-    return vault_clone.fetch(vault_clone.locate(_state(args), args.vault), timeout=args.timeout)
+    state = _state(args)
+    clone = vault_clone.locate(state, args.vault)
+    fetched = vault_clone.fetch(clone, timeout=args.timeout)
+    return {**fetched, "shared": vault_hooks.due_share(clone, state, time.time)}
 
 
 def _queue_comment(args: argparse.Namespace) -> dict[str, object]:
     state = _state(args)
-    return vault_queue.write(
-        vault_clone.locate(state, args.vault),
-        [vault_queue.comment(args.record, args.text)],
-        state=state,
-        origin=vault_queue.Origin(
-            os.environ.get("BASICLY_TRACKER_SESSION", ""),
-            any(os.environ.get(name) for name in ("CI", "BASICLY_TRACKER_EPHEMERAL")),
-            time.time,
-        ),
+    clone = vault_clone.locate(state, args.vault)
+    now = any(os.environ.get(name) for name in ("CI", "BASICLY_TRACKER_EPHEMERAL"))
+    origin = vault_queue.Origin(os.environ.get("BASICLY_TRACKER_SESSION", ""), now, time.time)
+    queued = vault_queue.write(
+        clone, [vault_queue.comment(args.record, args.text)], state=state, origin=origin
     )
+    return {**queued, "shared": vault_hooks.due_share(clone, state, time.time, now=now)}
 
 
 _VAULT: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
@@ -338,6 +339,10 @@ _VAULT: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
     "vault-show": _vault_show,
     "fetch": _fetch_vault,
     "comment-vault": _queue_comment,
+    "hook-vault": lambda a: vault_hooks.hook(
+        a.event, vault_clone.locate(_state(a), a.vault), _state(a)
+    ),
+    "status-vault": lambda a: vault_hooks.status(vault_clone.locate(_state(a), a.vault)),
     "fsck-vault": lambda a: vault_repair.check(
         vault_clone.locate(_state(a), a.vault), _state(a), vars(a)
     ),

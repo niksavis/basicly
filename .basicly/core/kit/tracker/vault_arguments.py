@@ -39,9 +39,21 @@ def reclone() -> argparse.ArgumentParser:
     return _form("reclone", "clone a vault again, keeping its refs", "reclone-vault")
 
 
+def hook() -> argparse.ArgumentParser:
+    parser = _form("hook", "fetch or share from an agent hook", "hook-vault")
+    parser.add_argument("event", choices=["session-start", "prompt", "stop", "session-end"])
+    return parser
+
+
+def status() -> argparse.ArgumentParser:
+    return _form("status", "show the data age without a network call", "status-vault")
+
+
 FORMS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "comment": comment,
     "sync": sync,
     "fsck": fsck,
     "reclone": reclone,
+    "hook": hook,
+    "status": status,
 }

@@ -45,6 +45,7 @@ VALID_NAME = "valid.ids"
 COVERS_NAME = "valid.at"
 QUARANTINE_NAME = "quarantine.jsonl"
 ENDED_NAME = "ended.json"
+WRITERS_NAME = "writers.json"
 AFTER_ENDED = "ended: nothing after a valid end counts"
 LOCK_WAIT = 2 * git_runner.DEFAULT_TIMEOUT + 10
 
@@ -157,6 +158,19 @@ def ended(clone: Clone) -> dict[str, object] | None:
     return json.loads(text) if text else None
 
 
+def writers(clone: Clone) -> dict[str, dict]:
+    text = _read(clone.folder / WRITERS_NAME)
+    return json.loads(text) if text else {}
+
+
+def _latest(found: list) -> dict[str, dict]:
+    return {
+        str(event.get("writer")): {key: event.get(key) for key in ("id", "kind", "at")}
+        for event in found
+        if event.get("writer")
+    }
+
+
 def valid_ids(clone: Clone) -> set[str]:
     return set(_read(clone.folder / VALID_NAME).split())
 
@@ -169,6 +183,7 @@ def quarantine(clone: Clone) -> list[dict[str, object]]:
 def _verdicts(clone: Clone, commits: list[str], stop: dict | None) -> tuple:
 
     ids: list[str] = []
+    found: list[dict] = []
     held: list[dict[str, object]] = []
     for commit in commits:
         verdict = None if stop else vault_shapes.classify(clone.bare, commit)
@@ -176,8 +191,9 @@ def _verdicts(clone: Clone, commits: list[str], stop: dict | None) -> tuple:
             held.append({"commit": commit, "rule": verdict.rule if verdict else AFTER_ENDED})
             continue
         ids += [str(event["id"]) for event in verdict.events if event.get("id")]
+        found += list(verdict.events)
         stop = next((e for e in verdict.events if e.get("kind") == vault_shapes.STOP_KIND), None)
-    return ids, held, stop
+    return ids, held, stop, _latest(found)
 
 
 def retracted(clone: Clone, runner: Runner, timeout: float) -> dict[str, str]:
@@ -220,12 +236,14 @@ def _advance(clone: Clone, head: str, runner: Runner, timeout: float) -> dict[st
         return {"seen": seen, "moved": False, "retracted": True, "quarantined": []}
     whole = not seen or _read(clone.folder / COVERS_NAME).strip() != seen
     new = chain if whole else chain[chain.index(seen) + 1 :]
-    ids, held, stop = _verdicts(clone, new, None if whole else ended(clone))
+    ids, held, stop, latest = _verdicts(clone, new, None if whole else ended(clone))
     durable(clone.folder / VALID_NAME, "".join(f"{i}\n" for i in ids), append=not whole)
     lines = "".join(json.dumps(entry, sort_keys=True) + "\n" for entry in held)
     durable(clone.folder / QUARANTINE_NAME, lines, append=not whole)
     if stop is not None or whole:
         durable(clone.folder / ENDED_NAME, json.dumps(stop) if stop else "")
+    known = {} if whole else writers(clone)
+    durable(clone.folder / WRITERS_NAME, json.dumps({**known, **latest}, sort_keys=True))
     durable(clone.folder / COVERS_NAME, f"{head}\n")
     if head != seen:
         runner(["update-ref", SEEN_REF, head, seen or "0" * len(head)], clone.bare, timeout=timeout)

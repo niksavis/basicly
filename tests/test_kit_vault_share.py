@@ -74,7 +74,11 @@ def test_a_share_pushes_one_batch_commit_and_empties_the_queue(tmp_path: Path, b
     shown = vault_share.share(clone, state)
     head = git_runner.run(["rev-parse", "main"], bare).strip()
 
-    assert shown == {"shared": 3, "head": head, "pending": 0}
+    assert {key: shown[key] for key in ("shared", "head", "pending")} == {
+        "shared": 3,
+        "head": head,
+        "pending": 0,
+    }
     assert vault_shapes.classify(bare, head).shape == "batch"
     assert sorted(_ids(bare)) == sorted(written)
     tracked = git_runner.run(["rev-parse", vault_clone.HEAD_REF], clone.bare).strip()
@@ -228,8 +232,9 @@ def test_a_share_that_crashes_at_any_step_leaves_each_event_once_after_the_next_
 
 
 def test_sync_vault_prints_the_shared_count_and_the_new_head(
-    tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(cli.vault_hooks, "slot_due", lambda *_: False)
     state = tmp_path / "s"
     cli.main(["comment", "acme-a1b2", "--vault", str(bare), "--text", "hi", "--state", str(state)])
     capsys.readouterr()

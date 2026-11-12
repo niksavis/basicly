@@ -39,6 +39,13 @@ def origin(tmp_path: Path) -> Vault:
 
 
 @pytest.fixture(autouse=True)
+def _slot_never_due(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys.modules["basicly_tracker_kit_vault_hooks"], "slot_due", lambda *_: False
+    )
+
+
+@pytest.fixture(autouse=True)
 def _no_ci(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("CI", "BASICLY_TRACKER_EPHEMERAL", "BASICLY_TRACKER_SESSION"):
         monkeypatch.delenv(name, raising=False)

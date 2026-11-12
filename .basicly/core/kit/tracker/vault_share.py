@@ -35,6 +35,7 @@ vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
 SEGMENT_BYTES = 1 << 20
 BULK_ATTEMPTS = 5
 SHARE_LOCK = "share"
+SHARED_AT = "shared.at"
 SIGNED_ONLY = (
     "the vault refused unsigned commits; share commits are unsigned and authored by the writer "
     "id, so turn off required commit signatures for the vault repository"
@@ -176,7 +177,11 @@ def share(
     started = clock()
     writer = vault_queue.writer_of(state)
     wait = _budget(plan, started, clock) if plan.urgent else vault_clone.LOCK_WAIT
+    asked = time.monotonic()
     with events.LedgerLock(clone.folder / SHARE_LOCK, timeout_s=wait):
+        waited = round(time.monotonic() - asked, 3)
+        if not prune(clone):
+            return {"shared": 0, "pending": 0, "lock_wait_s": waited}
         attempt = 0
         while True:
             attempt += 1
@@ -193,7 +198,7 @@ def share(
                 return _stopped(head, stop, clone)
             batch = [line for line in prune(clone) if line.get("writer") == writer]
             if not batch:
-                return {"shared": 0, "head": head, "pending": 0}
+                return {"shared": 0, "head": head, "pending": 0, "lock_wait_s": waited}
 
             def git(args: list[str], budget: float = budget, **options: Any) -> str:
                 return runner(args, clone.bare, timeout=budget, **options)
@@ -210,5 +215,7 @@ def share(
                     f"the vault refused the share {attempt} times; "
                     f"{len(batch)} events stay queued; run sync again"
                 ) from None
+            vault_clone.durable(clone.folder / SHARED_AT, f"{time.time()}\n")
             vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
-            return {"shared": len(batch), "head": commit, "pending": len(prune(clone))}
+            left = len(prune(clone))
+            return {"shared": len(batch), "head": commit, "pending": left, "lock_wait_s": waited}

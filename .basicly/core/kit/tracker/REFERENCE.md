@@ -191,6 +191,18 @@ Windows), else under `~/.local/state`.
 python3 .basicly/kit/tracker/cli.py fetch --vault path/to/vault.git
 ```
 
+`hook EVENT --vault` runs from an agent hook and never fails the agent. `session-start` and
+`prompt` fetch with a 3 s deadline at most every 20 s, then share only when this clone's bulk
+slot is due (180 s after its last share). `stop` and `session-end` share the whole queue. A
+person's write shares at once when the slot is due; otherwise a later `fetch` or write shares
+it. `status --vault` makes no network call: it prints the fetch age, the last shared event and
+its age per writer, the queued count and the oldest queued age, and any unrepaired retraction.
+
+```sh
+python3 .basicly/kit/tracker/cli.py hook stop --vault path/to/vault.git
+python3 .basicly/kit/tracker/cli.py status --vault path/to/vault.git
+```
+
 ### delete
 
 Tombstone a record. Its id is never reused.
