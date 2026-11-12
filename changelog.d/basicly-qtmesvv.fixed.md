@@ -1,0 +1,1 @@
+- **Only the holder can give a claimed record back.** `unassign` is refused when the writer is not the current holder and names that holder; `--by` names who gives it back (default `git config user.name`), and `--take` releases another holder's record on purpose, which the ledger records (basicly-qtmesvv).

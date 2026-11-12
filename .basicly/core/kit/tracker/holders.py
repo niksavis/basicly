@@ -121,6 +121,18 @@ def refuse(states: Mapping[str, Any], drafts: Sequence[Any]) -> None:
         )
 
 
+def refuse_a_release_by_another(state: Any, record: str, by: str, take: bool) -> None:
+
+    holder = str(state.fields.get(HOLDER_FIELD) or "")
+    if not holder or holder == by or take:
+        return
+    since = state.dates.get(events.DATE_ASSIGNED) or "an unknown time"
+    raise fields.RefusedFieldError(
+        f"{record} is held by {holder} since {since}, not by {by}; only the holder gives it "
+        f"back, or pass --take to release it on purpose, which the ledger records"
+    )
+
+
 IN_PROGRESS = "in_progress"
 
 

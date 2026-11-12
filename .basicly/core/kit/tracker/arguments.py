@@ -244,13 +244,19 @@ def _add_write_parsers(sub: Any) -> None:
     settle.add_argument("directory", help=DIRECTORY_HELP)
     settle.add_argument("record", help="the record id")
 
-    release = sub.add_parser("unassign", help="give a reserved record back")
-    release.add_argument("directory", help=DIRECTORY_HELP)
-    release.add_argument("record", help="the record id")
+    _add_release_parser(sub)
 
     removal = sub.add_parser("delete", help="tombstone a record; its id is never reused")
     removal.add_argument("directory", help=DIRECTORY_HELP)
     removal.add_argument("record", help="the record id")
+
+
+def _add_release_parser(sub: Any) -> None:
+    release = sub.add_parser("unassign", help="give a reserved record back")
+    release.add_argument("directory", help=DIRECTORY_HELP)
+    release.add_argument("record", help="the record id")
+    release.add_argument("--by", default="", help="who gives it back; default: git user.name")
+    release.add_argument("--take", action="store_true", help="release another holder's record")
 
 
 def _add_config_parser(sub: Any) -> None:

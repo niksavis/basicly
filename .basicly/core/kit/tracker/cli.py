@@ -155,7 +155,9 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
         a.directory, a.record, _holder(a), take=a.take, redact=r
     ),
     "claim": lambda a, r: commands.claim(a.directory, a.record, _holder(a), take=a.take, redact=r),
-    "unassign": lambda a, r: commands.unassign(a.directory, a.record, redact=r),
+    "unassign": lambda a, r: commands.unassign(
+        a.directory, a.record, _releaser(a), take=a.take, redact=r
+    ),
     "resolve": lambda a, r: commands.resolve(a.directory, a.record, redact=r),
     "acknowledge-loss": lambda a, r: fsck.recovery.acknowledge(
         a.directory,
@@ -168,6 +170,10 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
 
 def _holder(args: argparse.Namespace) -> str:
     return getattr(args, "to", "") or commands.holders.default_holder(Path.cwd())
+
+
+def _releaser(args: argparse.Namespace) -> str:
+    return getattr(args, "by", "") or commands.holders.default_holder(Path.cwd())
 
 
 def _compacted(args: argparse.Namespace) -> dict[str, object]:

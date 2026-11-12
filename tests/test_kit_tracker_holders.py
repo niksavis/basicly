@@ -135,8 +135,49 @@ def test_unassign_frees_the_story_and_ready_names_holders(
     monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
     assert _run(capsys, "ready", str(ledger), "--mine")[1]["count"] == 0
 
-    _run(capsys, "unassign", str(ledger), record)
+    _run(capsys, "unassign", str(ledger), record, "--by", "alex")
     assert _run(capsys, "show", str(ledger), record)[1]["holder"] is None
+
+
+def test_unassign_by_someone_other_than_the_holder_is_refused_and_keeps_the_holder(
+    story: tuple[Path, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger, record = story
+    _run(capsys, "claim", str(ledger), record, "--to", "alex")
+
+    code, refused = _run(capsys, "unassign", str(ledger), record, "--by", "sam")
+
+    assert code == cli.EXIT_REFUSED
+    assert "held by alex" in refused["refused"]
+    assert "--take" in refused["refused"]
+    assert _run(capsys, "show", str(ledger), record)[1]["holder"]["name"] == "alex"
+
+
+def test_unassign_with_take_releases_another_holders_record_and_records_the_take(
+    story: tuple[Path, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger, record = story
+    _run(capsys, "claim", str(ledger), record, "--to", "alex")
+
+    code, _ = _run(capsys, "unassign", str(ledger), record, "--by", "sam", "--take")
+
+    assert code == cli.EXIT_OK
+    assert _run(capsys, "show", str(ledger), record)[1]["holder"] is None
+    lines = [
+        json.loads(line)
+        for path in sorted(ledger.glob("*.jsonl"))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    release = [
+        line["payload"]
+        for line in lines
+        if line.get("record") == record
+        and line.get("kind") == "field"
+        and line["payload"].get("name") == "assignee"
+        and line["payload"].get("value") == ""
+    ]
+    assert release and release[-1].get("taken") is True
 
 
 def test_a_holder_name_comes_from_the_git_config_and_its_absence_is_refused(

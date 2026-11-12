@@ -419,13 +419,20 @@ def claim(
 
 
 def unassign(
-    directory: Path | str, record: str, *, redact: Callable[[str], str] | None = None
+    directory: Path | str,
+    record: str,
+    by: str,
+    *,
+    take: bool = False,
+    redact: Callable[[str], str] | None = None,
 ) -> list:
 
     ledger = _ledger(directory)
     with events.LedgerLock(ledger) as lock:
-        _require(ledger, record)
-        payload = {"name": holders.HOLDER_FIELD, "value": ""}
+        holders.refuse_a_release_by_another(_require(ledger, record), record, by, take)
+        payload: dict[str, object] = {"name": holders.HOLDER_FIELD, "value": ""}
+        if take:
+            payload[holders.TAKE_KEY] = True
         return _append(ledger, [events.Draft(record, events.KIND_FIELD, payload)], redact, lock)
 
 

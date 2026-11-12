@@ -136,10 +136,13 @@ python3 .basicly/kit/tracker/cli.py resolve .basicly/ledger acme-a1b2
 
 ### unassign
 
-Give a reserved record back.
+Give a reserved record back. Only its holder can do this: `--by` names who gives it back
+(default: `git config user.name`). Anyone else is refused with the holder's name. To release
+another holder's record on purpose, pass `--take`, which the ledger records.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2
+python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2 --take
 ```
 
 ### delete
