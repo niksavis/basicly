@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,7 @@ beans = _load("beans.py", "basicly_tracker_kit_beans")
 vault_shapes = _load("vault_shapes.py", "basicly_tracker_kit_vault_shapes")
 vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
 vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
+vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
 events = snapshot.events
 ids = events.ids
 
@@ -304,15 +306,35 @@ def _vault_show(args: argparse.Namespace) -> dict[str, object]:
     return vault_fold.view(vault_fold.fold(found).record(args.record))
 
 
+def _state(args: argparse.Namespace) -> Path:
+    return Path(
+        args.state or vault_clone.state_root(os.environ, Path.home(), windows=os.name == "nt")
+    )
+
+
 def _fetch_vault(args: argparse.Namespace) -> dict[str, object]:
-    state = args.state or vault_clone.state_root(os.environ, Path.home(), windows=os.name == "nt")
-    return vault_clone.fetch(vault_clone.locate(Path(state), args.vault), timeout=args.timeout)
+    return vault_clone.fetch(vault_clone.locate(_state(args), args.vault), timeout=args.timeout)
+
+
+def _queue_comment(args: argparse.Namespace) -> dict[str, object]:
+    state = _state(args)
+    return vault_queue.write(
+        vault_clone.locate(state, args.vault),
+        [vault_queue.comment(args.record, args.text)],
+        state=state,
+        origin=vault_queue.Origin(
+            os.environ.get("BASICLY_TRACKER_SESSION", ""),
+            any(os.environ.get(name) for name in ("CI", "BASICLY_TRACKER_EPHEMERAL")),
+            time.time,
+        ),
+    )
 
 
 _VAULT: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
     "vault-check": lambda a: vault_shapes.report(a.vault, a.ref),
     "vault-show": _vault_show,
     "fetch": _fetch_vault,
+    "comment-vault": _queue_comment,
 }
 
 
@@ -376,7 +398,9 @@ def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None)
 
 def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | None = None) -> int:
 
-    args = arguments.parser().parse_args(argv)
+    argv = list(sys.argv[1:] if argv is None else argv)
+    vault = argv[:1] == ["comment"] and "--vault" in argv
+    args = (arguments.vault_comment() if vault else arguments.parser()).parse_args(argv)
     code, report = invoke(args, redact)
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:

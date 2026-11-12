@@ -1,0 +1,1 @@
+- The tracker command `comment RECORD --vault VAULT --text TEXT` queues a comment beside the vault clone instead of the ledger. A stdlib redactor in the kit replaces credential shapes and absolute paths first. The command prints the queued count, the oldest age and what shares it next; `CI` or `BASICLY_TRACKER_EPHEMERAL` asks for an immediate share.

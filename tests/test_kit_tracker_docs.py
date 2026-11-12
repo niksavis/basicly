@@ -33,7 +33,8 @@ REFUSED_ON_A_FRESH_LEDGER = {
     "sync": "mirrors no other tracker",
     "vault-check": "vault-check could not read",
     "vault-show": "vault-check could not read",
-    "fetch": "is neither a local repository folder",
+    "fetch --vault": "is neither a local repository folder",
+    "comment --vault": "is neither a local repository folder",
 }
 LEFT_BEHIND = frozenset({".basicly", ".git", ".gitattributes", ".gitignore", ".agents", ".claude"})
 LEFT_BEHIND |= {"issues.jsonl", "tracker-board.html"}
@@ -232,7 +233,7 @@ def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path
     done = _run(repo, argv)
 
     report = json.loads(done.stdout)
-    expected = REFUSED_ON_A_FRESH_LEDGER.get(argv[0])
+    expected = REFUSED_ON_A_FRESH_LEDGER.get(argv[0] + (" --vault" if "--vault" in argv else ""))
     if expected is not None:
         assert expected in str(report.get("refused")), report
         return

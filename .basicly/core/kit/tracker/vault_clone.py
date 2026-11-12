@@ -92,7 +92,7 @@ def locate(state: Path, vault: str) -> Clone:
     return Clone(url, Path(state) / "vaults" / name, allow_file)
 
 
-def _private(path: Path) -> None:
+def private(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
         path.chmod(0o700)
@@ -156,8 +156,8 @@ def fetch(
     clock: Callable[[], float] = time.time,
 ) -> dict[str, object]:
 
-    _private(clone.folder.parent.parent)
-    _private(clone.folder)
+    private(clone.folder.parent.parent)
+    private(clone.folder)
     stamp = clone.folder / FETCHED_NAME
     with events.LedgerLock(clone.folder / "fetch", timeout_s=lock_wait):
         _ensure(clone, runner, timeout)

@@ -74,6 +74,16 @@ full source prose, including notes above this limit.
 python3 .basicly/kit/tracker/cli.py comment .basicly/ledger acme-a1b2 "The export drops a trailing newline."
 ```
 
+With `--vault`, the comment goes to the vault's queue beside its clone instead of the ledger. Every
+string in the event is redacted first: credential shapes and absolute paths become
+`<redacted:rule>` markers. The command prints the queued count, the age of the oldest queued
+event and what shares the queue next. Where `CI` or `BASICLY_TRACKER_EPHEMERAL` is set, it asks
+for an immediate share. A queue line torn by a crash is cut back and reported.
+
+```sh
+python3 .basicly/kit/tracker/cli.py comment acme-a1b2 --vault path/to/vault.git --text "The export drops a trailing newline."
+```
+
 ### dep
 
 Record that the first record waits on the second. `--type` sets the edge type, `blocks`
