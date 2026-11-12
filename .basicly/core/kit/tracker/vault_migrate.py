@@ -78,12 +78,6 @@ def ledger_events(ledger: Path | str) -> list:
             f"{len(unreadable)} ledger line(s) do not parse, first {first.path.name}:"
             f"{first.line_number}; run fsck on the ledger and repair it, then migrate again"
         )
-    header = snapshot.read_header(snapshot.snapshot_path(ledger))
-    if header is not None and header.event_count > len(found):
-        raise MigrateError(
-            f"{snapshot.SNAPSHOT_NAME} folded {header.event_count} events and the ledger "
-            f"logs hold {len(found)}; restore the missing log files, then migrate again"
-        )
     return events.canonical_order(found)
 
 
@@ -136,11 +130,21 @@ def line_of(event: Any, writer: str, at: float) -> dict[str, object]:
     }
 
 
+def shared_line(event: Any, plan: Import, at: float) -> dict[str, object]:
+    return redact.event(line_of(scrub(event, plan.redactor), plan.writer, at))
+
+
 def digest(found: Sequence[Any], records: Collection[str]) -> str:
 
     folded = events.fold(found).records
+    carried: dict[str, list] = {}
+    for event in events.canonical_order(found):
+        carried.setdefault(event.record, []).append([event.id, event.kind, dict(event.payload)])
     body = {
-        name: snapshot.record_to_dict(folded[name]) if name in folded else None
+        name: [
+            snapshot.record_to_dict(folded[name]) if name in folded else None,
+            carried.get(name, []),
+        ]
         for name in sorted(records)
     }
     text = json.dumps(body, sort_keys=True, ensure_ascii=False)
@@ -161,7 +165,7 @@ def _header_bytes(writer: str) -> int:
     return len(_text([{"kind": vault_shapes.SEGMENT_KIND, "writer": writer}]))
 
 
-def _refuse_a_second_import(clone: Any, clean: Sequence[Any]) -> None:
+def _refuse_a_second_import(clone: Any, found: Sequence[Any]) -> None:
 
     held = {
         str(line[vault_view.LEDGER_FIELD].get("id"))
@@ -169,10 +173,10 @@ def _refuse_a_second_import(clone: Any, clean: Sequence[Any]) -> None:
         if line.get("kind") == vault_view.LEDGER_KIND
         and isinstance(line.get(vault_view.LEDGER_FIELD), dict)
     }
-    again = [event.id for event in clean if event.id in held]
+    again = [event.id for event in found if event.id in held]
     if again:
         raise MigrateError(
-            f"the vault already carries {len(again)} of the {len(clean)} events, first "
+            f"the vault already carries {len(again)} of the {len(found)} events, first "
             f"{again[0]}; this source was migrated before, so nothing was pushed"
         )
 
@@ -204,7 +208,7 @@ def _refuse(name: str, given: tuple, made: tuple, outcome: str) -> None:
         )
 
 
-def _verified(plan: Import, head: str, lines: list, source: list) -> dict[str, object]:
+def _verified(plan: Import, head: str, lines: list, source: Sequence[Any]) -> dict[str, object]:
 
     def git(args: list[str], **options: Any) -> str:
         return plan.runner(args, plan.clone.bare, **options)
@@ -232,8 +236,12 @@ def to_vault(found: Sequence[Any], plan: Import) -> dict[str, object]:
     if not found:
         raise MigrateError("the source holds no events, so there is nothing to migrate")
     at = plan.clock()
-    clean = [scrub(event, plan.redactor) for event in found]
-    lines = [line_of(event, plan.writer, at) for event in clean]
+    lines = [shared_line(event, plan, at) for event in found]
+    redacted = sum(
+        1
+        for index, event in enumerate(found)
+        if lines[index][vault_view.LEDGER_FIELD] != json.loads(events.to_json(event))
+    )
     largest = max((len(_text([line])) for line in lines), default=0)
     if largest > COMMIT_BYTES - _header_bytes(plan.writer):
         raise MigrateError(
@@ -241,8 +249,8 @@ def to_vault(found: Sequence[Any], plan: Import) -> dict[str, object]:
         )
     for _attempt in range(vault_share.BULK_ATTEMPTS):
         fetched = vault_clone.fetch(plan.clone, clock=plan.clock, runner=plan.runner)
-        _refuse_a_second_import(plan.clone, clean)
-        shown = _verified(plan, str(fetched["head"]), lines, clean)
+        _refuse_a_second_import(plan.clone, found)
+        shown = _verified(plan, str(fetched["head"]), lines, found)
         try:
             vault_share._push(
                 plan.clone, str(shown["tip"]), plan.runner, git_runner.DEFAULT_TIMEOUT
@@ -252,7 +260,7 @@ def to_vault(found: Sequence[Any], plan: Import) -> dict[str, object]:
         vault_clone.settle(plan.clone, runner=plan.runner)
         return {
             **shown,
-            "redacted": sum(1 for index, old in enumerate(found) if clean[index] != old),
+            "redacted": redacted,
             "not_in_view": len(lines) - len(vault_view.carried(lines, EVERY_PROJECT)),
         }
     raise MigrateError(
