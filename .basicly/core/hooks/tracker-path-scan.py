@@ -18,6 +18,9 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 _IDENTITY_RULE = "machine-username"
 _MIN_IDENTITY_LENGTH = 4
+_FIELD_KIND = "field"
+_CREATED_KIND = "created"
+_HOLDER_FIELD = "assignee"
 
 
 def identity_pattern() -> re.Pattern[str] | None:
@@ -59,11 +62,33 @@ def _strings(value: object) -> list[str]:
     return []
 
 
-def rule_hit(texts: list[str], identity: re.Pattern[str] | None = None) -> str | None:
+def _holder_key(event: object) -> str | None:
+    if not isinstance(event, dict) or not isinstance(payload := event.get("payload"), dict):
+        return None
+    if event.get("kind") == _FIELD_KIND and payload.get("name") == _HOLDER_FIELD:
+        return "value"
+    if event.get("kind") == _CREATED_KIND and _HOLDER_FIELD in payload:
+        return _HOLDER_FIELD
+    return None
+
+
+def _outside_holder(event: object) -> object:
+    key = _holder_key(event)
+    if key is None or not isinstance(event, dict):
+        return event
+    return {**event, "payload": {k: v for k, v in event["payload"].items() if k != key}}
+
+
+def rule_hit(
+    texts: list[str],
+    identity: re.Pattern[str] | None = None,
+    named: list[str] | None = None,
+) -> str | None:
     for rule, pattern in _RULES:
         if any(pattern.search(text) for text in texts):
             return rule
-    if identity is not None and any(identity.search(text) for text in texts):
+    checked = texts if named is None else named
+    if identity is not None and any(identity.search(text) for text in checked):
         return _IDENTITY_RULE
     return None
 
@@ -75,10 +100,11 @@ def findings(path: str, content: str) -> list[tuple[str, int, str]]:
         if not line.strip():
             continue
         try:
-            texts = _strings(json.loads(line))
+            event = json.loads(line)
         except json.JSONDecodeError:
-            texts = [line]
-        if rule := rule_hit(texts, identity):
+            event = line
+        texts = _strings(event)
+        if rule := rule_hit(texts, identity, _strings(_outside_holder(event))):
             hits.append((path, lineno, rule))
     return hits
 

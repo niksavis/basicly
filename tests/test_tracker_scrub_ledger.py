@@ -318,3 +318,81 @@ def test_duplicate_optional_field_presence_still_refuses_scrub_before_any_rewrit
         tracker.scrub_ledger(repo, display_name=USERNAME)
 
     assert {one: one.read_bytes() for one in before} == before
+
+
+def _kind_event(repo: Path, seq: int, kind: str, actor: str, payload: dict) -> dict:
+    kit = tracker.kit(repo)
+    return {
+        "id": kit.events.event_id_for("basicly-a", kind, payload),
+        "record": "basicly-a",
+        "seq": seq,
+        "kind": kind,
+        "actor": actor,
+        "ts": "2026-08-15T00:00:00Z",
+        "payload": payload,
+    }
+
+
+def test_scrub_keeps_the_holder_field_and_still_redacts_the_name_elsewhere(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    holder = {"name": "assignee", "value": USERNAME}
+    path = _write_events(
+        repo,
+        [
+            _event(repo, "basicly-a", 1, "", {"title": "t"}),
+            _kind_event(repo, 2, "field", USERNAME, holder),
+            _kind_event(repo, 3, "comment", "", {"text": f"ask {USERNAME}"}),
+        ],
+    )
+
+    tracker.scrub_ledger(repo)
+
+    created, field, comment = _read(path)
+    assert field["payload"] == holder
+    assert USERNAME not in field["actor"]
+    assert USERNAME not in comment["payload"]["text"]
+    assert created["payload"] == {"title": "t"}
+
+
+def test_scrub_still_redacts_a_home_path_in_the_holder_field(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    home = "/home" + f"/{USERNAME}/project"
+    path = _write_events(
+        repo,
+        [
+            _event(repo, "basicly-a", 1, "", {"title": "t"}),
+            _kind_event(repo, 2, "field", "", {"name": "assignee", "value": home}),
+        ],
+    )
+
+    tracker.scrub_ledger(repo)
+
+    assert _read(path)[1]["payload"]["value"] == "<redacted:posix-home-path>"
+
+
+def test_the_holder_redaction_is_the_committed_redaction_without_the_identity_pass() -> None:
+    value = "API_TOKEN=" + "s3cr3tvalue " + "/home" + "/other/x " + "ghp_" + "B" * 36
+    held = tracker._redact_holder_payload({"name": "assignee", "value": value}, "value")
+
+    assert held["value"] == redact.redact_committed(value)
+    assert tracker._redact_holder_payload({"name": "assignee", "value": USERNAME}, "value") == {
+        "name": "assignee",
+        "value": USERNAME,
+    }
+
+
+def test_scrub_keeps_the_assignee_of_a_created_event_and_redacts_its_title(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    path = _write_events(
+        repo, [_event(repo, "basicly-a", 1, "", {"assignee": USERNAME, "title": USERNAME})]
+    )
+
+    tracker.scrub_ledger(repo)
+
+    payload = _read(path)[0]["payload"]
+    assert payload["assignee"] == USERNAME
+    assert USERNAME not in payload["title"]

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
-from basicly import redact
+from basicly import redact, tracker
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".basicly" / "core" / "hooks" / "tracker-path-scan.py"
@@ -95,3 +96,61 @@ def test_paths_are_redacted_before_identity_so_the_layout_goes_too(_as_username:
     home = "/home" + f"/{USERNAME}/development/basicly"
 
     assert redact.redact_committed(home) == "<redacted:posix-home-path>"
+
+
+def _kind_event(kind: str, actor: str = "", **payload: object) -> str:
+    event = json.loads(_event(actor, **payload))
+    return json.dumps({**event, "kind": kind}, separators=(",", ":"))
+
+
+def test_the_holder_field_may_carry_the_username(_as_username: None) -> None:
+    line = _kind_event("field", name="assignee", value=USERNAME)
+
+    assert scan.findings(LEDGER, line) == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        _kind_event("comment", text=f"asked {USERNAME} to review"),
+        _kind_event("field", name="notes", value=USERNAME),
+        _kind_event("field", actor=USERNAME, name="assignee", value=USERNAME),
+        _kind_event("created", assignee="alex", title=f"for {USERNAME}"),
+    ],
+)
+def test_the_username_outside_the_holder_field_is_still_reported(
+    _as_username: None, line: str
+) -> None:
+    assert scan.findings(LEDGER, line) == [(LEDGER, 1, "machine-username")]
+
+
+def test_the_assignee_of_a_created_event_may_carry_the_username(_as_username: None) -> None:
+    line = _kind_event("created", assignee=USERNAME, title="t")
+
+    assert scan.findings(LEDGER, line) == []
+
+
+def test_a_home_path_in_the_holder_field_is_still_reported(_as_username: None) -> None:
+    home = "/home" + f"/{USERNAME}/project"
+    line = _kind_event("field", name="assignee", value=home)
+
+    assert scan.findings(LEDGER, line) == [(LEDGER, 1, "posix-home-path")]
+
+
+def test_the_hook_names_the_holder_field_the_tracker_and_the_kit_use() -> None:
+    kit = _load_kit_events()
+
+    assert scan._HOLDER_FIELD == tracker.HOLDER_FIELD == kit.HOLDER_FIELD
+    assert scan._FIELD_KIND == kit.KIND_FIELD
+    assert scan._CREATED_KIND == kit.KIND_CREATED
+
+
+def _load_kit_events():
+    path = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker" / "events.py"
+    name = "tracker_path_scan_identity_kit_events"
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module

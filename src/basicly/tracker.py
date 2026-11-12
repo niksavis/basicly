@@ -603,6 +603,26 @@ def _redact_paths(value: object) -> object:
     return value
 
 
+def _holder_key(event: Mapping[str, Any], kinds: Any) -> str | None:
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    if event.get("kind") == kinds.KIND_FIELD and payload.get("name") == HOLDER_FIELD:
+        key = "value"
+    elif event.get("kind") == kinds.KIND_CREATED and HOLDER_FIELD in payload:
+        key = HOLDER_FIELD
+    else:
+        return None
+    return key if isinstance(payload.get(key), str) else None
+
+
+def _redact_holder_payload(payload: dict[str, object], holder: str) -> dict[str, object]:
+    value = redact.redact_machine_paths(
+        redact.redact_secrets(redact.redact_environment(str(payload[holder])))
+    )
+    return {key: value if key == holder else _redact_paths(item) for key, item in payload.items()}
+
+
 def _redact_name_outside_holder(value: object, name: str) -> object:
 
     if isinstance(value, str):
@@ -680,9 +700,13 @@ def scrub_ledger(
             clean["actor"] = redact.redact_name(
                 redact.redact_committed(str(event.get("actor") or "")), display_name
             )
-            clean["payload"] = _redact_name_outside_holder(
-                _redact_paths(event["payload"]), display_name
+            holder = _holder_key(event, events)
+            redacted = (
+                _redact_holder_payload(event["payload"], holder)
+                if holder is not None
+                else _redact_paths(event["payload"])
             )
+            clean["payload"] = _redact_name_outside_holder(redacted, display_name)
             payload = clean["payload"]
             if event["kind"] == events.KIND_WITHDRAWN and isinstance(payload, dict):
                 target = payload.get(events.WITHDRAWN_TARGET)
