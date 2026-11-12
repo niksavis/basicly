@@ -38,6 +38,7 @@ review = _load("review.py", "basicly_tracker_kit_review")
 claims = _load("claims.py", "basicly_tracker_kit_claims")
 git_layout = _load("git_layout.py", "basicly_tracker_kit_git_layout")
 vault_write = _load("vault_write.py", "basicly_tracker_kit_vault_write")
+holder_writes = _load("holder_writes.py", "basicly_tracker_kit_holder_writes")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -53,6 +54,10 @@ CLOSE_REASON_FIELD = "close_reason"
 
 class TrackerCommandError(events.LedgerError):
     pass
+
+
+def environment() -> Mapping[str, str]:
+    return os.environ
 
 
 def _is_repository(path: Path) -> bool:
@@ -353,75 +358,6 @@ def migrate_fields(directory: Path | str, *, redact: Callable[[str], str] | None
         return _append(ledger, drafts, redact, lock) if drafts else []
 
 
-def _holder_draft(record: str, holder: str, take: bool) -> Any:
-
-    if not holder:
-        raise TrackerCommandError(
-            "no holder name: set git config user.name, or name the holder with --to"
-        )
-    payload: dict[str, object] = {"name": holders.HOLDER_FIELD, "value": holder}
-    if take:
-        payload[holders.TAKE_KEY] = True
-    return events.Draft(record, events.KIND_FIELD, payload)
-
-
-def assign(
-    directory: Path | str,
-    record: str,
-    holder: str,
-    *,
-    take: bool = False,
-    redact: Callable[[str], str] | None = None,
-) -> list:
-
-    ledger = _ledger(directory)
-    drafts = [_holder_draft(record, holder, take)]
-    with events.LedgerLock(ledger) as lock:
-        _require(ledger, record)
-        return _append(ledger, drafts, redact, lock)
-
-
-def claim(
-    directory: Path | str,
-    record: str,
-    holder: str,
-    *,
-    take: bool = False,
-    redact: Callable[[str], str] | None = None,
-) -> list:
-
-    ledger = _ledger(directory)
-    if (landed := vault_write.claim(ledger, record, os.environ, take=take)) is not None:
-        return landed
-    drafts = [
-        _holder_draft(record, holder, take),
-        events.Draft(record, events.KIND_STATUS, {"status": "in_progress"}),
-    ]
-    with events.LedgerLock(ledger) as lock:
-        holders.refuse_a_claim_on_a_closed_record(_require(ledger, record), ledger, record)
-        return _append(ledger, drafts, redact, lock)
-
-
-def unassign(
-    directory: Path | str,
-    record: str,
-    by: str,
-    *,
-    take: bool = False,
-    redact: Callable[[str], str] | None = None,
-) -> list:
-
-    ledger = _ledger(directory)
-    if (landed := vault_write.unassign(ledger, record, os.environ, take=take)) is not None:
-        return landed
-    with events.LedgerLock(ledger) as lock:
-        holders.refuse_a_release_by_another(_require(ledger, record), record, by, take)
-        payload: dict[str, object] = {"name": holders.HOLDER_FIELD, "value": ""}
-        if take:
-            payload[holders.TAKE_KEY] = True
-        return _append(ledger, [events.Draft(record, events.KIND_FIELD, payload)], redact, lock)
-
-
 def _restated(record: str, state: Any, key: str) -> list:
 
     if key == forks.STATUS_KEY:
@@ -455,3 +391,6 @@ def resolve(
 
 
 record_process = review.process.record_process
+assign = holder_writes.assign
+claim = holder_writes.claim
+unassign = holder_writes.unassign
