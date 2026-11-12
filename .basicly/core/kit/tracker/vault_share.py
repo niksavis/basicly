@@ -35,6 +35,10 @@ vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
 SEGMENT_BYTES = 1 << 20
 BULK_ATTEMPTS = 5
 SHARE_LOCK = "share"
+SIGNED_ONLY = (
+    "the vault refused unsigned commits; share commits are unsigned and authored by the writer "
+    "id, so turn off required commit signatures for the vault repository"
+)
 
 Runner = Callable[..., str]
 
@@ -194,7 +198,9 @@ def share(
             commit = _build(clone, head, writer, batch, git)
             try:
                 _push(clone, commit, runner, budget)
-            except git_runner.GitRunnerError:
+            except git_runner.GitRunnerError as exc:
+                if "signature" in str(getattr(exc, "stderr", "")).lower():
+                    raise ShareError(SIGNED_ONLY) from None
                 if _again(plan, attempt, started, clock):
                     continue
                 raise ShareError(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import textwrap
@@ -296,3 +297,57 @@ def test_an_unknown_writer_line_in_the_queue_is_never_pushed(tmp_path: Path, bar
     vault_share.share(clone, state)
 
     assert "foreign" not in _ids(bare)
+
+
+def _hook(folder: Path, name: str, body: str) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    hook = folder / name
+    hook.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    hook.chmod(0o755)
+
+
+def test_a_vault_that_requires_signed_commits_is_refused_by_name_without_retry(
+    tmp_path: Path, bare: Path
+) -> None:
+    _hook(
+        bare / "hooks",
+        "pre-receive",
+        "echo 'error: Commits must have verified signatures.' >&2; exit 1",
+    )
+    clone, state = _machine(tmp_path, bare, "m1")
+    _write(clone, state, 1, "a")
+
+    with pytest.raises(vault_share.ShareError, match="refused unsigned commits"):
+        vault_share.share(clone, state)
+
+    assert len(vault_queue.pending(clone.folder / vault_queue.QUEUE_NAME)) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX hook scripts")
+def test_the_share_settings_never_reach_the_global_or_a_code_repository_config(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hooks = tmp_path / "global-hooks"
+    marker = tmp_path / "pre-commit-ran"
+    _hook(hooks, "pre-push", "exit 1")
+    _hook(hooks, "pre-commit", f"touch '{marker}'")
+    global_config = tmp_path / "global.gitconfig"
+    global_config.write_text(
+        f"[core]\n\thooksPath = {hooks}\n[commit]\n\tgpgSign = false\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    code = Vault(tmp_path / "code")
+    before = (global_config.read_text(encoding="utf-8"), code.git("config", "--local", "--list"))
+    clone, state = _machine(tmp_path, bare, "m1")
+    _write(clone, state, 1, "a")
+
+    shown = vault_share.share(clone, state)
+    code.write("a.txt", "a\n")
+    code.commit("code change")
+
+    assert shown["shared"] == 1
+    assert (
+        global_config.read_text(encoding="utf-8"),
+        code.git("config", "--local", "--list"),
+    ) == before
+    assert marker.exists()
