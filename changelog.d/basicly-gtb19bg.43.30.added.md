@@ -1,0 +1,1 @@
+- **The tracker kit can move a backlog into a vault and back.** It imports a ledger, or a beads, br or beans backlog, with its ids and redaction, in commits of at most 1 MiB. It refuses with both values when the counts or fold digests differ. The export writes one prefix into a ledger whose fold equals the vault view (basicly-gtb19bg.43.30).
