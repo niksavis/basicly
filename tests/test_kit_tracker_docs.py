@@ -41,6 +41,7 @@ REFUSED_ON_A_FRESH_LEDGER = {
     "status --vault": "is neither a local repository folder",
     "hook --vault": "is neither a local repository folder",
     "claim --vault": "is neither a local repository folder",
+    "commit-msg --vault": "is neither a local repository folder",
 }
 LEFT_BEHIND = frozenset({".basicly", ".git", ".gitattributes", ".gitignore", ".agents", ".claude"})
 LEFT_BEHIND |= {"issues.jsonl", "tracker-board.html"}

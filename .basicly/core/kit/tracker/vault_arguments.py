@@ -53,6 +53,13 @@ def claim() -> argparse.ArgumentParser:
     return parser
 
 
+def commit_msg() -> argparse.ArgumentParser:
+    parser = _form("commit-msg", "check a commit message against vault claims", "commit-msg-vault")
+    parser.add_argument("message", help="the commit message file git passes to commit-msg")
+    parser.add_argument("--session", help="the session (default: BASICLY_TRACKER_SESSION)")
+    return parser
+
+
 def status() -> argparse.ArgumentParser:
     return _form("status", "show the data age without a network call", "status-vault")
 
@@ -65,4 +72,5 @@ FORMS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "hook": hook,
     "status": status,
     "claim": claim,
+    "commit-msg": commit_msg,
 }

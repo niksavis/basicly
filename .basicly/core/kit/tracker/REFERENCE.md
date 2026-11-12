@@ -327,6 +327,20 @@ progress or closed. A ledger with no record yet passes, and the files a kit inst
 (`.basicly/kit/`, the tracker and board skills, `.gitignore`, `.gitattributes`) do not count,
 so the install commit works.
 
+With `--vault`, `commit-msg` checks the message file against the vault claims of this session
+(`--session`, else `BASICLY_TRACKER_SESSION`). It exits 1 when the message names no record id
+and has no `Record: none` line, and prints the claim command and `Record: none`. A record id
+is the `(id)` that ends the subject, or a `Record: <id>` line. When the session holds exactly
+one claim, the hook adds the id in parentheses to the subject instead. Git-generated
+`Merge`, `Revert "`, `fixup!` and `squash!` messages pass, and a revert or fixup takes the id
+in the subject it repeats. A named record that this session does not hold, or whose claim has not reached the
+vault, passes with a warning and the claim command. When a fetch older than 20 s fails, the
+hook queues a local `miss` event for the record.
+
+```sh
+python3 .basicly/kit/tracker/cli.py commit-msg --vault path/to/vault.git .git/COMMIT_EDITMSG
+```
+
 ### show
 
 One record's folded state and its edges in both directions, each edge with the title of the
