@@ -144,6 +144,7 @@ def test_an_advance_ask_stops_the_band_reading_nothing_is_waiting() -> None:
         {"basicly-b2n2": ("ship", True, "in_progress")},
         lanes=None,
         supervised=False,
+        now=STAMPED,
         last_event={"basicly-b2n2": "2026-08-10T16:42:52Z"},
     )
     quiet = board_regions.band(_reads("wall-v1.json", asks=[]), _age("wall-v1.json"), STAMPED)

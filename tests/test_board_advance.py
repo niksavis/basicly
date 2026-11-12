@@ -19,7 +19,7 @@ def _states(**over: tuple[str, bool, str]) -> dict[str, tuple[str, bool, str]]:
 
 
 def _asks(states: dict[str, tuple[str, bool, str]] | None = None, **kw: Any) -> list[dict]:
-    settings: dict[str, Any] = {"lanes": None, "supervised": False, "last_event": None}
+    settings: dict[str, Any] = {"lanes": None, "supervised": False, "now": NOW, "last_event": None}
     settings.update(kw)
     return board_advance.asks(states if states is not None else _states(), **settings)
 
@@ -79,11 +79,11 @@ def test_the_ask_is_dated_from_the_records_own_last_event_and_aged_by_the_consum
     assert "waiting_s" not in ask
 
 
-def test_an_undated_ask_carries_no_stamp_rather_than_this_instant() -> None:
+def test_an_undated_ask_is_dated_by_the_injected_clock_so_the_snapshot_stays_valid() -> None:
     (ask,) = _asks(last_event={})
-    assert "requested_at" not in ask
+    assert ask["requested_at"] == "2026-09-05T12:00:00Z"
     (unreadable,) = _asks(last_event={"basicly-b2n2": "not a stamp"})
-    assert "requested_at" not in unreadable
+    assert unreadable["requested_at"] == "2026-09-05T12:00:00Z"
 
 
 def test_the_rows_are_ordered_so_the_page_does_not_move_between_folds() -> None:

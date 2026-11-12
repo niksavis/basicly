@@ -417,6 +417,7 @@ def document(
             loop_state.state_map(repo_root),
             lanes=None,
             supervised=supervised,
+            now=moment,
             last_event=board_advance.newest(markers),
         ),
         repo=repo_facts(repo_root),

@@ -6,6 +6,7 @@ from . import board_fields
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from datetime import datetime
 
 KIND = "advance"
 
@@ -39,6 +40,7 @@ def asks(
     *,
     lanes: Sequence[Mapping[str, Any]] | None,
     supervised: bool,
+    now: datetime,
     last_event: Mapping[str, str] | None = None,
 ) -> list[dict[str, object]]:
 
@@ -61,8 +63,7 @@ def asks(
             ),
         }
         stamp = board_fields.instant((last_event or {}).get(record, ""))
-        if stamp is not None:
-            ask["requested_at"] = board_fields.stamp(stamp)
+        ask["requested_at"] = board_fields.stamp(now if stamp is None else stamp)
         ask["actions"] = [{"offer": remedy(record)}]
         built.append(ask)
     return built
