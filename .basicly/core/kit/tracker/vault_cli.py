@@ -34,6 +34,8 @@ vault_repair = _load("vault_repair.py", "basicly_tracker_kit_vault_repair")
 vault_hooks = _load("vault_hooks.py", "basicly_tracker_kit_vault_hooks")
 vault_claim = _load("vault_claim.py", "basicly_tracker_kit_vault_claim")
 vault_commit_hook = _load("vault_commit_hook.py", "basicly_tracker_kit_vault_commit_hook")
+vault_config = _load("vault_config.py", "basicly_tracker_kit_vault_config")
+vault_init = _load("vault_init.py", "basicly_tracker_kit_vault_init")
 
 
 def _vault_show(args: argparse.Namespace) -> dict[str, object]:
@@ -72,7 +74,62 @@ def _clone(args: argparse.Namespace) -> Any:
     return vault_clone.locate(_state(args), args.vault)
 
 
+def _asked(args: argparse.Namespace) -> str:
+    if args.vault:
+        return str(args.vault)
+    if not sys.stdin.isatty():
+        return ""
+    print(
+        "Git address of an empty repository for the vault "
+        f"(suggested name: {vault_init.SUGGESTED_NAME}): ",
+        end="",
+        file=sys.stderr,
+    )
+    return input().strip()
+
+
+def _repository_root(start: Path) -> Path | None:
+    return next((p for p in (start, *start.parents) if (p / ".git").exists()), None)
+
+
+def _init_vault(args: argparse.Namespace, _clock: Clock) -> dict[str, object]:
+    url = _asked(args)
+    if not url:
+        return {
+            "exit": vault_init.FIX,
+            "fix": "name the empty repository: vault-init --vault GIT-ADDRESS",
+            "suggested_name": vault_init.SUGGESTED_NAME,
+        }
+    shown = vault_init.init(url, confirmed=args.yes)
+    root = _repository_root(Path.cwd())
+    if shown.get("pushed") and args.prefix and root is not None:
+        target = root / vault_config.CONFIG_PATH
+        target.write_text(vault_config.text(url, args.prefix), encoding="utf-8")
+        shown["config"] = str(vault_config.CONFIG_PATH)
+    return shown
+
+
+def _claim_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
+    ask = vault_claim.Ask(
+        _clone(args),
+        _state(args),
+        args.record,
+        args.session or os.environ.get("BASICLY_TRACKER_SESSION", ""),
+        clock,
+    )
+    shown = vault_claim.claim(ask, deadline=args.deadline)
+    if shown.get("exit") == vault_claim.UNREACHABLE and vault_init.no_genesis(args.vault):
+        return {
+            "exit": vault_init.NO_GENESIS,
+            "record": args.record,
+            "unsettled": "the vault has no genesis commit",
+            "next": f"vault-init --vault {args.vault}",
+        }
+    return shown
+
+
 HANDLERS: dict[str, Callable[[argparse.Namespace, Clock], dict[str, object]]] = {
+    "init-vault": _init_vault,
     "vault-check": lambda a, _c: vault_shapes.report(a.vault, a.ref),
     "vault-show": lambda a, _c: _vault_show(a),
     "fetch": _fetch_vault,
@@ -81,16 +138,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace, Clock], dict[str, object]]] = 
     "status-vault": lambda a, c: vault_hooks.status(_clone(a), clock=c),
     "fsck-vault": lambda a, c: vault_repair.check(_clone(a), _state(a), vars(a), c),
     "reclone-vault": lambda a, c: vault_repair.reclone(_clone(a), clock=c),
-    "claim-vault": lambda a, c: vault_claim.claim(
-        vault_claim.Ask(
-            _clone(a),
-            _state(a),
-            a.record,
-            a.session or os.environ.get("BASICLY_TRACKER_SESSION", ""),
-            c,
-        ),
-        deadline=a.deadline,
-    ),
+    "claim-vault": _claim_vault,
     "sync-vault": lambda a, c: vault_share.share(
         _clone(a), _state(a), plan=vault_share.Plan(c, urgent=a.urgent, deadline_s=a.deadline)
     ),

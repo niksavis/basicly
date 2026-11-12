@@ -38,6 +38,7 @@ board = _load("board.py", "basicly_tracker_kit_board")
 fields = _load("fields.py", "basicly_tracker_kit_fields")
 arguments = _load("arguments.py", "basicly_tracker_kit_arguments")
 vault_arguments = _load("vault_arguments.py", "basicly_tracker_kit_vault_arguments")
+vault_config = _load("vault_config.py", "basicly_tracker_kit_vault_config")
 vault_cli = _load("vault_cli.py", "basicly_tracker_kit_vault_cli")
 pin = _load("pin.py", "basicly_tracker_kit_pin")
 mirror = _load("mirror.py", "basicly_tracker_kit_mirror")
@@ -361,7 +362,10 @@ def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None)
 def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | None = None) -> int:
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    form = vault_arguments.FORMS.get(argv[0]) if argv and "--vault" in argv else None
+    argv = list(vault_config.with_vault(argv, Path.cwd(), frozenset(vault_arguments.FORMS)))
+    verb = argv[0] if argv else ""
+    routed = "--vault" in argv or verb in vault_arguments.VAULT_ONLY
+    form = vault_arguments.FORMS.get(verb) if routed else None
     args = (form or arguments.parser)().parse_args(argv)
     code, report = invoke(args, redact)
     reconfigure = getattr(sys.stdout, "reconfigure", None)

@@ -1,0 +1,1 @@
+- **Set up a backlog vault with one command.** `vault-init` takes the git address of an empty repository, suggests the name `backlog-vault`, prints the proposed permissions per host and the files it will push, and pushes the genesis only with `--yes`. A `.basicly-tracker.toml` file then names the vault, so vault commands need no `--vault` flag (basicly-gtb19bg.43.26).

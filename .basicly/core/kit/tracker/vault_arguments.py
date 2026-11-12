@@ -64,6 +64,20 @@ def status() -> argparse.ArgumentParser:
     return _form("status", "show the data age without a network call", "status-vault")
 
 
+def init() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="cli.py vault-init", description="push the genesis into an empty vault repository"
+    )
+    parser.add_argument("verb", choices=["vault-init"])
+    parser.add_argument("--vault", help="the git address of an empty repository; asked if absent")
+    parser.add_argument("--prefix", help="the project prefix to write into .basicly-tracker.toml")
+    parser.add_argument(
+        "--yes", action="store_true", help="push after printing what will be pushed"
+    )
+    parser.set_defaults(command="init-vault", state=None)
+    return parser
+
+
 FORMS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "comment": comment,
     "sync": sync,
@@ -73,4 +87,6 @@ FORMS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "status": status,
     "claim": claim,
     "commit-msg": commit_msg,
+    "vault-init": init,
 }
+VAULT_ONLY = frozenset({"vault-init"})
