@@ -145,6 +145,17 @@ python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2
 python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2 --take
 ```
 
+### vault-check
+
+Sort every commit on a vault's first-parent chain into a genesis, format, batch or archive
+commit, or quarantine it with the rule it breaks. A quarantined commit voids only itself, and
+nothing after a valid `ended` event counts. The vault is the backlog repository of design
+version 8; this command only reads it.
+
+```sh
+python3 .basicly/kit/tracker/cli.py vault-check path/to/vault.git
+```
+
 ### delete
 
 Tombstone a record. Its id is never reused.

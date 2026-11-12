@@ -127,7 +127,7 @@ def parser() -> argparse.ArgumentParser:
     gate.add_argument("directory", help=DIRECTORY_HELP)
     gate.add_argument("record", help="the record id")
 
-    _add_sync_parser(sub)
+    _add_repository_parsers(sub)
 
     bring = sub.add_parser("import", help="import a foreign tracker's backlog into this ledger")
     bring.add_argument("directory", help=DIRECTORY_HELP)
@@ -266,6 +266,17 @@ def _add_config_parser(sub: Any) -> None:
     setting = actions.add_parser("set", help="set one setting in its one home")
     setting.add_argument("name", help="the setting, as config lists it")
     setting.add_argument("value", help="the value; a list or a number is read as JSON")
+
+
+def _add_repository_parsers(sub: Any) -> None:
+    _add_sync_parser(sub)
+    _add_vault_parsers(sub)
+
+
+def _add_vault_parsers(sub: Any) -> None:
+    shapes = sub.add_parser("vault-check", help="sort each vault commit into valid or quarantined")
+    shapes.add_argument("vault", help="the vault repository, bare or not")
+    shapes.add_argument("--ref", default="HEAD", help="the branch or commit to read")
 
 
 def _add_sync_parser(sub: Any) -> None:
