@@ -45,7 +45,7 @@ field: every skill root advertises its first body paragraph instead.
 | `test-discipline` | `model` | any | Writes isolated, order-independent tests that assert what the caller sees, not private helpers. Use for tests with shared fixtures, leaked state, run order or platform differences. |
 | `tier-injection` | `model` | any | Chooses the model for an owner, a delegated agent, an advisor or an orchestrator, and installs the tier kit that pins it. Use when deciding which model or tier a task or subagent gets, or when a subagent ignores its tier. |
 | `validate-as-consumer` | `model` | any | Runs a verified change the way a consumer does, against its requirement. Use at VALIDATE or before a README claims a capability. |
-| `work-tracker` | `model` | any | Reads, files, claims and closes records in the ledger tracker. Use to plan work, check what is ready, file a bug, or claim a record before work starts. |
+| `work-tracker` | `model` | any | Reads, files, claims and closes records in the work tracker. Use to plan work, check what is ready, file a bug, or claim a record before work starts. |
 | `worktree-isolation` | `model` | any | Isolates work in a sibling git worktree, then merges and cleans up. Use to keep a change out of the main checkout or when parallel tracks collide. |
 | `wsl` | `model` | `wsl` | Operates WSL: wsl.exe, interop, PATH, slow /mnt/c. Use when crossing Windows and Linux, or when a tool works in a terminal but not from a script. |
 

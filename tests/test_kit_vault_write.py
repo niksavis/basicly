@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from tests.test_kit_vault_share import bare
+from tests.test_kit_vault_view import _carry, _push
 from tests.tracker_process_fixture import recorded_review, review_payload
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -80,14 +81,15 @@ def _seeded(tmp_path: Path, vault: Path, *, configured: bool = True) -> Repo:
         "acceptance_criteria": "- the seeded record keeps its criterion",
         "requirements": "- standard library only",
     }
-    record = commands.create_root(ledger, {"title": "a", **shaped}, prefix=SEED_PREFIX)[0].record
-    other = commands.create_root(ledger, {"title": "b"}, prefix=SEED_PREFIX)[0].record
+    prefix = VAULT_PREFIX if configured else SEED_PREFIX
+    record = commands.create_root(ledger, {"title": "a", **shaped}, prefix=prefix)[0].record
+    other = commands.create_root(ledger, {"title": "b"}, prefix=prefix)[0].record
     commands.comment(ledger, record, "The fixture agrees each criterion and its check.")
-    if configured:
-        text = vault_config.text(str(vault), VAULT_PREFIX)
-        (root / vault_config.CONFIG_PATH).write_text(text, encoding="utf-8")
     state = tmp_path / "state"
-    return Repo(root, ledger, record, other, vault_clone.locate(state, str(vault)), state)
+    repo = Repo(root, ledger, record, other, vault_clone.locate(state, str(vault)), state)
+    if configured:
+        _with_vault(repo, vault)
+    return repo
 
 
 def _hold_the_share_slot(repo: Repo) -> None:
@@ -178,6 +180,19 @@ def _without_vault(repo: Repo) -> Repo:
 
 
 def _with_vault(repo: Repo, vault: Path) -> Repo:
+    if vault_clone.vault_source(str(vault))[0] == repo.clone.url:
+        published = {
+            str(body["id"])
+            for line in vault_shapes.valid_events(vault_shapes.check(vault, "main"))
+            if isinstance(body := line.get(vault_write.LEDGER_FIELD), dict)
+        }
+        fresh = [
+            json.loads(events.to_json(event))
+            for event in events.read_events(repo.ledger)[0]
+            if event.id not in published
+        ]
+        if fresh:
+            _push(repo.root.parent, vault, "fixture-publisher", _carry(fresh))
     text = vault_config.text(str(vault), VAULT_PREFIX)
     (repo.root / vault_config.CONFIG_PATH).write_text(text, encoding="utf-8")
     return repo
@@ -262,6 +277,11 @@ def test_a_queued_ledger_line_redacts_before_the_id_so_the_id_still_matches(
 
 def test_a_shared_ledger_line_is_a_valid_vault_event(tmp_path: Path, bare: Path) -> None:
     repo = _seeded(tmp_path, bare)
+    baseline = {
+        line[vault_write.LEDGER_FIELD]["id"]
+        for line in vault_shapes.valid_events(vault_shapes.check(bare, "main"))
+        if line.get("kind") == vault_write.LEDGER_KIND
+    }
     _hold_the_share_slot(repo)
     (written,) = commands.update(repo.ledger, repo.record, fields={"priority": 3}, context=CONTEXT)
 
@@ -273,6 +293,7 @@ def test_a_shared_ledger_line_is_a_valid_vault_event(tmp_path: Path, bare: Path)
         line[vault_write.LEDGER_FIELD]
         for line in vault_shapes.valid_events(verdicts)
         if line.get("kind") == vault_write.LEDGER_KIND
+        and line[vault_write.LEDGER_FIELD]["id"] not in baseline
     ]
     assert carried == [json.loads(events.to_json(written))]
     assert _queued(repo) == []

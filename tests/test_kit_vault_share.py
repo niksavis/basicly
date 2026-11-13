@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from tests.test_kit_vault_shapes import WRITER_B, Vault, _line, _segment
+from tests.vault_native_targets import seed_native_target
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 KIT = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -75,7 +76,16 @@ def _write(clone: Any, state: Path, count: int, tag: str) -> list[str]:
 
 def _ids(bare: Path) -> Counter:
     events = vault_shapes.valid_events(vault_shapes.check(bare, "main"))
-    return Counter(str(e["id"]) for e in events if e.get("kind") == "comment")
+    return Counter(
+        str(e["id"])
+        for e in events
+        if e.get("kind") == "comment"
+        or (
+            e.get("kind") == "ledger"
+            and isinstance(body := e.get("ledger"), dict)
+            and body.get("kind") == cli.events.KIND_NOTE
+        )
+    )
 
 
 def test_a_share_pushes_one_batch_commit_and_empties_the_queue(tmp_path: Path, bare: Path) -> None:
@@ -341,6 +351,7 @@ def test_a_share_that_crashes_at_any_step_leaves_each_event_once_after_the_next_
 def test_sync_vault_prints_the_shared_count_and_the_new_head(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    seed_native_target(cli, tmp_path, bare, "acme-a1b2")
     monkeypatch.setattr(cli.vault_cli.vault_hooks, "slot_due", lambda *_: False)
     state = tmp_path / "s"
     cli.main(["comment", "acme-a1b2", "--vault", str(bare), "--text", "hi", "--state", str(state)])

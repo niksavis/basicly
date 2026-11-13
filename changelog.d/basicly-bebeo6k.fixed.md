@@ -1,0 +1,1 @@
+- Complete ordinary vault record writes through shared engine and standalone admission, show own pending writes with a pending label, preserve canonical claim aliases, validate native comments, and initialize a vault without a personal Git identity. Unsupported forms and legacy raw comments name a real remedy or follow-up.

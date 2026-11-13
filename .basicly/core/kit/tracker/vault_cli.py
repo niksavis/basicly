@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import shlex
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +41,39 @@ vault_init = _load("vault_init.py", "basicly_tracker_kit_vault_init")
 vault_view = _load("vault_view.py", "basicly_tracker_kit_vault_view")
 vault_write = _load("vault_write.py", "basicly_tracker_kit_vault_write")
 
-READS = frozenset({"list", "ready", "show"})
+READS = frozenset({
+    "list",
+    "ready",
+    "show",
+    "blocked",
+    "stats",
+    "board",
+    "refine",
+    "dor",
+    "fields",
+    "scaffold",
+})
+
+
+def route_ledger_alias(args: argparse.Namespace) -> None:
+    if args.command not in {"claim", "unassign"}:
+        return
+    config = vault_write.config_of(args.directory)
+    if config is None:
+        return
+    incompatible = ("to", "take") if args.command == "claim" else ("by",)
+    if flag := next((name for name in incompatible if getattr(args, name, "")), ""):
+        command = shlex.join([args.command, args.record])
+        fix = (
+            f"{args.command} {args.record} cannot translate --{flag} into the vault protocol; "
+            f"run `{command}`"
+        )
+        raise vault_write.VaultRefusedError({"exit": 1, "record": args.record, "fix": fix})
+    argv = [args.command, args.record, "--vault", config.vault]
+    if args.command == "unassign" and args.take:
+        argv.append("--take")
+    forms = _load("vault_arguments.py", "basicly_tracker_kit_vault_arguments").FORMS
+    args.__dict__.update(vars(forms[args.command]().parse_args(argv)))
 
 
 def _vault_show(args: argparse.Namespace) -> dict[str, object]:
@@ -65,15 +99,31 @@ def _fetch_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
     return {**fetched, "shared": vault_hooks.due_share(clone, state, clock)}
 
 
-def _queue_comment(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
+def _queue_comment(args: argparse.Namespace, context: Any) -> dict[str, object]:
+    clock = context.clock
+    vault_queue.checked([vault_queue.comment(args.record, args.text)])
+    prefix = vault_write.events.ids.validate_record_id(args.record).partition("-")[0]
     state = _state(args)
     clone = vault_clone.locate(state, args.vault)
     now = any(os.environ.get(name) for name in ("CI", "BASICLY_TRACKER_EPHEMERAL"))
-    origin = vault_queue.Origin(os.environ.get("BASICLY_TRACKER_SESSION", ""), now, clock)
-    queued = vault_queue.write(
-        clone, [vault_queue.comment(args.record, args.text)], state=state, origin=origin
+    target = vault_write.Target(
+        clone, state, os.environ.get(vault_write.SESSION, ""), now, clock, prefix
     )
-    return {**queued, "shared": vault_hooks.due_share(clone, state, clock, now=now)}
+    source = clone.folder / "native-ledger"
+    config = vault_config.load(Path.cwd())
+    if config is not None and config.prefix == prefix:
+        url, _allow_file = vault_clone.vault_source(config.vault)
+        if url == clone.url:
+            source = config.path.parent / ".basicly" / "ledger"
+    queued: dict[str, object] = {}
+    context = replace(context, target=target, source=source, queued=queued)
+    ledger, context = vault_write.admission(source, context, os.environ)
+    commands = _load("commands.py", "basicly_tracker_kit_commands")
+    written = commands.comment(ledger, args.record, args.text, context=context)
+    if not written:
+        queued.update(vault_queue.write(clone, [], state=state, origin=target.origin()))
+        queued.update(merged=True, shared=vault_hooks.due_share(clone, state, clock, now=now))
+    return queued
 
 
 def _clone(args: argparse.Namespace) -> Any:
@@ -159,7 +209,7 @@ def presented(ledger: Path, clock: Clock, *, all_projects: bool, asked: str) -> 
     clone = vault_clone.locate(_state_root(), config.vault)
     template = Path(ledger) if Path(ledger).is_dir() else None
     want = vault_view.Want(config.prefix, all_projects, template)
-    return vault_view.present(clone, want, clock=clock), clone
+    return vault_write.vault_pending.present(clone, want, clock=clock), clone
 
 
 def view_of(args: argparse.Namespace, clock: Clock) -> Path:
@@ -169,12 +219,17 @@ def view_of(args: argparse.Namespace, clock: Clock) -> Path:
     return args.directory if reached is None else reached[0]
 
 
+def read_ledger(directory: Path, clock: Clock) -> Path:
+    reached = presented(directory, clock, all_projects=False, asked="")
+    return directory if reached is None else reached[0]
+
+
 def shown(ledger: Path, records: list, clock: Clock) -> list:
     folder, clone = presented(ledger, clock, all_projects=False, asked="--json")
-    return vault_view.show(folder, clone, records)
+    return vault_write.vault_pending.annotate(folder, vault_view.show(folder, clone, records))
 
 
-HANDLERS: dict[str, Callable[[argparse.Namespace, Clock], dict[str, object]]] = {
+HANDLERS: dict[str, Callable[[argparse.Namespace, Any], dict[str, object]]] = {
     "init-vault": _init_vault,
     "vault-check": lambda a, _c: vault_shapes.report(a.vault, a.ref),
     "vault-show": lambda a, _c: _vault_show(a),

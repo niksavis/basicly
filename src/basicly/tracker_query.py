@@ -72,11 +72,18 @@ def cmd_ready(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         _report(report)
         return 0
+    sharing = any(row.get("sharing") == "pending" for row in report["records"])
     ui.table(
         f"Ready ({report['count']}, {report['sort']})",
-        ["rank", "score", "record", "title"],
+        ["rank", "score", "record", "title", *(["sharing"] if sharing else [])],
         [
-            [str(row["rank"]), str(row["score"]), str(row["record"]), str(row["title"])]
+            [
+                str(row["rank"]),
+                str(row["score"]),
+                str(row["record"]),
+                str(row["title"]),
+                *([str(row.get("sharing", ""))] if sharing else []),
+            ]
             for row in report["records"]
         ],
     )
@@ -88,15 +95,17 @@ def cmd_blocked(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         _report(report)
         return 0
+    sharing = any(row.get("sharing") == "pending" for row in report["records"])
     ui.table(
         f"Blocked ({report['count']})",
-        ["record", "status", "blocked by", "children"],
+        ["record", "status", "blocked by", "children", *(["sharing"] if sharing else [])],
         [
             [
                 str(row["record"]),
                 str(row["status"]),
                 ", ".join(f"{held['record']} ({held['status']})" for held in row["blocked_by"]),
                 str(len(row["children"])) if row["children"] else "",
+                *([str(row.get("sharing", ""))] if sharing else []),
             ]
             for row in report["records"]
         ],
@@ -117,6 +126,8 @@ def cmd_stats(args: argparse.Namespace) -> int:
         ["blocked", str(report["blocked"])],
         ["tombstoned", str(report["tombstoned"])],
     ]
+    if report.get("sharing") == "pending":
+        rows.append(["sharing", "pending"])
     ui.table(f"Backlog ({report['records']} records)", ["status", "count"], rows)
     return 0
 
@@ -201,11 +212,12 @@ def _item(state: Any, statuses: Mapping[str, str]) -> dict[str, object]:
 def items_report(repo_root: Path, statuses: Sequence[str]) -> list[dict[str, object]]:
 
     mapping = status_map()
-    states = (
-        owned_store.packaged_kit("snapshot").load(owned_store.present_ledger(repo_root)).records
-    )
+    ledger = owned_store.present_ledger(repo_root)
+    states = owned_store.packaged_kit("snapshot").load(ledger).records
     items = [_item(states[key], mapping) for key in sorted(states) if not states[key].tombstoned]
-    return [item for item in items if item["status"] in statuses]
+    return owned_store.packaged_kit("vault_pending").annotate(
+        ledger, [item for item in items if item["status"] in statuses]
+    )
 
 
 def cmd_items(args: argparse.Namespace) -> int:

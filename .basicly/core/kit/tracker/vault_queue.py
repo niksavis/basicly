@@ -154,6 +154,18 @@ def _redacted(draft: Mapping[str, object]) -> dict[str, object]:
     return line
 
 
+def checked(drafts: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    lines = [_redacted(draft) for draft in drafts]
+    for line in lines:
+        if (
+            len(json.dumps(line.get("payload"), ensure_ascii=False).encode("utf-8"))
+            > events.MAX_TEXT_BYTES
+        ):
+            cap = events.MAX_TEXT_BYTES
+            raise QueueError(f"the {line['kind']} is above {cap} bytes after redaction; shorten it")
+    return lines
+
+
 def write(
     clone: Any,
     drafts: Sequence[Mapping[str, object]],
@@ -167,21 +179,14 @@ def write(
     now = origin.clock()
     lines = [
         {
-            **_redacted(draft),
+            **draft,
             "id": uuid.uuid4().hex,
             "writer": writer,
             "session": redact.text(origin.session),
             "at": now,
         }
-        for draft in drafts
+        for draft in checked(drafts)
     ]
-    for line in lines:
-        if (
-            len(json.dumps(line.get("payload"), ensure_ascii=False).encode("utf-8"))
-            > events.MAX_TEXT_BYTES
-        ):
-            cap = events.MAX_TEXT_BYTES
-            raise QueueError(f"the {line['kind']} is above {cap} bytes after redaction; shorten it")
     queue = clone.folder / QUEUE_NAME
     asked = time.monotonic()
     with events.LedgerLock(clone.folder):
