@@ -36,6 +36,10 @@ vault_claim = _load("vault_claim.py", "basicly_tracker_kit_vault_claim")
 vault_commit_hook = _load("vault_commit_hook.py", "basicly_tracker_kit_vault_commit_hook")
 vault_config = _load("vault_config.py", "basicly_tracker_kit_vault_config")
 vault_init = _load("vault_init.py", "basicly_tracker_kit_vault_init")
+vault_view = _load("vault_view.py", "basicly_tracker_kit_vault_view")
+vault_write = _load("vault_write.py", "basicly_tracker_kit_vault_write")
+
+READS = frozenset({"list", "ready", "show"})
 
 
 def _vault_show(args: argparse.Namespace) -> dict[str, object]:
@@ -43,10 +47,12 @@ def _vault_show(args: argparse.Namespace) -> dict[str, object]:
     return vault_fold.view(vault_fold.fold(found).record(args.record))
 
 
+def _state_root() -> Path:
+    return vault_clone.state_root(os.environ, Path.home(), windows=os.name == "nt")
+
+
 def _state(args: argparse.Namespace) -> Path:
-    return Path(
-        args.state or vault_clone.state_root(os.environ, Path.home(), windows=os.name == "nt")
-    )
+    return Path(args.state or _state_root())
 
 
 Clock = Callable[[], float]
@@ -128,6 +134,45 @@ def _claim_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
     return shown
 
 
+def _unassign_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
+    session = args.session or os.environ.get(vault_write.SESSION, "")
+    now = any(os.environ.get(name) for name in vault_write.IMMEDIATE)
+    target = vault_write.Target(_clone(args), _state(args), session, now, clock)
+    return vault_write.release(target, args.record, take=args.take)
+
+
+def configured(start: Path, asked: str) -> Any:
+    config = vault_config.load(Path(start).resolve())
+    if config is None and asked:
+        raise vault_config.ConfigError(
+            f"{asked} reads the vault that {vault_config.CONFIG_PATH} names, and none names "
+            f"one here; run it without {asked}"
+        )
+    return config
+
+
+def presented(ledger: Path, clock: Clock, *, all_projects: bool, asked: str) -> Any:
+    config = configured(ledger, asked)
+    if config is None:
+        return None
+    clone = vault_clone.locate(_state_root(), config.vault)
+    template = Path(ledger) if Path(ledger).is_dir() else None
+    want = vault_view.Want(config.prefix, all_projects, template)
+    return vault_view.present(clone, want, clock=clock), clone
+
+
+def view_of(args: argparse.Namespace, clock: Clock) -> Path:
+    every = bool(getattr(args, "all_projects", False))
+    asked = "--all-projects" if every else ""
+    reached = presented(args.directory, clock, all_projects=every, asked=asked)
+    return args.directory if reached is None else reached[0]
+
+
+def shown(ledger: Path, records: list, clock: Clock) -> list:
+    folder, clone = presented(ledger, clock, all_projects=False, asked="--json")
+    return vault_view.show(folder, clone, records)
+
+
 HANDLERS: dict[str, Callable[[argparse.Namespace, Clock], dict[str, object]]] = {
     "init-vault": _init_vault,
     "vault-check": lambda a, _c: vault_shapes.report(a.vault, a.ref),
@@ -139,6 +184,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace, Clock], dict[str, object]]] = 
     "fsck-vault": lambda a, c: vault_repair.check(_clone(a), _state(a), vars(a), c),
     "reclone-vault": lambda a, c: vault_repair.reclone(_clone(a), clock=c),
     "claim-vault": _claim_vault,
+    "unassign-vault": _unassign_vault,
     "sync-vault": lambda a, c: vault_share.share(
         _clone(a), _state(a), plan=vault_share.Plan(c, urgent=a.urgent, deadline_s=a.deadline)
     ),

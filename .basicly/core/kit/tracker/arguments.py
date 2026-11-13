@@ -42,9 +42,25 @@ def _listing_filters(parser: Any) -> None:
     )
 
 
+def _add_list_parser(sub: Any) -> None:
+    listing = sub.add_parser("list", help="query the records the ledger holds")
+    listing.add_argument("directory", help=DIRECTORY_HELP)
+    _listing_filters(listing)
+    all_projects_argument(listing)
+
+
 def record_view_arguments(parser: Any) -> None:
     parser.add_argument("--view", choices=("full", "current", "history"), default="full")
     parser.add_argument("--snapshot", help="refuse retrieval from a changed record snapshot")
+    parser.add_argument(
+        "--json", action="store_true", help="print the id, status, holder and links the vault holds"
+    )
+
+
+def all_projects_argument(parser: Any) -> None:
+    parser.add_argument(
+        "--all-projects", action="store_true", help="every project the vault holds, not one"
+    )
 
 
 def parser() -> argparse.ArgumentParser:
@@ -76,9 +92,7 @@ def parser() -> argparse.ArgumentParser:
     show.add_argument("record", help="the record id")
     record_view_arguments(show)
 
-    listing = sub.add_parser("list", help="query the records the ledger holds")
-    listing.add_argument("directory", help=DIRECTORY_HELP)
-    _listing_filters(listing)
+    _add_list_parser(sub)
 
     compaction = sub.add_parser(
         "compact", help="fold every pending writer shard into the trunk log and unlink it"
@@ -179,6 +193,7 @@ def _add_query_parsers(sub: Any) -> None:
         if name == "ready":
             view.add_argument("--limit", type=int, default=None, help="at most this many")
             view.add_argument("--mine", action="store_true", help="only records you hold")
+            all_projects_argument(view)
 
 
 def _add_write_parsers(sub: Any) -> None:

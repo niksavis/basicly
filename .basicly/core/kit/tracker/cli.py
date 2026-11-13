@@ -5,7 +5,7 @@ import importlib.util
 import json
 import os
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -220,7 +220,10 @@ _VIEWS: dict[str, Callable[[argparse.Namespace, Any], dict[str, object]]] = {
 }
 
 
-def _shown(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
+def _shown(args: argparse.Namespace, clock: Callable[[], float]) -> tuple[int, Any]:
+    if getattr(args, "json", False):
+        shown = vault_cli.shown(args.directory, [args.record], clock)
+        return (EXIT_OK if all(one.get("found", True) for one in shown) else EXIT_REFUSED), shown
     found = record_view.read_view(
         args.directory, args.record, view=args.view, snapshot=args.snapshot
     )
@@ -289,17 +292,15 @@ def _commit_check(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     return EXIT_OK, {"committer": committer, "ids": commands.claims.named_ids(message, states)}
 
 
-_REFUSABLE: dict[str, Callable[[argparse.Namespace], tuple[int, dict[str, object]]]] = {
-    "commit-check": _commit_check,
+_REFUSABLE: dict[str, Callable[[argparse.Namespace, Callable[[], float]], tuple[int, Any]]] = {
+    "commit-check": lambda a, _c: _commit_check(a),
     "show": _shown,
-    "dor": _dor,
-    "fsck": _fsck,
+    "dor": lambda a, _c: _dor(a),
+    "fsck": lambda a, _c: _fsck(a),
 }
 
 
-def _run(
-    args: argparse.Namespace, redact: Callable[[str], str] | None
-) -> tuple[int, dict[str, object]]:
+def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple[int, Any]:
     clock = events.wall_clock()
     if (vault := vault_cli.HANDLERS.get(args.command)) is not None:
         report = vault(args, clock)
@@ -308,6 +309,8 @@ def _run(
     starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
     args.directory = commands.resolve_ledger(args.directory, starts=starts)
     pin.require(args.directory)
+    if args.command in vault_cli.READS and not getattr(args, "json", False):
+        args.directory = vault_cli.view_of(args, clock)
     context = commands.vault_write.WriteContext(redact, clock)
     if args.command == "create":
         written = create_record(
@@ -324,7 +327,7 @@ def _run(
             **_owed_of(args.directory, record),
         }
     if (gate := _REFUSABLE.get(args.command)) is not None:
-        return gate(args)
+        return gate(args, clock)
     if (view := _VIEWS.get(args.command)) is not None:
         return EXIT_OK, view(args, context)
     if (write := _WRITES.get(args.command)) is not None:
@@ -348,13 +351,19 @@ def _run(
 
 def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None) -> tuple:
 
-    report: Mapping[str, object]
+    report: Any
     try:
         code, report = _run(args, redact)
+    except commands.vault_write.VaultRefusedError as exc:
+        report = dict(exc.report)
+        code = report.pop("exit", EXIT_REFUSED)
+        code = code if isinstance(code, int) else EXIT_REFUSED
     except events.LedgerError as exc:
         code, report = EXIT_REFUSED, {"refused": str(exc)}
     except ValueError as exc:
         code, report = EXIT_REFUSED, {"refused": str(exc)}
+    if isinstance(report, list):
+        return code, report
     version = 2 if args.command in _BLOCKING_REPORTS else 1
     return code, {"schema": f"{SCHEMA_PREFIX}.{args.command}.v{version}", **report}
 
@@ -362,7 +371,7 @@ def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None)
 def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | None = None) -> int:
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    argv = list(vault_config.with_vault(argv, Path.cwd(), frozenset(vault_arguments.FORMS)))
+    argv = list(vault_config.with_vault(argv, Path.cwd(), vault_arguments.routed_verbs(argv)))
     verb = argv[0] if argv else ""
     routed = "--vault" in argv or verb in vault_arguments.VAULT_ONLY
     form = vault_arguments.FORMS.get(verb) if routed else None
