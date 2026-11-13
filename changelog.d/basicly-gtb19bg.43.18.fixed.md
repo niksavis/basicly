@@ -1,0 +1,1 @@
+- A joined vault claim now reserves half its remaining budget for takeover when less than twice the normal stall period remains. This bounds the join wait without changing the claim deadline.

@@ -40,6 +40,7 @@ arguments = _load("arguments.py", "basicly_tracker_kit_arguments")
 vault_arguments = _load("vault_arguments.py", "basicly_tracker_kit_vault_arguments")
 vault_config = _load("vault_config.py", "basicly_tracker_kit_vault_config")
 vault_cli = _load("vault_cli.py", "basicly_tracker_kit_vault_cli")
+vault_refusal = _load("vault_refusal.py", "basicly_tracker_kit_vault_refusal")
 pin = _load("pin.py", "basicly_tracker_kit_pin")
 mirror = _load("mirror.py", "basicly_tracker_kit_mirror")
 settings = _load("settings.py", "basicly_tracker_kit_settings")
@@ -300,12 +301,38 @@ _REFUSABLE: dict[str, Callable[[argparse.Namespace, Callable[[], float]], tuple[
 }
 
 
+def _refuse_vault_ledger_form(args: argparse.Namespace, clock: Callable[[], float]) -> None:
+    if args.command not in _WRITES:
+        return
+    ledger = commands.git_layout.shared_ledger(args.directory)
+    config = vault_config.load(ledger.resolve())
+    if config is None or commands._is_repository(ledger):
+        return
+    local = events.fold(events.read_events(ledger)[0]).records
+    target = commands.vault_write.target_of(ledger, os.environ, clock)
+    born = commands.vault_write.born_records(target) if target is not None else set()
+    records = getattr(args, "record", getattr(args, "parent", []))
+    records = [records] if isinstance(records, str) else records
+    for record in records:
+        if record not in local and record in born:
+            directory = ledger.resolve().relative_to(config.path.parent).as_posix()
+            text = getattr(args, "text", "")
+            refusal = vault_refusal.ledger_form(args.command, record, directory, text)
+            raise commands.TrackerCommandError(commands.vault_write.redact.text(refusal))
+
+
 def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple[int, Any]:
     clock = events.wall_clock()
     if (vault := vault_cli.HANDLERS.get(args.command)) is not None:
         report = vault(args, clock)
         code = report.pop("exit", EXIT_OK)
-        return (code if isinstance(code, int) else EXIT_OK), report
+        code = code if isinstance(code, int) else EXIT_OK
+        if code != EXIT_OK and not isinstance(report.get("refused"), str):
+            report["refused"] = commands.vault_write.redact.text(
+                vault_refusal.message(code, report)
+            )
+        return code, report
+    _refuse_vault_ledger_form(args, clock)
     starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
     args.directory = commands.resolve_ledger(args.directory, starts=starts)
     pin.require(args.directory)
@@ -358,6 +385,7 @@ def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None)
         report = dict(exc.report)
         code = report.pop("exit", EXIT_REFUSED)
         code = code if isinstance(code, int) else EXIT_REFUSED
+        report["refused"] = commands.vault_write.redact.text(vault_refusal.message(code, report))
     except events.LedgerError as exc:
         code, report = EXIT_REFUSED, {"refused": str(exc)}
     except ValueError as exc:

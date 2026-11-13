@@ -1,0 +1,1 @@
+- Vault refusals now include one readable sentence for the claim hook and board. A held-record refusal names the holder and the commands to release and claim it.

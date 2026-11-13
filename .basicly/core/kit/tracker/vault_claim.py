@@ -173,13 +173,13 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
 
     joined_at = None
     while True:
-        stalled = joined_at is not None and joined_at - budget.left() >= STALL
+        stalled = joined_at is not None and joined_at - budget.left() >= min(STALL, joined_at / 2)
         plan = vault_share.Plan(
             ask.clock,
             urgent=True,
             deadline_s=budget.left(),
             fresh=fresh and joined_at is None,
-            lock_wait=JOIN_WAIT,
+            lock_wait=min(JOIN_WAIT, budget.left()),
             keep_going=False,
             unlocked=stalled,
         )
