@@ -38,7 +38,7 @@ def _drop_ambient_colour_env() -> None:
 
 _drop_ambient_colour_env()
 
-WRITER_MARKERS = ("BR_AGENT_NAME", "AI_AGENT", "CLAUDECODE")
+WRITER_MARKERS = ("BR_AGENT_NAME", "AI_AGENT", "CLAUDECODE", "BASICLY_HOLDER")
 
 
 def _drop_ambient_writer_env() -> None:
