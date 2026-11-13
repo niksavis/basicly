@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import importlib.util
 import json
@@ -8,6 +7,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +38,9 @@ beans = _load("beans.py", "basicly_tracker_kit_beans")
 vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
 vault_view = _load("vault_view.py", "basicly_tracker_kit_vault_view")
 vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
+canonical = _load("vault_canonical.py", "basicly_tracker_kit_vault_canonical")
+private_map = _load("vault_private.py", "basicly_tracker_kit_vault_private")
+vault_template = _load("vault_template.py", "basicly_tracker_kit_vault_template")
 vault_shapes = vault_clone.vault_shapes
 
 COMMIT_BYTES = vault_share.SEGMENT_BYTES
@@ -57,9 +60,11 @@ class MigrateError(ValueError):
 @dataclass(frozen=True)
 class Import:
     clone: Any
-    writer: str
     clock: Callable[[], float]
+    redact_holders: bool
     redactor: Redactor | None = None
+    private_map: Path | None = None
+    overwrite_private_map: bool = False
     runner: Runner = git_runner.run
 
 
@@ -81,41 +86,6 @@ def ledger_events(ledger: Path | str) -> list:
     return events.canonical_order(found)
 
 
-def _apply(value: object, rule: Redactor) -> object:
-    if isinstance(value, str):
-        return rule(value)
-    if isinstance(value, dict):
-        return {key: _apply(item, rule) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_apply(item, rule) for item in value]
-    return value
-
-
-def _holder_key(event: Any) -> str | None:
-
-    payload = event.payload
-    if event.kind == events.KIND_FIELD and payload.get("name") == events.HOLDER_FIELD:
-        key = "value"
-    elif event.kind == events.KIND_CREATED and events.HOLDER_FIELD in payload:
-        key = events.HOLDER_FIELD
-    else:
-        return None
-    return key if isinstance(payload.get(key), str) else None
-
-
-def scrub(event: Any, redactor: Redactor | None) -> Any:
-
-    def rule(value: str) -> str:
-        return redact.text(value if redactor is None else redactor(value))
-
-    holder = _holder_key(event)
-    payload = {
-        key: redact.text(str(value)) if key == holder else _apply(value, rule)
-        for key, value in event.payload.items()
-    }
-    return dataclasses.replace(event, actor=rule(event.actor), payload=payload)
-
-
 def line_of(event: Any, writer: str, at: float) -> dict[str, object]:
 
     made = hashlib.sha256(f"{writer} {event.id}".encode()).hexdigest()[:32]
@@ -130,8 +100,43 @@ def line_of(event: Any, writer: str, at: float) -> dict[str, object]:
     }
 
 
-def shared_line(event: Any, plan: Import, at: float) -> dict[str, object]:
-    return redact.event(line_of(scrub(event, plan.redactor), plan.writer, at))
+def _prefix_templates(
+    found: Sequence[Any], template: Mapping[str, object]
+) -> dict[str, dict[str, object]]:
+    return {
+        event.record.partition("-")[0]: {**template, "prefix": event.record.partition("-")[0]}
+        for event in found
+    }
+
+
+def writer_of(found: Sequence[Any], template: Mapping[str, object] | None = None) -> str:
+    text = "\n".join(events.to_json(event) for event in found)
+    text += json.dumps(_prefix_templates(found, template or {}), sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(("canonical-migration-v1\n" + text).encode()).hexdigest()[:32]
+
+
+def lines_of(
+    found: Sequence[Any], template: Mapping[str, object] | None = None
+) -> tuple[str, list[dict[str, object]]]:
+    writer = writer_of(found, template)
+    source_templates = _prefix_templates(found, template or {})
+    attached: set[str] = set()
+    lines = []
+    for event in found:
+        try:
+            stamp = datetime.fromisoformat(event.ts)
+            at = stamp.replace(tzinfo=stamp.tzinfo or UTC).timestamp()
+        except ValueError, OverflowError:
+            at = 0.0
+        line = line_of(event, writer, at)
+        prefix = event.record.partition("-")[0]
+        held = source_templates[prefix]
+        line[vault_template.IDENTITY] = vault_template.identity(held)
+        if prefix not in attached:
+            line[vault_template.FIELD] = held
+            attached.add(prefix)
+        lines.append(line)
+    return writer, lines
 
 
 def digest(found: Sequence[Any], records: Collection[str]) -> str:
@@ -176,18 +181,18 @@ def _refuse_a_second_import(clone: Any, found: Sequence[Any]) -> None:
     again = [event.id for event in found if event.id in held]
     if again:
         raise MigrateError(
-            f"the vault already carries {len(again)} of the {len(found)} events, first "
-            f"{again[0]}; this source was migrated before, so nothing was pushed"
+            f"the vault already carries {len(again)} of the {len(found)} canonical events; "
+            "this source was migrated before, so nothing was pushed"
         )
 
 
-def _chunks(plan: Import, head: str, lines: list, git: Runner) -> list[str]:
+def _chunks(plan: Import, head: str, writer: str, lines: list, git: Runner) -> list[str]:
 
-    header = _header_bytes(plan.writer)
+    header = _header_bytes(writer)
     made: list[str] = []
     rest = list(lines)
     while rest:
-        _path, old = vault_share._segment(git, head, plan.writer)
+        _path, old = vault_share._segment(git, head, writer, incoming=len(_text([rest[0]])))
         room = COMMIT_BYTES - (len(old.encode("utf-8")) if old else header)
         take, size = 0, 0
         for line in rest:
@@ -195,7 +200,7 @@ def _chunks(plan: Import, head: str, lines: list, git: Runner) -> list[str]:
             if size > room:
                 break
             take += 1
-        head = vault_share._build(plan.clone, head, plan.writer, rest[: max(take, 1)], git)
+        head = vault_share._build(plan.clone, head, writer, rest[: max(take, 1)], git)
         made.append(head)
         rest = rest[max(take, 1) :]
     return made
@@ -208,12 +213,14 @@ def _refuse(name: str, given: tuple, made: tuple, outcome: str) -> None:
         )
 
 
-def _verified(plan: Import, head: str, lines: list, source: Sequence[Any]) -> dict[str, object]:
+def _verified(
+    plan: Import, head: str, writer: str, lines: list, source: Sequence[Any]
+) -> dict[str, object]:
 
     def git(args: list[str], **options: Any) -> str:
         return plan.runner(args, plan.clone.bare, **options)
 
-    made = _chunks(plan, head, lines, git) if lines else []
+    made = _chunks(plan, head, writer, lines, git) if lines else []
     tip = made[-1] if made else head
     verdicts = vault_shapes.check(plan.clone.bare, tip)
     landed = [
@@ -224,33 +231,58 @@ def _verified(plan: Import, head: str, lines: list, source: Sequence[Any]) -> di
     ]
     _refuse("event count", ("ledger", len(lines)), ("vault", len(landed)), _UNPUSHED)
     records = {event.record for event in source}
-    held = digest(vault_view.carried(lines, EVERY_PROJECT), records)
-    shown = digest(view_events(vault_shapes.valid_events(verdicts), EVERY_PROJECT), records)
+    expected = view_events(lines, EVERY_PROJECT)
+    actual = view_events(vault_shapes.valid_events(verdicts), EVERY_PROJECT)
+    for prefix in {record.partition("-")[0] for record in records}:
+        vault_template.carried(vault_shapes.valid_events(verdicts), prefix)
+    held = digest(expected, records)
+    shown = digest(actual, records)
     _refuse("fold digest", ("ledger", held), ("vault view", shown), _UNPUSHED)
+    canonical.check(actual)
     return {"tip": tip, "commits": len(made), "events": len(lines), "digest": shown}
 
 
-def to_vault(found: Sequence[Any], plan: Import) -> dict[str, object]:
+def to_vault(
+    found: Sequence[Any], plan: Import, *, template: Mapping[str, object] | None = None
+) -> dict[str, object]:
 
-    git_runner.writer_id(plan.writer)
     if not found:
         raise MigrateError("the source holds no events, so there is nothing to migrate")
-    at = plan.clock()
-    lines = [shared_line(event, plan, at) for event in found]
+    public = vault_template.prepare(template or {}, plan.redactor)
+    source_template = templates.parse(dict(template or {}), Path(templates.TEMPLATE_FILE))
+    public_template = templates.parse(public, Path(templates.TEMPLATE_FILE))
+    result = canonical.canonicalize(
+        found,
+        redactor=plan.redactor,
+        redact_holders=plan.redact_holders,
+        template=source_template,
+        public_template=public_template,
+    )
+    writer, lines = lines_of(result.events, public)
+    destination = (
+        private_map.prepare(plan.private_map, plan.clone, overwrite=plan.overwrite_private_map)
+        if plan.private_map is not None
+        else None
+    )
+    saved = False
     redacted = sum(
         1
-        for index, event in enumerate(found)
+        for index, event in enumerate(events.canonical_order(found))
         if lines[index][vault_view.LEDGER_FIELD] != json.loads(events.to_json(event))
     )
     largest = max((len(_text([line])) for line in lines), default=0)
-    if largest > COMMIT_BYTES - _header_bytes(plan.writer):
+    if largest > COMMIT_BYTES - _header_bytes(writer):
         raise MigrateError(
-            f"one ledger event is {largest} bytes, above the {COMMIT_BYTES} byte commit limit"
+            f"one ledger event or migration template is {largest} bytes, "
+            f"above the {COMMIT_BYTES} byte commit limit"
         )
     for _attempt in range(vault_share.BULK_ATTEMPTS):
         fetched = vault_clone.fetch(plan.clone, clock=plan.clock, runner=plan.runner)
-        _refuse_a_second_import(plan.clone, found)
-        shown = _verified(plan, str(fetched["head"]), lines, found)
+        _refuse_a_second_import(plan.clone, result.events)
+        shown = _verified(plan, str(fetched["head"]), writer, lines, result.events)
+        if destination is not None and not saved:
+            private_map.write(destination, result.mapping)
+            saved = True
         try:
             vault_share._push(
                 plan.clone, str(shown["tip"]), plan.runner, git_runner.DEFAULT_TIMEOUT
@@ -261,7 +293,11 @@ def to_vault(found: Sequence[Any], plan: Import) -> dict[str, object]:
         return {
             **shown,
             "redacted": redacted,
+            "reminted": result.reminted,
+            "touched_fields": list(result.touched),
+            "mapping": "saved" if saved else "not-kept",
             "not_in_view": len(lines) - len(vault_view.carried(lines, EVERY_PROJECT)),
+            "derived_holder_events": len(view_events(lines, EVERY_PROJECT)) - len(lines),
         }
     raise MigrateError(
         f"the vault refused the import push {vault_share.BULK_ATTEMPTS} times; nothing landed, "
@@ -270,7 +306,7 @@ def to_vault(found: Sequence[Any], plan: Import) -> dict[str, object]:
 
 
 def ledger_to_vault(ledger: Path | str, plan: Import) -> dict[str, object]:
-    return to_vault(ledger_events(ledger), plan)
+    return to_vault(ledger_events(ledger), plan, template=templates.read(ledger))
 
 
 def backlog_to_vault(source: Any, plan: Import) -> dict[str, object]:
@@ -278,7 +314,7 @@ def backlog_to_vault(source: Any, plan: Import) -> dict[str, object]:
     read = beans.READERS[source.format](source.export, name=source.name)
     vault_clone.private(plan.clone.folder)
     with tempfile.TemporaryDirectory(dir=plan.clone.folder) as scratch:
-        report = migrate.import_snapshot(scratch, read, clock=plan.clock)
+        report = migrate.import_snapshot(scratch, read, actor="migration", clock=lambda: 0.0)
         refused = [*report.rejected, *report.unreadable]
         if refused:
             raise MigrateError(
@@ -305,7 +341,9 @@ def from_vault(
     if events.ledger_paths(target):
         raise MigrateError(f"{target} already holds ledger files; name an empty folder")
     vault_clone.fetch(clone, clock=clock, runner=runner)
+    template = vault_template.carried(vault_clone.valid_events(clone), prefix) or {"prefix": prefix}
     shown = view_events(vault_clone.valid_events(clone), vault_view.Want(prefix))
+    canonical.check(shown)
     text = "".join(events.to_json(event) + "\n" for event in shown)
     records = {event.record for event in shown}
     with tempfile.TemporaryDirectory(dir=clone.folder) as scratch:
@@ -318,5 +356,7 @@ def from_vault(
     target.mkdir(parents=True, exist_ok=True)
     vault_clone.durable(target / events.INITIAL_LOG_NAME, text)
     if not (target / templates.TEMPLATE_FILE).exists():
-        vault_clone.durable(target / templates.TEMPLATE_FILE, json.dumps({"prefix": prefix}) + "\n")
+        vault_clone.durable(
+            target / templates.TEMPLATE_FILE, json.dumps(template, sort_keys=True) + "\n"
+        )
     return {"events": len(shown), "records": len(records), "digest": digest(back, records)}

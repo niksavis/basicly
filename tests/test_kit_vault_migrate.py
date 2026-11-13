@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from tests.test_kit_vault_shapes import WRITER_A, WRITER_B, Vault, _segment
+from tests.test_kit_vault_shapes import WRITER_B, Vault, _segment
 from tests.test_kit_vault_share import _machine, bare
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -51,7 +51,7 @@ def _ledger(folder: Path) -> Path:
 
 def _plan(tmp_path: Path, bare: Path, **options: Any) -> Any:
     clone, _state = _machine(tmp_path, bare, "importer")
-    return vault_migrate.Import(clone, WRITER_A, time.time, **options)
+    return vault_migrate.Import(clone, time.time, options.pop("redact_holders", True), **options)
 
 
 def _head(bare: Path) -> str:
@@ -59,9 +59,12 @@ def _head(bare: Path) -> str:
 
 
 def _source_digest(found: list, plan: Any) -> str:
-    lines = [vault_migrate.shared_line(e, plan, 0.0) for e in found]
-    carried = vault_migrate.vault_view.carried(lines, vault_migrate.EVERY_PROJECT)
-    return vault_migrate.digest(carried, {e.record for e in found})
+    made = vault_migrate.canonical.canonicalize(
+        found, redactor=plan.redactor, redact_holders=plan.redact_holders
+    )
+    _writer, lines = vault_migrate.lines_of(made.events)
+    shown = vault_migrate.view_events(lines, vault_migrate.EVERY_PROJECT)
+    return vault_migrate.digest(shown, {e.record for e in found})
 
 
 def test_a_ledger_lands_in_fold_order_with_its_ids_and_the_digests_agree(
@@ -80,11 +83,16 @@ def test_a_ledger_lands_in_fold_order_with_its_ids_and_the_digests_agree(
     verdicts = shapes.check(bare, "main")
     assert all(v.valid for v in verdicts)
     landed = [e for e in shapes.valid_events(verdicts) if e.get("kind") == "ledger"]
-    assert [e["ledger"]["id"] for e in landed] == [e.id for e in events.canonical_order(found)]
-    assert {e["writer"] for e in landed} == {WRITER_A}
+    made = vault_migrate.canonical.canonicalize(found, redact_holders=True)
+    assert [e["ledger"]["id"] for e in landed] == [e.id for e in made.events]
+    assert [
+        old.id for old, new in zip(found, made.events, strict=True) if old.payload == new.payload
+    ] == [new.id for old, new in zip(found, made.events, strict=True) if old.payload == new.payload]
+    assert all(events.generation_of(event, len(found)) is not None for event in made.events)
+    assert {e["writer"] for e in landed} == {vault_migrate.writer_of(made.events)}
     assert (shown["events"], shown["commits"], shown["tip"]) == (6, 1, _head(bare))
     assert shown["digest"] == _source_digest(found, plan)
-    assert (shown["not_in_view"], shown["redacted"]) == (1, 1)
+    assert (shown["not_in_view"], shown["redacted"], shown["derived_holder_events"]) == (0, 1, 2)
 
 
 def test_the_digest_moves_when_only_an_edge_target_moves() -> None:
@@ -101,10 +109,17 @@ def test_the_digest_moves_when_only_an_edge_target_moves() -> None:
 
 def test_commits_stay_within_one_mebibyte_and_one_writer(tmp_path: Path, bare: Path) -> None:
     note = "x" * 600
-    found = [
-        events.Event(f"acme-a1#ev-{n:06d}", "acme-a1", n + 1, "note", "ada", "t", {"text": note})
-        for n in range(4000)
-    ]
+    source = tmp_path / "source"
+    events.append(
+        source,
+        [
+            events.Draft("acme-a1", "created", {"title": "A public record"}),
+            *[events.Draft("acme-a1", "note", {"text": note, "ordinal": n}) for n in range(3999)],
+        ],
+        actor="contributor",
+        clock=lambda: 1000.0,
+    )
+    found = events.read_events(source)[0]
     plan = _plan(tmp_path, bare)
 
     shown = vault_migrate.to_vault(found, plan)
@@ -113,7 +128,7 @@ def test_commits_stay_within_one_mebibyte_and_one_writer(tmp_path: Path, bare: P
     assert len(made) == shown["commits"] >= 3
     for commit in made:
         diff = git_runner.run(["diff", "--numstat", f"{commit}^", commit], bare).split()
-        assert diff[2].startswith(f"log/{WRITER_A}/")
+        assert diff[2].startswith(f"log/{vault_migrate.writer_of(found)}/")
         added = git_runner.run(["diff", "-U0", f"{commit}^", commit], bare)
         body = "".join(ln[1:] + "\n" for ln in added.splitlines() if ln.startswith("+{"))
         assert len(body.encode("utf-8")) <= vault_migrate.COMMIT_BYTES
@@ -123,9 +138,18 @@ def test_commits_stay_within_one_mebibyte_and_one_writer(tmp_path: Path, bare: P
 def test_a_vault_that_already_holds_a_record_refuses_by_both_digests(
     tmp_path: Path, bare: Path
 ) -> None:
-    other = events.Event("acme-a1#ev-other", "acme-a1", 9, "note", "bob", "t", {"text": "x"})
-    first = vault_migrate.Import(_machine(tmp_path, bare, "first")[0], WRITER_B, time.time)
-    vault_migrate.to_vault([other], first)
+    source = tmp_path / "other"
+    events.append(
+        source,
+        [
+            events.Draft("acme-a1", "created", {"title": "Other record"}),
+            events.Draft("acme-a1", "note", {"text": "Other history."}),
+        ],
+        actor="contributor",
+        clock=lambda: 1000.0,
+    )
+    first = vault_migrate.Import(_machine(tmp_path, bare, "first")[0], time.time, True)
+    vault_migrate.to_vault(events.read_events(source)[0], first)
     before = _head(bare)
 
     with pytest.raises(vault_migrate.MigrateError, match="fold digest differs") as refused:
@@ -142,7 +166,9 @@ def test_a_second_import_of_the_same_ledger_refuses_by_name(tmp_path: Path, bare
     vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
     before = _head(bare)
 
-    with pytest.raises(vault_migrate.MigrateError, match="already carries 6 of the 6 events"):
+    with pytest.raises(
+        vault_migrate.MigrateError, match="already carries 6 of the 6 canonical events"
+    ):
         vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
     assert _head(bare) == before
 
@@ -161,13 +187,14 @@ def test_an_ended_vault_refuses_by_both_counts(tmp_path: Path, bare: Path) -> No
     assert _head(bare) == before
 
 
-def test_the_share_rules_redact_each_line_and_spare_the_holder_name(
-    tmp_path: Path, bare: Path
+@pytest.mark.parametrize("redact_holders", [False, True])
+def test_the_share_rules_redact_each_line_with_an_explicit_holder_rule(
+    tmp_path: Path, bare: Path, redact_holders: bool
 ) -> None:
     def names(text: str) -> str:
         return text.replace("ada", "<redacted:machine-username>")
 
-    plan = _plan(tmp_path, bare, redactor=names)
+    plan = _plan(tmp_path, bare, redactor=names, redact_holders=redact_holders)
 
     shown = vault_migrate.ledger_to_vault(_ledger(tmp_path / "ledger"), plan)
 
@@ -180,7 +207,8 @@ def test_the_share_rules_redact_each_line_and_spare_the_holder_name(
     assert "/home" + "/" not in text
     assert {e["actor"] for e in landed.values()} == {"<redacted:machine-username>"}
     holders = [e["payload"].get("assignee") or e["payload"].get("value") for e in landed.values()]
-    assert holders.count("ada") == 2
+    assert holders.count("ada") == (0 if redact_holders else 2)
+    assert holders.count("<redacted:machine-username>") == (2 if redact_holders else 0)
     assert shown["redacted"] == 6
 
 
@@ -217,6 +245,7 @@ def test_a_prefix_exports_in_vault_order_and_folds_as_the_view(tmp_path: Path, b
     written = events.read_events(target)[0]
     assert [e.id for e in written] == [e.id for e in view]
     assert shown["digest"] == vault_migrate.digest(view, {"acme-a1", "acme-b2"})
-    assert (shown["events"], shown["records"]) == (5, 2)
+    assert (shown["events"], shown["records"]) == (8, 2)
+    assert vault_migrate.canonical.fsck.check(target).exit_code == 0
     with pytest.raises(vault_migrate.MigrateError, match="already holds ledger files"):
         vault_migrate.from_vault(clone, "acme", target, clock=time.time)
