@@ -216,3 +216,21 @@ def work_repo(
     if artifacts.is_dir():
         shutil.copytree(artifacts, work / "build/lefthook")
     return work
+
+
+MEASURED_PREFIX = "measured_"
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+
+    rows = [
+        (report.nodeid, name, value)
+        for outcome in ("passed", "failed")
+        for report in terminalreporter.stats.get(outcome, [])
+        for name, value in getattr(report, "user_properties", ())
+        if str(name).startswith(MEASURED_PREFIX)
+    ]
+    if rows:
+        terminalreporter.write_sep("-", "measured")
+        for nodeid, name, value in rows:
+            terminalreporter.write_line(f"{nodeid}: {name} = {value}")

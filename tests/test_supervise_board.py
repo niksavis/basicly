@@ -14,7 +14,7 @@ import pytest
 from basicly import board_facts, board_schema, board_snapshot, loop_state, projection, supervise
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
 TICK_S = 0.05
 CLOCK_STEP_TOLERANCE_S = 5.0
@@ -197,13 +197,17 @@ def test_a_failed_emission_costs_one_line_and_never_the_beat(
     assert not (work_repo / board_snapshot.SNAPSHOT_FILE).exists()
 
 
-def test_one_emission_stays_inside_the_beat_it_rides(work_repo: Path) -> None:
+def test_one_emission_stays_inside_the_beat_it_rides(
+    work_repo: Path, record_property: Callable[[str, object], None]
+) -> None:
     supervise.acquire(work_repo, _SESSION, _ROOT)
     board_facts.emit_tick(work_repo, TICK_S)
     started, worked = time.perf_counter(), time.process_time()
     board_facts.emit_tick(work_repo, TICK_S)
-    assert time.process_time() - worked < EMIT_CAP_S
-    assert time.perf_counter() - started < supervise.HEARTBEAT_INTERVAL_S
+    used, took = time.process_time() - worked, time.perf_counter() - started
+    record_property("measured_emission_cpu_s", f"{used:.2f} of the {EMIT_CAP_S:.1f} s cap")
+    assert used < EMIT_CAP_S
+    assert took < supervise.HEARTBEAT_INTERVAL_S
 
 
 def test_the_tick_carries_every_derivation_the_idle_board_carries(work_repo: Path) -> None:
