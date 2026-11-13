@@ -23,14 +23,14 @@ Save the script first. Then you can see a download failure and pass arguments:
 ```sh
 installer=$(mktemp)
 curl -fsSL https://niksavis.github.io/basicly/install.sh -o "$installer"
-sh "$installer" --ref v0.44.1
+sh "$installer" --ref v0.45.0
 rm -f "$installer"
 ```
 
 ```powershell
 $installer = Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString()) + '.ps1')
 Invoke-WebRequest https://niksavis.github.io/basicly/install.ps1 -OutFile $installer -ErrorAction Stop
-& ([scriptblock]::Create((Get-Content -Raw $installer))) -Ref v0.44.1
+& ([scriptblock]::Create((Get-Content -Raw $installer))) -Ref v0.45.0
 ```
 
 Leave out `--ref` or `-Ref` to install the latest release. The PowerShell form runs the
@@ -39,7 +39,7 @@ saved script as a script block, so a restrictive execution policy does not block
 ### The release wheel, with uv already installed
 
 ```sh
-uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.44.1/basicly-0.44.1-py3-none-any.whl basicly install
+uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.45.0/basicly-0.45.0-py3-none-any.whl basicly install
 ```
 
 ### Offline
@@ -49,7 +49,7 @@ Run the same `uvx` command once on that machine while it is online, so uv caches
 Python dependencies. Then run it offline:
 
 ```sh
-uvx --offline --python '>=3.14' --from ./basicly-0.44.1-py3-none-any.whl basicly install
+uvx --offline --python '>=3.14' --from ./basicly-0.45.0-py3-none-any.whl basicly install
 ```
 
 The package carries the pinned Lefthook binaries for each platform. Install writes only
@@ -139,7 +139,7 @@ cannot grant itself access; you can also run the command from your own terminal.
 This retry keeps hooks, signing, loop checkpoints and dotenv protections active.
 It does not require changing a machine-wide permissions profile.
 
-### From v0.44.1: tracker compaction
+### From v0.45.0: tracker compaction
 
 Post-merge tracker hooks now report pending shards without folding, staging or creating
 commits. Re-running install replaces the managed hook behavior while preserving foreign
@@ -158,7 +158,7 @@ There is no `update` command. **Re-running install *is* the upgrade** — it is
 idempotent and converges the repo onto whatever version you pin:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.44.1/basicly-0.44.1-py3-none-any.whl basicly install
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.45.0/basicly-0.45.0-py3-none-any.whl basicly install
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -256,7 +256,7 @@ version to keep in step across a team.
 ## Uninstall
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.44.1/basicly-0.44.1-py3-none-any.whl basicly uninstall
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.45.0/basicly-0.45.0-py3-none-any.whl basicly uninstall
 ```
 
 This removes everything basicly manages — the managed core, install state,
@@ -286,8 +286,8 @@ basicly hooks-check
 Use the repository's pinned basicly invocation if `basicly` is not on `PATH`:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.44.1/basicly-0.44.1-py3-none-any.whl basicly hooks-build --runtime-only
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.44.1/basicly-0.44.1-py3-none-any.whl basicly hooks-check
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.45.0/basicly-0.45.0-py3-none-any.whl basicly hooks-build --runtime-only
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.45.0/basicly-0.45.0-py3-none-any.whl basicly hooks-check
 ```
 
 In a basicly source checkout, use `uv run basicly` instead. Prepare the Lefthook

@@ -1,1 +1,0 @@
-- `secret-scan` accepts one `generic-secret-assignment` finding when the staged `.secret-scan-allow.toml` lists its path, the sha256 of the line and a reason. The refusal prints that entry and says that a person must read the line first. A changed line, an unknown rule, an empty reason or an entry that matches no line fails the scan by name.

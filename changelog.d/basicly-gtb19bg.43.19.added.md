@@ -1,1 +1,0 @@
-- `commit-msg --vault VAULT MESSAGE_FILE` refuses a commit message with no record id and no `Record: none` line, and prints the claim command. It adds the id when the session holds exactly one claim, passes git-generated merges, reverts and fixups, warns when the record is not held, and queues a `miss` event when the vault cannot be reached.

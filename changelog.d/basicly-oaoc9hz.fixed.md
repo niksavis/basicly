@@ -1,1 +1,0 @@
-- A supervisor board emission reads process evidence from one per-record ledger index instead of scanning the whole ledger for each record, so its CPU time no longer grows faster than the ledger (basicly-oaoc9hz).

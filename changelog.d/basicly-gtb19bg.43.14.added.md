@@ -1,1 +1,0 @@
-- `hook session-start|prompt|stop|session-end --vault` fetches and shares from agent hooks and never fails the agent: start hooks fetch at most every 20 s and share when the 180 s bulk slot is due, end hooks share the whole queue. `status --vault` prints the fetch age, the last event per writer and the queue age without a network call.

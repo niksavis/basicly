@@ -1,1 +1,0 @@
-- The tracker command `sync --vault VAULT` shares the queued events as one plain-pushed commit on the fetched vault head. A refused push fetches and rebuilds up to 5 times, or until `--deadline` with `--urgent`. A valid `ended` event stops every share and keeps the queue. A share that stops at any step leaves each event in the vault once after the next sync.

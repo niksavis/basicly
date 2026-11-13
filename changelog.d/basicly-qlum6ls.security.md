@@ -1,1 +1,0 @@
-- **A backlog URL can no longer carry an access token.** The tracker kit's `git_runner.remote_url` now refuses any user part on an https URL and allows only a lowercase login name of at most 32 characters on ssh and scp URLs, so a token never enters tracker data (basicly-qlum6ls).

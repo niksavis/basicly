@@ -1,1 +1,0 @@
-- **Claude Code 2.1.322 warns at session start about the two colon refspec deny rules. The warning is expected.** `Bash(git *push* :**)` and `Bash(git *push* +:**)` still deny `git push origin :branch` and `git push origin +:branch`. The only probed quiet rule that denies both also denies every push (basicly-s3yqg13).

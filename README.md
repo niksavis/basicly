@@ -89,13 +89,13 @@ startup file, such as `~/.bashrc` or `~/.zshrc`. Put the version you installed i
 the [releases page](https://github.com/niksavis/basicly/releases) lists each version:
 
 ```sh
-basicly() { uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.44.1/basicly-0.44.1-py3-none-any.whl basicly "$@"; }
+basicly() { uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.45.0/basicly-0.45.0-py3-none-any.whl basicly "$@"; }
 ```
 
 In PowerShell, add this function to your profile:
 
 ```powershell
-function basicly { uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.44.1/basicly-0.44.1-py3-none-any.whl basicly @args }
+function basicly { uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.45.0/basicly-0.45.0-py3-none-any.whl basicly @args }
 ```
 
 After you edit a rule in `.basicly-local/`, write the instruction files again, then check
@@ -137,7 +137,7 @@ no dependencies and needs Python 3.9 or later.
 For example, to add the tracker:
 
 ```sh
-uv tool install 'git+https://github.com/niksavis/basicly@v0.44.1#subdirectory=packages/basicly-tracker'
+uv tool install 'git+https://github.com/niksavis/basicly@v0.45.0#subdirectory=packages/basicly-tracker'
 basicly-tracker init
 ```
 

@@ -1,1 +1,0 @@
-- **The tracker reads a vault through a ledger view.** When `.basicly-tracker.toml` names a vault, ready, list, show and session start read a ledger folder under the machine state. It holds the carried ledger events in vault order, takes each holder from the vault fold, shows only the repository prefix, and refuses a shallow clone with the fetch command (basicly-gtb19bg.43.29).

@@ -1,1 +1,0 @@
-- When a vault head drops commits a clone had seen, the tracker keeps the old tip as `refs/basicly/retracted/N` and refuses to share. `fsck --vault --repair` re-queues lost lines from the local clone, writes `claim-lost` for claims that no longer hold, and processes kept quarantine entries. `--accept-rewrite HEAD --purge` and `reclone --vault` are added.

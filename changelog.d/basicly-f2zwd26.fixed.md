@@ -1,1 +1,0 @@
-- **The guardrails now deny `git push -d` and `+` refspec force pushes.** `git push -d origin branch`, `git push origin -d branch` and `git push origin +main` ran before. The new rules name `push` or the remote `origin` or `upstream`, so `git push origin c++fix` and `git push -o "ci.note=fix +1" origin main` still run (basicly-f2zwd26).

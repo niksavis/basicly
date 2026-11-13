@@ -1,1 +1,0 @@
-- Refresh reviewed model anchors and regenerate every vendor surface from models.dev. Anthropic tiers now resolve to the current family, including Fable 5.2. Unsupported broker cells remain explicit.

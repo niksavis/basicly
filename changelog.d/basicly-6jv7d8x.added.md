@@ -1,1 +1,0 @@
-- Hill-climb rounds now record cited finding identities and optional host usage bound to saved replies. Missing values remain unknown. Reports label cost estimates and preserve existing stop rules.

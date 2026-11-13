@@ -1,1 +1,0 @@
-- **The tracker kit can check a vault's commits.** `vault-check` sorts each commit of a backlog vault into genesis, format, batch or archive, and quarantines any other commit alone with the rule it breaks, including a line written in another writer's name, an edited line and a merge; nothing after a valid `ended` event counts (basicly-gtb19bg.43.5).

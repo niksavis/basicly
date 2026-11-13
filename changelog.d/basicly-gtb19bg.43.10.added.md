@@ -1,1 +1,0 @@
-- The tracker command `fetch --vault VAULT` clones a vault bare into the per-user machine state folder (mode 0700) on first use and fetches its `main` under one lock per clone. A failed fetch is retried once, then the last state is shown with its age. New commits are sorted as `vault-check` does, and `refs/basicly/seen` moves to the head.

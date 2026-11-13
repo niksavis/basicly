@@ -6,7 +6,91 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.45.0 - 2026-11-13
+
+Delta: v0.44.1..v0.45.0
+
 This release adds an opt-in vault for the tracker: a separate git repository that holds the records of several projects, so many developers and agents can claim and write work without merge conflicts. A repository uses the vault only after `vault-init` writes `.basicly-tracker.toml`; without that file, the tracker reads and writes `.basicly/ledger` as before. The release also tightens the push guardrails, makes the board emission cheaper as the ledger grows, keeps repeated builds from changing the manifest, and improves model routing and evaluation evidence.
+
+### Added
+
+- Hill-climb rounds now record cited finding identities and optional host usage bound to saved replies. Missing values remain unknown. Reports label cost estimates and preserve existing stop rules. (basicly-6jv7d8x)
+
+- `secret-scan` accepts one `generic-secret-assignment` finding when the staged `.secret-scan-allow.toml` lists its path, the sha256 of the line and a reason. The refusal prints that entry and says that a person must read the line first. A changed line, an unknown rule, an empty reason or an entry that matches no line fails the scan by name. (basicly-e9gomvr)
+
+- **The tracker kit gets one module that may run git.** `tracker/git_runner.py` checks commit ids, writer ids and backlog URLs before git runs, allows only the https and ssh protocols, and stops git and its children at a deadline. The `kit-boundary` gate exempts this one file and still refuses `subprocess` in every other kit module (basicly-gtb19bg.43.1).
+
+- The tracker command `fetch --vault VAULT` clones a vault bare into the per-user machine state folder (mode 0700) on first use and fetches its `main` under one lock per clone. A failed fetch is retried once, then the last state is shown with its age. New commits are sorted as `vault-check` does, and `refs/basicly/seen` moves to the head. (basicly-gtb19bg.43.10)
+
+- The tracker command `comment RECORD --vault VAULT --text TEXT` queues a comment beside the vault clone instead of the ledger. A stdlib redactor in the kit replaces credential shapes and absolute paths first. The command prints the queued count, the oldest age and what shares it next; `CI` or `BASICLY_TRACKER_EPHEMERAL` asks for an immediate share. (basicly-gtb19bg.43.11)
+
+- The tracker command `sync --vault VAULT` shares the queued events as one plain-pushed commit on the fetched vault head. A refused push fetches and rebuilds up to 5 times, or until `--deadline` with `--urgent`. A valid `ended` event stops every share and keeps the queue. A share that stops at any step leaves each event in the vault once after the next sync. (basicly-gtb19bg.43.12)
+
+- When a vault head drops commits a clone had seen, the tracker keeps the old tip as `refs/basicly/retracted/N` and refuses to share. `fsck --vault --repair` re-queues lost lines from the local clone, writes `claim-lost` for claims that no longer hold, and processes kept quarantine entries. `--accept-rewrite HEAD --purge` and `reclone --vault` are added. (basicly-gtb19bg.43.13)
+
+- `hook session-start|prompt|stop|session-end --vault` fetches and shares from agent hooks and never fails the agent: start hooks fetch at most every 20 s and share when the 180 s bulk slot is due, end hooks share the whole queue. `status --vault` prints the fetch age, the last event per writer and the queue age without a network call. (basicly-gtb19bg.43.14)
+
+- `claim RECORD --vault VAULT` reserves a record in the vault within one 30 s deadline shared by every git call and answers with a named exit code: 0 landed, 3 held or won elsewhere with the take command, 4 unsettled, 5 vault unreachable, 6 internal error with a log, 7 already yours. The first valid claim wins. (basicly-gtb19bg.43.15)
+
+- `commit-msg --vault VAULT MESSAGE_FILE` refuses a commit message with no record id and no `Record: none` line, and prints the claim command. It adds the id when the session holds exactly one claim, passes git-generated merges, reverts and fixups, warns when the record is not held, and queues a `miss` event when the vault cannot be reached. (basicly-gtb19bg.43.19)
+
+- **`.scripts/bulk_load.py` measures proof T-bulk.** It drives 52 sessions on 13 machines against one local bare vault with `comment --vault` and the prompt hook, reads visibility from a reader that fires its hook every 30 s, and prints p50, p95 and max. With `--gate` it exits 1 above 240 s p95, on an unseen event, a silent session or a queue left after stop (basicly-gtb19bg.43.24).
+
+- **Set up a backlog vault with one command.** `vault-init` takes the git address of an empty repository, suggests the name `backlog-vault`, prints the proposed permissions per host and the files it will push, and pushes the genesis only with `--yes`. A `.basicly-tracker.toml` file then names the vault, so vault commands need no `--vault` flag (basicly-gtb19bg.43.26).
+
+- **Write tracker records through the vault.** When `.basicly-tracker.toml` names a vault, create, update, close, comment, review, confirm and dep queue each ledger event as a vault line of kind `ledger` and leave `.basicly/ledger` unchanged. A new id takes the prefix from that file, and claim and unassign answer with the vault claim exit codes (basicly-gtb19bg.43.28).
+
+- **The tracker reads a vault through a ledger view.** When `.basicly-tracker.toml` names a vault, ready, list, show and session start read a ledger folder under the machine state. It holds the carried ledger events in vault order, takes each holder from the vault fold, shows only the repository prefix, and refuses a shallow clone with the fetch command (basicly-gtb19bg.43.29).
+
+- **The tracker reads a vault repository through its vault view.** When `.basicly-tracker.toml` names a vault, the board, the dependency graph, the gate and label readers and the record readers read the vault view, not `.basicly/ledger`. A vault write mints the seq and id of a record that only the vault holds from that view (basicly-gtb19bg.43.36).
+
+- **The tracker CLI reaches the vault.** `list`, `ready` and `show` read the vault view, and `--all-projects` reads every project. `show --json` prints id, status, holder and links. `create` takes the vault prefix, a refused vault write exits 3, 4, 5 or 7, and `unassign <id> --session` gives a record back. Engine `review` and `confirm` write through the vault (basicly-gtb19bg.43.37).
+
+- A vault claim now carries the holder name from `git config basicly.holder` (or `BASICLY_HOLDER`). The vault view writes that name as the assignee, `vault-show` and `fsck --repair` show it beside the writer id, and a claim without a plain name refuses with the command that sets it. (basicly-gtb19bg.43.38)
+
+- **The tracker kit can check a vault's commits.** `vault-check` sorts each commit of a backlog vault into genesis, format, batch or archive, and quarantines any other commit alone with the rule it breaks, including a line written in another writer's name, an edited line and a merge; nothing after a valid `ended` event counts (basicly-gtb19bg.43.5).
+
+- **The tracker kit can fold a vault into records.** `vault-show` shows a record's holder, status and void events: the earlier valid claim wins, a later claim and an unassign by a non-holder are void, statuses follow the config in force at their position, and an unknown holder-changing kind makes holder commands name the upgrade (basicly-gtb19bg.43.6).
+
+- Claude value comparisons now verify native instruction and skill discovery before accepting task results. They record tokens per accepted task for each arm. Invalid loading keeps known usage and prevents acceptance. (basicly-gtb19bg.49)
+
+### Changed
+
+- Offline evaluations support reviewed effort levels and explicit Fable advisor comparisons. Results record observed models and separate advisor arrangements. A model mismatch prevents acceptance. (basicly-4z0e1y3)
+
+- Specialist instructions now permit bounded recovery from ordinary errors. Repair agents can reread requirements while preserving their approved plan, scope, and gates. (basicly-byczx4u)
+
+- The kit-boundary gate refuses an environment read (`os.environ`, `os.getenv`) in a tracker kit module outside its adapters (cli, commands, process_evidence, settings, git_runner). Writer and holder resolution now take the environment as an argument, so a fold or a check never reads process state. (basicly-gtb19bg.43.7)
+
+- Refresh reviewed model anchors and regenerate every vendor surface from models.dev. Anthropic tiers now resolve to the current family, including Fable 5.2. Unsupported broker cells remain explicit. (basicly-gtb19bg.48)
+
+- The best-practices audit now includes Fable prompting guidance and vendor indexes. Offline discovery reports bounded model-guide candidates without downloading unlisted pages. The workflow distinguishes vendor requirements, recommendations, and repository choices. (basicly-mpzeomz)
+
+- **Claude Code 2.1.322 warns at session start about the two colon refspec deny rules. The warning is expected.** `Bash(git *push* :**)` and `Bash(git *push* +:**)` still deny `git push origin :branch` and `git push origin +:branch`. The only probed quiet rule that denies both also denies every push (basicly-s3yqg13).
+
+### Fixed
+
+- **The board renders when a record waits in the loop with no comment.** An advance ask now always carries `requested_at`, taken from the record's last comment or else from the moment the board is built, so `basicly board` no longer exits 3 on such a record (basicly-5nks6p8).
+
+- **The standalone tracker package parses on its Python floor again.** `vault_init.py` used an except form that Python 3.9 refuses; it now uses a tuple, and a test parses every kit file at the package floor (basicly-6zgw26a).
+
+- Refuse an agent spawn when its declared tier cannot resolve against the installed model map. The refusal names the agent and tier. Optional defaults and explicit model choices retain their behavior. (basicly-9ycgace)
+
+- Repeated builds preserve a clean working tree by omitting the unused wall-clock timestamp from the generated manifest. Existing manifests remain readable. (basicly-e4t2txx)
+
+- **The guardrails now deny `git push -d` and `+` refspec force pushes.** `git push -d origin branch`, `git push origin -d branch` and `git push origin +main` ran before. The new rules name `push` or the remote `origin` or `upstream`, so `git push origin c++fix` and `git push -o "ci.note=fix +1" origin main` still run (basicly-f2zwd26).
+
+- The tier resolver now applies the hook worker-default restriction to environment variables and CLI flags. Invalid defaults return the same reason. Explicit maximum tiers remain available. Agent calls that name the Fable alias receive a warning without changing their input. (basicly-gtb19bg.54)
+
+- A supervisor board emission reads process evidence from one per-record ledger index instead of scanning the whole ledger for each record, so its CPU time no longer grows faster than the ledger (basicly-oaoc9hz).
+
+- **A ledger merge keeps who holds each record.** The `tracker-path-scan` hook and `basicly tracker scrub` accept the holder name in the assignee field and still refuse or redact it everywhere else, so a compaction or worktree merge is no longer refused (basicly-q1a104u).
+
+- **Only the holder can give a claimed record back.** `unassign` is refused when the writer is not the current holder and names that holder; `--by` names who gives it back (default `git config user.name`), and `--take` releases another holder's record on purpose, which the ledger records (basicly-qtmesvv).
+
+### Security
+
+- **A backlog URL can no longer carry an access token.** The tracker kit's `git_runner.remote_url` now refuses any user part on an https URL and allows only a lowercase login name of at most 32 characters on ssh and scp URLs, so a token never enters tracker data (basicly-qlum6ls).
 
 ## v0.44.1 - 2026-11-10
 

@@ -1,1 +1,0 @@
-- **The board renders when a record waits in the loop with no comment.** An advance ask now always carries `requested_at`, taken from the record's last comment or else from the moment the board is built, so `basicly board` no longer exits 3 on such a record (basicly-5nks6p8).

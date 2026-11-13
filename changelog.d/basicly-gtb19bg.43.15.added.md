@@ -1,1 +1,0 @@
-- `claim RECORD --vault VAULT` reserves a record in the vault within one 30 s deadline shared by every git call and answers with a named exit code: 0 landed, 3 held or won elsewhere with the take command, 4 unsettled, 5 vault unreachable, 6 internal error with a log, 7 already yours. The first valid claim wins.

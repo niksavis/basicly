@@ -1,1 +1,0 @@
-- The best-practices audit now includes Fable prompting guidance and vendor indexes. Offline discovery reports bounded model-guide candidates without downloading unlisted pages. The workflow distinguishes vendor requirements, recommendations, and repository choices.
