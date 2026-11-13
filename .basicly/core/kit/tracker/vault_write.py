@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +43,7 @@ vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
 vault_hooks = _load("vault_hooks.py", "basicly_tracker_kit_vault_hooks")
 vault_claim = _load("vault_claim.py", "basicly_tracker_kit_vault_claim")
 vault_view = _load("vault_view.py", "basicly_tracker_kit_vault_view")
+vault_pending = _load("vault_pending.py", "basicly_tracker_kit_vault_pending")
 
 LEDGER_KIND = "ledger"
 LEDGER_FIELD = "ledger"
@@ -62,6 +63,9 @@ class NoClockError(events.LedgerError):
 class WriteContext:
     redactor: Redactor | None
     clock: Clock
+    target: Target | None = None
+    source: Path | None = None
+    queued: dict[str, object] | None = None
 
 
 def parts(given: WriteContext | Redactor | None) -> tuple[Redactor | None, Clock | None]:
@@ -164,7 +168,7 @@ def view_of(target: Target, ledger: Path) -> Path:
     template = ledger if ledger.is_dir() else None
     want = vault_view.Want(target.prefix, False, template)
     try:
-        return vault_view.present(target.clone, want, clock=target.clock)
+        return vault_pending.present(target.clone, want, clock=target.clock)
     except vault_view.ViewError as exc:
         raise VaultUnreadError(
             f"{exc}; the write needs the vault view to mint its seq and id, so nothing is queued"
@@ -178,31 +182,87 @@ def born_records(target: Target) -> set[str]:
     return {event.record for event in carried if event.kind == events.KIND_CREATED}
 
 
+def admission(
+    directory: Path | str, given: WriteContext | Redactor | None, environ: Mapping[str, str]
+) -> tuple[Path, WriteContext | Redactor | None]:
+    ledger = Path(directory)
+    _redactor, clock = parts(given)
+    if isinstance(given, WriteContext) and given.target is not None:
+        return view_of(given.target, given.source or ledger), given
+    target = target_of(ledger, environ, clock)
+    if target is None:
+        return ledger, given
+    if not isinstance(given, WriteContext):
+        raise NoClockError("vault admission needs the CLI write context")
+    return view_of(target, ledger), replace(given, target=target, source=ledger)
+
+
+def _vault_refused(target: Target, ledger: Path, drafts: Sequence[Any]) -> None:
+    states = events.fold(events.read_events(ledger)[0]).records
+    created = {draft.record for draft in drafts if draft.kind == events.KIND_CREATED}
+    available = {record for record, state in states.items() if not state.tombstoned} | created
+    for draft in drafts:
+        if draft.record not in available:
+            raise events.LedgerError(
+                f"the vault holds no record {draft.record}; nothing was written"
+            )
+        if _names_the_holder(draft) or (
+            draft.kind == events.KIND_CREATED and events.HOLDER_FIELD in draft.payload
+        ):
+            raise events.LedgerError(
+                f"{draft.record} cannot set {events.HOLDER_FIELD} as a ledger field in vault "
+                f"mode; nothing was written, run `claim {draft.record}` "
+                f"or `unassign {draft.record}`"
+            )
+        if draft.kind == events.KIND_EDGE:
+            other = str(draft.payload.get("to", ""))
+            if other not in available:
+                raise events.LedgerError(f"the vault holds no record {other}; nothing was written")
+            if draft.record not in created:
+                edges = _load("edges.py", "basicly_tracker_kit_edges")
+                edge_type = str(draft.payload.get("type", ""))
+                edges.refuse_edge(ledger, draft.record, other, edge_type)
+                edges.refuse_cycle(ledger, draft.record, other, edge_type)
+        if draft.kind == events.KIND_EDGE_RETRACTED:
+            edges = _load("edges.py", "basicly_tracker_kit_edges")
+            edges.refuse_retraction(
+                edges.queries.views_and_children(ledger)[0],
+                draft.record,
+                str(draft.payload.get("to", "")),
+                str(draft.payload.get("type", "")),
+            )
+        if draft.kind == events.KIND_STATUS and draft.payload.get("status") == "in_progress":
+            held = vault_claim.holder(target.clone, draft.record)
+            mine = (vault_queue.writer_of(target.state), target.session)
+            if held != mine:
+                raise events.LedgerError(
+                    f"{draft.record} needs this session's canonical vault claim before it can "
+                    f"start; nothing was written, run `claim {draft.record}`"
+                )
+
+
 def _names_the_holder(event: Any) -> bool:
     return event.kind == events.KIND_FIELD and event.payload.get("name") == events.HOLDER_FIELD
 
 
-def _seed(view: Path, ledger: Path, records: set[str]) -> list[str]:
+def _seed(view: Path, records: set[str]) -> list[str]:
 
     shown = [
         event
         for event in events.read_events(view)[0]
         if not (event.actor == vault_view.HOLDER_ACTOR and _names_the_holder(event))
     ]
-    in_view = {event.record for event in shown}
-    held = events.read_events(ledger)[0] if ledger.is_dir() else []
     found = [event for event in shown if event.record in records]
-    found += [event for event in held if event.record in records - in_view]
-    found += [event for event in (*shown, *held) if events.WITHDRAWN_FROM in event.payload]
+    found += [event for event in shown if events.WITHDRAWN_FROM in event.payload]
     lines = {event.id: events.to_json(event) for event in found}
     return list(lines.values())
 
 
 def _minted(
-    target: Target, view: Path, ledger: Path, drafts: Sequence[Any], *, repeat: bool, **options: Any
+    target: Target, view: Path, drafts: Sequence[Any], *, repeat: bool, **options: Any
 ) -> list:
 
-    seed = _seed(view, ledger, {draft.record for draft in drafts})
+    seed = _seed(view, {draft.record for draft in drafts})
     vault_clone.private(target.clone.folder)
     with tempfile.TemporaryDirectory(dir=target.clone.folder) as scratch:
         folder = Path(scratch)
@@ -229,11 +289,15 @@ class Write:
 
 def land(write: Write, drafts: Sequence[Any], *, repeat: bool = False) -> list:
 
-    ledger = write.ledger
+    ledger, given = write.ledger, write.given
+    if not isinstance(given, WriteContext) or given.target is None:
+        ledger, given = admission(ledger, given, write.environ)
     actor = writers.writer_class(write.environ)
+    target = given.target if isinstance(given, WriteContext) else None
+    if target is not None:
+        _vault_refused(target, ledger, drafts)
     drafts = _refused(ledger, drafts, actor)
-    redactor, clock = parts(write.given)
-    target = target_of(ledger, write.environ, clock)
+    redactor, clock = parts(given)
     if target is None:
         resolved = recurrence.at_the_generation_this_write_needs(
             events, ledger, drafts, repeat=repeat, redact=redactor
@@ -242,10 +306,8 @@ def land(write: Write, drafts: Sequence[Any], *, repeat: bool = False) -> list:
             ledger, resolved, actor=actor, redact=redactor, held_lock=write.lock, clock=clock
         )
     clock = target.clock
-    view = view_of(target, ledger)
     minted = _minted(
         target,
-        view,
         ledger,
         drafts,
         repeat=repeat,
@@ -255,8 +317,10 @@ def land(write: Write, drafts: Sequence[Any], *, repeat: bool = False) -> list:
     )
     if minted:
         lines = [line_of(event) for event in minted]
-        vault_queue.write(target.clone, lines, state=target.state, origin=target.origin())
-        vault_hooks.due_share(target.clone, target.state, clock, now=target.immediate)
+        queued = vault_queue.write(target.clone, lines, state=target.state, origin=target.origin())
+        shared = vault_hooks.due_share(target.clone, target.state, clock, now=target.immediate)
+        if isinstance(given, WriteContext) and given.queued is not None:
+            given.queued.update({**queued, "shared": shared})
     return minted
 
 

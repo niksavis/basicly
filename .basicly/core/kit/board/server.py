@@ -100,6 +100,7 @@ def api_index(ledger: Path) -> dict:
 
 def api_version(ledger: Path) -> dict:
 
+    ledger = tracker_cli().vault_cli.read_ledger(ledger, time.time)
     stamps = []
     for path in tracker_cli().events.ledger_paths(ledger):
         try:

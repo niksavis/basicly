@@ -305,6 +305,8 @@ def test_the_ledger_forms_still_parse_and_write_through_the_vault(
     (root / vault_config.CONFIG_PATH).unlink()
     created = _kit(root, "create", LEDGER, "--prefix", VAULT_PREFIX, "--title", "local")
     record = _report(created)["record"]
+    found = [json.loads(events.to_json(event)) for event in events.read_events(root / LEDGER)[0]]
+    _push(tmp_path, bare, "fixture-publisher", _carry(found))
     _configure(root, bare)
     clone = _hold_the_share_slot(tmp_path, bare)
     before = sorted((root / LEDGER).iterdir())
@@ -328,8 +330,11 @@ def test_the_ledger_forms_still_parse_and_write_through_the_vault(
 
 def test_the_vault_comment_form_still_parses(tmp_path: Path, bare: Path) -> None:
     root = _repo(tmp_path, bare)
+    created = _kit(root, "create", LEDGER, "--title", "A real vault comment target")
+    assert created.returncode == 0, created.stdout + created.stderr
+    record = _report(created)["record"]
 
-    done = _kit(root, "comment", f"{VAULT_PREFIX}-a1", "--text", "a vault note")
+    done = _kit(root, "comment", record, "--text", "a vault note")
 
     assert done.returncode == 0, done.stdout + done.stderr
 
@@ -390,6 +395,8 @@ def test_engine_review_and_confirm_in_a_vault_repository_queue_through_the_vault
     record = commands.create_root(ledger, fields, prefix=VAULT_PREFIX)[0].record
     commands.comment(ledger, record, "The fixture agrees each criterion and its check.")
     evidence = _engine_evidence(commands, ledger, record, verb)
+    found = [json.loads(events.to_json(event)) for event in events.read_events(ledger)[0]]
+    _push(tmp_path, bare, "fixture-publisher", _carry(found))
     _configure(root, bare)
     clone = _hold_the_share_slot(tmp_path, bare)
     before = {path.name: path.read_bytes() for path in ledger.glob("*.jsonl")}

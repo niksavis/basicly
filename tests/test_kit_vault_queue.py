@@ -36,6 +36,31 @@ HOME = "/" + "home" + "/someone/secret-project/plan.md"
 def origin(tmp_path: Path) -> Vault:
     made = Vault(tmp_path / "origin")
     made.genesis()
+    source = tmp_path / "source-ledger"
+    record = "acme-a1b2"
+    found = cli.events.append(
+        source,
+        [
+            cli.events.Draft(record, cli.events.KIND_CREATED, {"title": "A real comment target"}),
+            cli.events.Draft(record, cli.events.KIND_STATUS, {"status": "open"}),
+        ],
+    )
+    writer = "a" * 32
+    lines: list[dict[str, object]] = [{"kind": "segment", "writer": writer}]
+    lines += [
+        {
+            "id": f"{index:032x}",
+            "kind": "ledger",
+            "record": record,
+            "writer": writer,
+            "session": "fixture",
+            "at": 0.0,
+            "ledger": json.loads(cli.events.to_json(event)),
+        }
+        for index, event in enumerate(found, 1)
+    ]
+    made.write(f"log/{writer}/00001.jsonl", "".join(json.dumps(line) + "\n" for line in lines))
+    made.commit("publish the fixture record")
     return made
 
 
@@ -89,7 +114,8 @@ def test_a_queued_write_prints_the_count_the_oldest_age_and_who_shares_it(
     assert shown["pending"] == 2
     assert shown["oldest_age_s"] >= 0
     assert "Stop" in shown["share"]
-    assert [json.loads(line)["kind"] for line in lines] == ["comment", "comment"]
+    assert [json.loads(line)["kind"] for line in lines] == ["ledger", "ledger"]
+    assert [json.loads(line)["ledger"]["kind"] for line in lines] == [cli.events.KIND_NOTE] * 2
     assert len({json.loads(line)["writer"] for line in lines}) == 1
 
 
@@ -121,7 +147,7 @@ def test_a_torn_tail_is_cut_back_and_reported(
 
     assert shown["torn"]["bytes"] > 0
     assert shown["torn"]["start"].startswith('{"kind": "comment"')
-    assert [json.loads(line)["payload"]["text"] for line in lines] == ["kept", "after"]
+    assert [json.loads(line)["ledger"]["payload"]["text"] for line in lines] == ["kept", "after"]
 
 
 def test_the_writer_id_is_kept_private_and_reused(tmp_path: Path) -> None:

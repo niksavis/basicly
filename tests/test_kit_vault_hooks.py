@@ -17,6 +17,7 @@ import pytest
 from tests.test_kit_vault_clone import _fetch
 from tests.test_kit_vault_shapes import Vault
 from tests.test_kit_vault_share import _ids, _machine, _write, bare
+from tests.vault_native_targets import seed_native_target
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 KIT = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -121,6 +122,7 @@ def test_status_shows_the_data_age_without_a_network_call(tmp_path: Path, bare: 
 def test_a_hook_never_fails_the_agent_when_the_vault_is_unreachable(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    seed_native_target(cli, tmp_path, bare, "r-1")
     state = tmp_path / "s"
     for text in ("shared at once", "queued"):
         _cli(
@@ -169,6 +171,7 @@ def test_proof_t_visible_b_sees_a_comment_after_a_stops_and_b_starts(
 def test_proof_t_person_share_a_write_shares_when_due_else_at_a_later_command(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    seed_native_target(cli, tmp_path, bare, "r-1")
     state = str(tmp_path / "s")
     base = ["--vault", str(bare), "--state", state]
     clone = vault_clone.locate(Path(state), str(bare))
@@ -188,6 +191,7 @@ def test_proof_t_person_share_a_write_shares_when_due_else_at_a_later_command(
 def test_proof_t_no_code_write_a_thousand_writes_and_hooks_leave_the_code_clone_clean(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    seed_native_target(cli, tmp_path, bare, "r-1")
     code = Vault(tmp_path / "code")
     code.write("app.py", "print(1)\n")
     code.commit("code")
@@ -223,7 +227,7 @@ _AGENT = textwrap.dedent(
     base = ["--vault", bare, "--state", state]
     if phase == "write":
         for n in range(int(count)):
-            run(["comment", "r-1", "--text", f"e{n}", *base])
+            run(["comment", "r-1", "--text", f"e{sys.argv[6]}-{n}", *base])
     else:
         run(["hook", "stop", *base])
     print(json.dumps({"max_wait": max(waits, default=0.0)}))
@@ -234,6 +238,7 @@ _AGENT = textwrap.dedent(
 def test_proof_t_agents_eight_sessions_in_three_worktrees_land_each_event_once(
     tmp_path: Path, bare: Path
 ) -> None:
+    seed_native_target(cli, tmp_path, bare, "r-1")
     code = Vault(tmp_path / "code")
     code.write("app.py", "print(1)\n")
     code.commit("code")
@@ -248,7 +253,16 @@ def test_proof_t_agents_eight_sessions_in_three_worktrees_land_each_event_once(
     def phase(name: str) -> list[float]:
         procs = [
             subprocess.Popen(
-                [sys.executable, str(agent), str(KIT / "cli.py"), name, str(bare), state, "125"],
+                [
+                    sys.executable,
+                    str(agent),
+                    str(KIT / "cli.py"),
+                    name,
+                    str(bare),
+                    state,
+                    "125",
+                    str(n),
+                ],
                 cwd=trees[n % 3],
                 env={**os.environ, "BASICLY_TRACKER_SESSION": f"s{n}"},
                 stdout=subprocess.PIPE,
@@ -272,6 +286,7 @@ def test_proof_t_agents_eight_sessions_in_three_worktrees_land_each_event_once(
 def test_a_write_whose_share_fails_still_succeeds_and_says_the_share_was_skipped(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    seed_native_target(cli, tmp_path, bare, "r-1")
     state = str(tmp_path / "s")
     _fetch(vault_clone.locate(Path(state), str(bare)))
     bare.rename(tmp_path / "gone.git")
@@ -328,6 +343,7 @@ def test_the_vault_tests_start_without_the_ci_variables() -> None:
 def test_a_write_whose_share_steps_aside_is_shared_by_the_next_trigger(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    seed_native_target(cli, tmp_path, bare, "r-1")
     state = tmp_path / "s"
     clone = vault_clone.locate(state, str(bare))
     base = ["--vault", str(bare), "--state", str(state)]

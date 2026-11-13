@@ -118,26 +118,36 @@ def _refuse_a_retraction_of_an_absent_edge(
         edges.refuse_retraction(views, draft.record, target, edge_type)
 
 
-def _admitted(repo_root: Path, args: Sequence[str], kit_module: Any, repeat: bool) -> list[Any]:
+def _admitted(
+    repo_root: Path,
+    args: Sequence[str],
+    kit_module: Any,
+    repeat: bool,
+    read_ledger: Path | None = None,
+) -> list[Any]:
     events = kit_module.events
-    ledger = owned_store.ledger_dir(repo_root)
+    ledger = read_ledger if read_ledger is not None else owned_store.ledger_dir(repo_root)
+    template = owned_store.kit(repo_root, "templates").load(ledger)
     drafts = mirror.drafts(kit_module, _resolve_labels(kit_module, ledger, args), "")
     _refuse_a_write_that_records_nothing(args, drafts)
     refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
     _refuse_a_retraction_of_an_absent_edge(kit_module, repo_root, ledger, drafts)
     held = events.fold(events.read_events(ledger)[0]).records if ledger.is_dir() else {}
     holders = owned_store.kit(repo_root, "holders")
-    drafts = holders.claimed_by(held, drafts, holders.default_holder(repo_root, os.environ))
+    if read_ledger is None:
+        drafts = holders.claimed_by(held, drafts, holders.default_holder(repo_root, os.environ))
     holders.refuse(held, drafts)
     owned_store.kit(repo_root, "review").refuse(
         held,
         drafts,
         resolved_actor(repo_root),
-        _template(repo_root),
+        template,
         found=kit_module.read_ledger(ledger),
     )
     stamped = _stamped(kit_module, drafts)
-    owned_store.kit(repo_root, "values").refuse(events, stamped, _template(repo_root))
+    owned_store.kit(repo_root, "values").refuse(events, stamped, template)
+    if read_ledger is not None:
+        return stamped
     return owned_store.kit(repo_root, "recurrence").at_the_generation_this_write_needs(
         events, ledger, stamped, repeat=repeat, redact=redact.redact_committed
     )
@@ -148,10 +158,22 @@ def check_close(repo_root: Path, record: str, reason: str) -> None:
     events = kit_module.events
     args = ["close", record, "--reason", reason]
     try:
-        with events.LedgerLock(owned_store.ledger_dir(repo_root)):
-            _admitted(repo_root, args, kit_module, False)
+        adapter, ledger, context = _write_admission(repo_root)
+        with events.LedgerLock(ledger):
+            source = ledger if context.target is not None else None
+            drafts = _admitted(repo_root, args, kit_module, False, source)
+            if context.target is not None:
+                adapter._vault_refused(context.target, ledger, drafts)
     except (events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(f"completion admission for {record} refused: {exc}") from exc
+
+
+def _write_admission(repo_root: Path) -> tuple[Any, Path, Any]:
+    commands = owned_store.kit(repo_root, "commands")
+    adapter = commands.vault_write
+    context = adapter.WriteContext(redact.redact_committed, commands.events.wall_clock())
+    ledger, context = adapter.admission(owned_store.ledger_dir(repo_root), context, os.environ)
+    return adapter, ledger, context
 
 
 def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
@@ -176,17 +198,22 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
     args, repeat = re_record.read_the_seams_own_flags(args)
     kit_module = owned_store.kit(repo_root)
     events = kit_module.events
-    ledger = owned_store.ledger_dir(repo_root)
     try:
+        adapter, ledger, context = _write_admission(repo_root)
         with events.LedgerLock(ledger) as lock:
-            stamped = _admitted(repo_root, args, kit_module, repeat)
-            landed = events.append(
-                ledger,
-                stamped,
-                actor=resolved_actor(repo_root),
-                redact=redact.redact_committed,
-                held_lock=lock,
-            )
+            source = ledger if context.target is not None else None
+            stamped = _admitted(repo_root, args, kit_module, repeat, source)
+            if source is not None:
+                write = adapter.Write(ledger, context, lock, os.environ)
+                landed = adapter.land(write, stamped, repeat=repeat)
+            else:
+                landed = events.append(
+                    ledger,
+                    stamped,
+                    actor=resolved_actor(repo_root),
+                    redact=redact.redact_committed,
+                    held_lock=lock,
+                )
             return stamped, landed
     except (events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(
@@ -201,7 +228,14 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
     parent = dict(tracker_argv.flag_pairs(args, tracker_argv.VALUE_FLAGS["create"])).get(
         "--parent", ""
     )
-    prefix = owned_store.tracker_prefix(repo_root) if not parent else None
+    adapter, ledger, context = _write_admission(repo_root)
+    prefix = (
+        context.target.prefix
+        if context.target is not None
+        else owned_store.tracker_prefix(repo_root)
+        if not parent
+        else None
+    )
     if not parent and not prefix:
         raise TrackerDivergenceError(
             f"a create with no --parent needs an id prefix and this repository declares "
@@ -210,7 +244,6 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
             f"{' '.join(args)} would otherwise have to guess a namespace no read would "
             f"find again"
         )
-    ledger = owned_store.ledger_dir(repo_root)
     try:
         with events.LedgerLock(ledger) as lock:
             minted = set(events.fold(events.read_events(ledger)[0]).records)
@@ -220,6 +253,11 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
                 else events.ids.mint_root_id(events.ids.validate_prefix(prefix or ""), minted)
             )
             drafts = mirror.drafts(kit_module, args, json.dumps({"id": record}))
+            if context.target is not None:
+                adapter.land(
+                    adapter.Write(ledger, context, lock, os.environ), _stamped(kit_module, drafts)
+                )
+                return record
             found = events.read_events(ledger)[0]
             owned_store.kit(repo_root, "review").refuse(
                 events.fold(found).records,

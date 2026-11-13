@@ -1,6 +1,6 @@
 # Tracker kit command reference
 
-Every command takes the ledger directory, `.basicly/ledger`, as its first argument and
+Ledger-form commands take the ledger directory, `.basicly/ledger`, as their first argument and
 prints one JSON object with a `schema` field. `cli.py <command> --help` lists every flag.
 The examples use `acme` as the id prefix and `acme-a1b2` as a record id.
 
@@ -34,6 +34,38 @@ python3 .basicly/kit/tracker/cli.py config .basicly/ledger set prefix acme
 
 ## Write
 
+### Vault repositories
+
+When `.basicly-tracker.toml` configures a vault, ordinary writes validate against its view
+and queue carried ledger events beside the clone. They write no local ledger events.
+The engine and standalone kit use the same admission and write adapter.
+
+| Class | Forms | Vault behavior |
+| --- | --- | --- |
+| Ordinary writes | `create`, `child`, `update`, `close`, `comment`, `review`, `confirm`, `dep`, `undep` | Keep their ledger-form arguments and existing checks. |
+| Canonical protocol | `claim`, `unassign` | Compatible ledger aliases use the native handler, report schema and exit codes. |
+| Refused | `assign`, `resolve`, `acknowledge-loss`, `delete` | Write nothing and name a real remedy. |
+
+Use native `claim RECORD-ID` to reserve work in the vault, then
+`update .basicly/ledger RECORD-ID --status in_progress` to start it after its readiness checks.
+Setting `assignee` directly is refused: ownership uses canonical claim and unassign events.
+Ledger aliases refuse `claim --to`, `claim --take` and `unassign --by`; native session and
+deadline options belong on the native form. `unassign --take` keeps its explicit meaning.
+`assign` names `claim`; retired conflict/loss forms name `fsck --repair`; `delete` names
+`close --resolution cancelled --reason ...` so the history remains.
+
+Own pending events appear immediately in show, list, ready and the board, with
+`sharing: pending` and a visible `pending` label. Another clone sees them after sharing.
+Sharing deduplicates the event ids and clears that label. Reads retain the normal fetch age.
+An unsettled pending claim does not grant ownership. A legacy raw native comment causes
+an explicit counted read refusal naming `basicly-pvdo68d`; its projection is deferred.
+
+```sh
+python3 .basicly/kit/tracker/cli.py claim acme-a1b2 --vault path/to/vault.git
+python3 .basicly/kit/tracker/cli.py update .basicly/ledger acme-a1b2 --status in_progress
+python3 .basicly/kit/tracker/cli.py sync --urgent --vault path/to/vault.git
+```
+
 ### create
 
 Mint a record id and append its first events. `owed` in the output names what the record
@@ -55,7 +87,8 @@ python3 .basicly/kit/tracker/cli.py child .basicly/ledger acme-a1b2 --title "Par
 ### update
 
 Set fields, the status or labels. `--add-label` and `--remove-label` repeat. Moving a story
-that nobody holds to `in_progress` also names you as its holder. `--if-seq N` refuses the
+that nobody holds to `in_progress` also names you as its holder in ledger mode. Vault mode
+requires your canonical claim first. `--if-seq N` refuses the
 update when a field it writes changed after seq `N`, the `max_seq` that `show` gave you, so
 an edit never silently replaces a newer one.
 
@@ -74,11 +107,14 @@ full source prose, including notes above this limit.
 python3 .basicly/kit/tracker/cli.py comment .basicly/ledger acme-a1b2 "The export drops a trailing newline."
 ```
 
-With `--vault`, the comment goes to the vault's queue beside its clone instead of the ledger. Every
+With `--vault`, the comment validates the existing vault record and queues the same carried
+note event as the ordinary form, beside its clone. Every
 string in the event is redacted first: credential shapes and absolute paths become
 `<redacted:rule>` markers. The command prints the queued count, the age of the oldest queued
 event and what shares the queue next. Where `CI` or `BASICLY_TRACKER_EPHEMERAL` is set, it asks
 for an immediate share. A queue line torn by a crash is cut back and reported.
+The same text on one record is one note by content identity across sessions; a merged
+native write reports `queued: 0` and `merged: true` with no additional note.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py comment acme-a1b2 --vault path/to/vault.git --text "The export drops a trailing newline."
@@ -124,7 +160,7 @@ python3 .basicly/kit/tracker/cli.py assign .basicly/ledger acme-a1b2 --to alex
 
 ### claim
 
-Reserve a record and set it to `in_progress` in one write, when you start the work. It is
+In ledger mode, reserve a record and set it to `in_progress` in one write. It is
 refused while the record carries the `refine` label or fails `dor`: an agent reviews it
 first.
 

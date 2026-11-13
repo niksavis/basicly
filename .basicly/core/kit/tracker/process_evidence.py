@@ -427,7 +427,8 @@ def record_process(
     redact: Any = None,
 ) -> list:
     commands = _load("commands")
-    ledger = commands._ledger(directory)
+    admitted, redact = commands.vault_write.admission(directory, redact, commands.environment())
+    ledger = commands._ledger(admitted)
     with events.LedgerLock(ledger) as lock:
         commands._require(ledger, record)
         found = events.read_events(ledger)[0]

@@ -136,7 +136,7 @@ def present_ledger(repo_root: Path, *, all_projects: bool = False) -> Path:
         template = ledger_dir(repo_root)
         want = view.Want(config.prefix, all_projects, template if template.is_dir() else None)
         try:
-            return view.present(clone, want, clock=time.time)
+            return packaged_kit("vault_pending").present(clone, want, clock=time.time)
         except view.ViewError as exc:
             raise VaultViewError(str(exc)) from None
     ledger = ledger_dir(repo_root)
