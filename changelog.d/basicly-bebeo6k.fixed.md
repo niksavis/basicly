@@ -1,0 +1,1 @@
+- Create a vault genesis without requiring a personal global Git identity.
