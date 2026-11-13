@@ -323,6 +323,7 @@ def _refuse_vault_ledger_form(args: argparse.Namespace, clock: Callable[[], floa
 
 def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple[int, Any]:
     clock = events.wall_clock()
+    vault_cli.route_ledger_alias(args)
     if (vault := vault_cli.HANDLERS.get(args.command)) is not None:
         report = vault(args, clock)
         code = report.pop("exit", EXIT_OK)
