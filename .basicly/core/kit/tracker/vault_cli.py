@@ -122,6 +122,7 @@ def _claim_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
         args.record,
         args.session or os.environ.get("BASICLY_TRACKER_SESSION", ""),
         clock,
+        name=vault_write.holders.chosen_holder(Path.cwd(), os.environ),
     )
     shown = vault_claim.claim(ask, deadline=args.deadline)
     if shown.get("exit") == vault_claim.UNREACHABLE and vault_init.no_genesis(args.vault):

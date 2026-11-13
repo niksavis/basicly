@@ -69,6 +69,24 @@ class Ask:
     session: str
     clock: Callable[[], float]
     runner: Callable[..., str] = git_runner.run
+    name: str = ""
+
+
+NAME_MAX = 100
+NAME_FIX = "set your holder name first: `git config basicly.holder 'your name'`, then claim again"
+NAME_UNSAFE = (
+    "the holder name from git config basicly.holder looks like a path, a secret or control text; "
+    "set a plain name: `git config basicly.holder 'your name'`"
+)
+
+
+def name_refusal(name: str) -> str:
+
+    if not name:
+        return NAME_FIX
+    if len(name) > NAME_MAX or not name.isprintable() or vault_queue.redact.text(name) != name:
+        return NAME_UNSAFE
+    return ""
 
 
 class _Budget:
@@ -89,18 +107,29 @@ class _Budget:
         return remaining if cap is None else min(cap, remaining)
 
 
+def _state(clone: Any, record: str) -> Any:
+    return vault_fold.fold(vault_clone.valid_events(clone)).records.get(record)
+
+
 def holder(clone: Any, record: str) -> tuple | None:
-    state = vault_fold.fold(vault_clone.valid_events(clone)).records.get(record)
+    state = _state(clone, record)
     return None if state is None else state.holder
 
 
-def _held_elsewhere(record: str, vault: str, held: tuple) -> dict[str, object]:
+def _held_elsewhere(record: str, vault: str, held: tuple, name: str = "") -> dict[str, object]:
     return {
         "exit": LOST,
         "record": record,
-        "holder": {"writer": held[0], "session": held[1]},
+        "holder": {"writer": held[0], "session": held[1], "name": name},
         "next": f"claim {record} --take --reason 'why' --vault {vault}",
     }
+
+
+def _lost(clone: Any, record: str) -> dict[str, object] | None:
+    state = _state(clone, record)
+    if state is None or state.holder is None:
+        return None
+    return _held_elsewhere(record, clone.url, state.holder, state.name)
 
 
 def _unsettled(record: str, vault: str, why: str) -> dict[str, object]:
@@ -135,9 +164,9 @@ def _check(ask: Ask, budget: _Budget, writer: str) -> dict[str, object] | None:
         return {"exit": UNREACHABLE, "record": ask.record, "check": check}
     held = holder(clone, ask.record)
     if held == (writer, ask.session):
-        mine = {"writer": writer, "session": ask.session}
+        mine = {"writer": writer, "session": ask.session, "name": ask.name}
         return {"exit": YOURS, "record": ask.record, "holder": mine}
-    return None if held is None else _held_elsewhere(ask.record, clone.url, held)
+    return None if held is None else _lost(clone, ask.record)
 
 
 def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
@@ -176,7 +205,7 @@ def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[s
 
     clone, record = ask.clone, ask.record
     origin = vault_queue.Origin(ask.session, False, ask.clock)
-    draft = {"kind": "claim", "record": record}
+    draft = {"kind": "claim", "record": record, "payload": {vault_fold.HOLDER_NAME: ask.name}}
     made = vault_queue.write(clone, [draft], state=ask.state, origin=origin)["events"][0]
     fresh = fetched_left - budget.left() < FRESH
     try:
@@ -192,7 +221,7 @@ def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[s
         return {"exit": LANDED, "record": record, "claim": made, "joined": joined}
     if held is None:
         return {**_unsettled(record, clone.url, "the claim has not landed yet"), "claim": made}
-    return _held_elsewhere(record, clone.url, held)
+    return _lost(clone, record) or _held_elsewhere(record, clone.url, held)
 
 
 def _attempt(ask: Ask, budget: _Budget) -> dict[str, object]:
@@ -216,6 +245,8 @@ def claim(
             "exit": FIX,
             "fix": "name the record id to claim, as in claim acme-a1b2 --vault ...",
         }
+    if refused := name_refusal(ask.name):
+        return {"exit": FIX, "record": record, "fix": refused}
     try:
         return _attempt(ask, _Budget(deadline, ticks))
     except vault_share.ShareError as exc:

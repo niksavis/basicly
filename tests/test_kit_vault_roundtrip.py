@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
 
 from basicly import owned_store
+from tests.test_kit_vault_share import _machine
 from tests.test_kit_vault_view import _carry, _push, _record
 from tests.test_kit_vault_write import (
     CONTEXT,
@@ -115,3 +117,13 @@ def test_a_claimed_record_mints_past_the_view_holder_line_without_a_gap(
     carried = [_carried(event) for event in _shown(repo, record) if event.actor != "vault"]
     assert carried == [_carried(event) for event in (*written, noted, raised)]
     assert repeated == []
+
+
+def test_a_vault_write_target_without_a_prefix_refuses_by_name_before_it_reads_the_view(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    target = vault_write.Target(clone, state, "s1", False, time.time)
+
+    with pytest.raises(vault_write.VaultUnreadError, match="names no project prefix"):
+        vault_write.view_of(target, tmp_path / "ledger")

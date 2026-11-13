@@ -97,6 +97,12 @@ def default_holder(start: Path | str, environ: Mapping[str, str]) -> str:
     return holder_and_source(start, environ)[0]
 
 
+def chosen_holder(start: Path | str, environ: Mapping[str, str]) -> str:
+
+    name, source = holder_and_source(start, environ)
+    return name if source in (HOLDER_GIT_CONFIG, f"env {HOLDER_VARIABLE}") else ""
+
+
 def _held_by(states: Mapping[str, Any], record: str) -> str:
     state = states.get(record)
     return str(state.fields.get(HOLDER_FIELD) or "") if state is not None else ""

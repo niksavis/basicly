@@ -124,7 +124,7 @@ def test_proof_t_exclusive_fold_shows_one_holder_and_ten_void_claims(
     shown = json.loads(capsys.readouterr().out)
 
     assert code == cli.EXIT_OK
-    assert shown["holder"] == {"writer": "a" * 32, "session": "s1"}
+    assert shown["holder"] == {"writer": "a" * 32, "session": "s1", "name": ""}
     assert len(shown["void"]) == 10
 
 
@@ -155,5 +155,5 @@ def test_two_claims_for_one_record_in_one_commit_fold_in_order_and_only_the_firs
     shown = json.loads(capsys.readouterr().out)
 
     assert code == cli.EXIT_OK
-    assert shown["holder"] == {"writer": writer, "session": "s1"}
+    assert shown["holder"] == {"writer": writer, "session": "s1", "name": ""}
     assert [v["id"] for v in shown["void"]] == ["2"]

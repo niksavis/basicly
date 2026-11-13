@@ -10,12 +10,14 @@ STATUS = "status"
 CONFIG = "config"
 KNOWN_KINDS = frozenset({CLAIM, TAKE, UNASSIGN, STATUS, CONFIG, "comment", "segment", "ended"})
 DEFAULT_STATUSES = frozenset({"open", "in_progress", "blocked", "closed"})
+HOLDER_NAME = "name"
 
 
 @dataclass
 class Record:
     record: str
     holder: tuple | None = None
+    name: str = ""
     status: str = "open"
     void: list = field(default_factory=list)
     upgrade_needed: str = ""
@@ -38,6 +40,16 @@ def _holder(event: Mapping[str, object]) -> tuple:
     return (str(event.get("writer") or ""), str(event.get("session") or ""))
 
 
+def _name(event: Mapping[str, object]) -> str:
+    payload = event.get("payload")
+    named = payload.get(HOLDER_NAME) if isinstance(payload, Mapping) else None
+    return named if isinstance(named, str) and named.isprintable() else ""
+
+
+def holder_name_of(event: Mapping[str, object]) -> str:
+    return _name(event)
+
+
 def _void(state: Record, event: Mapping[str, object], why: str) -> None:
     state.void.append({"id": event.get("id"), "kind": event.get("kind"), "why": why})
 
@@ -48,6 +60,7 @@ def _claim(state: Record, event: Mapping[str, object]) -> None:
         _void(state, event, f"held by {state.holder[0]}/{state.holder[1]}")
         return
     state.holder = wanted
+    state.name = _name(event)
     state.status = "in_progress"
 
 
@@ -58,6 +71,7 @@ def _unassign(state: Record, event: Mapping[str, object]) -> None:
     payload = event.get("payload")
     target = payload.get("to") if isinstance(payload, Mapping) else None
     state.holder = tuple(target) if isinstance(target, (list, tuple)) and len(target) == 2 else None
+    state.name = ""
 
 
 def _status(fold: Fold, state: Record, event: Mapping[str, object]) -> None:
@@ -92,6 +106,7 @@ def fold(events: Iterable[Mapping[str, object]]) -> Fold:
             _claim(state, event)
         elif kind == TAKE:
             state.holder = _holder(event)
+            state.name = _name(event)
         elif kind == UNASSIGN:
             _unassign(state, event)
         elif kind == STATUS:
@@ -110,11 +125,17 @@ def refuse_a_holder_change(state: Record) -> None:
         )
 
 
+def _shown(state: Record) -> dict[str, object] | None:
+    if state.holder is None:
+        return None
+    return {"writer": state.holder[0], "session": state.holder[1], "name": state.name}
+
+
 def view(state: Record) -> dict[str, object]:
 
     return {
         "record": state.record,
-        "holder": {"writer": state.holder[0], "session": state.holder[1]} if state.holder else None,
+        "holder": _shown(state),
         "status": state.status,
         "void": list(state.void),
         "upgrade_needed": state.upgrade_needed or None,

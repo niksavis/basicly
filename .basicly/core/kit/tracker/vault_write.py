@@ -156,6 +156,11 @@ def _refused(ledger: Path, drafts: Sequence[Any], actor: str) -> Sequence[Any]:
 
 def view_of(target: Target, ledger: Path) -> Path:
 
+    if not target.prefix:
+        raise VaultUnreadError(
+            "the vault write names no project prefix, so it cannot read its records from the "
+            "vault view; build the target with target_of, which reads .basicly-tracker.toml"
+        )
     template = ledger if ledger.is_dir() else None
     want = vault_view.Want(target.prefix, False, template)
     try:
@@ -275,7 +280,10 @@ def claim(
             },
             "claim",
         )
-    ask = vault_claim.Ask(target.clone, target.state, record, target.session, target.clock)
+    name = holders.chosen_holder(ledger, environ)
+    ask = vault_claim.Ask(
+        target.clone, target.state, record, target.session, target.clock, name=name
+    )
     return _answered(vault_claim.claim(ask), "claim")
 
 
