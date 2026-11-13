@@ -4,7 +4,7 @@ token_cost:
   listing: 54
 name: council
 invocation: model
-description: "Decides one closed question by independent votes of fresh agents with different stances, and reports the majority with the dissent. Use when asked to let a council, a panel or several agents vote on a choice."
+description: "Decides one closed question by independent votes of fresh agents with different stances, and reports the majority and dissent. Use to let a council, a panel or several agents vote on a choice."
 instructions: |
   # Council
 
