@@ -112,6 +112,102 @@ def test_a_second_share_appends_to_the_same_segment(tmp_path: Path, bare: Path) 
     assert sum(_ids(bare).values()) == 4
 
 
+def test_a_share_rolls_the_segment_before_the_next_line_would_exceed_its_byte_limit(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "boundary")
+    first = _write(clone, state, 300, "a" * 3000)
+    _share(clone, state)
+    second = _write(clone, state, 50, "é" * 1500)
+
+    _share(clone, state)
+
+    paths = git_runner.run(["ls-tree", "-r", "--name-only", "main", "log/"], bare).split()
+    sizes = [
+        len(git_runner.run(["cat-file", "blob", f"main:{path}"], bare).encode("utf-8"))
+        for path in paths
+    ]
+    assert len(paths) == 2
+    assert max(sizes) <= vault_share.SEGMENT_BYTES
+    assert sorted(_ids(bare)) == sorted([*first, *second])
+
+
+def test_a_large_share_batch_keeps_every_segment_bounded_and_every_event_once(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "large-batch")
+    written = _write(clone, state, 800, "é" * 1500)
+
+    shown = _share(clone, state)
+
+    paths = git_runner.run(["ls-tree", "-r", "--name-only", "main", "log/"], bare).split()
+    assert len(paths) == 3
+    assert all(
+        len(git_runner.run(["cat-file", "blob", f"main:{path}"], bare).encode("utf-8"))
+        <= vault_share.SEGMENT_BYTES
+        for path in paths
+    )
+    assert shown["shared"] == 800
+    assert _ids(bare) == Counter(dict.fromkeys(written, 1))
+
+
+def test_one_event_above_the_segment_limit_is_refused_without_a_push_or_queue_loss(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "oversized")
+    written = vault_queue.write(
+        clone,
+        [
+            {
+                "kind": "ledger",
+                "record": "acme-a1b2",
+                "ledger": {"text": "a" * vault_share.SEGMENT_BYTES},
+            }
+        ],
+        state=state,
+        origin=vault_queue.Origin("s", False, time.time),
+    )["events"]
+    assert (clone.folder / vault_queue.QUEUE_NAME).stat().st_size > vault_share.SEGMENT_BYTES
+    before = git_runner.run(["rev-parse", "main"], bare).strip()
+
+    with pytest.raises(vault_share.ShareError, match=r"one event.*segment"):
+        _share(clone, state)
+
+    assert git_runner.run(["rev-parse", "main"], bare).strip() == before
+    assert [
+        line["id"] for line in vault_queue.pending(clone.folder / vault_queue.QUEUE_NAME)
+    ] == written
+
+
+def test_rollover_after_five_digits_never_replaces_an_existing_segment(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "six-digits")
+    writer = vault_queue.writer_of(state)
+    work = Vault(tmp_path / "existing")
+    work.git("pull", "-q", str(bare), "main")
+    first = {
+        "kind": "comment",
+        "writer": writer,
+        "id": "old-a",
+        "record": "r",
+        "payload": {"text": ""},
+    }
+    padding = vault_share.SEGMENT_BYTES - len(_segment(writer, first).encode("utf-8")) - 1
+    first["payload"] = {"text": "x" * padding}
+    second = {**first, "id": "old-b", "payload": {"text": "kept"}}
+    work.write(f"log/{writer}/99999.jsonl", _segment(writer, first))
+    work.write(f"log/{writer}/100000.jsonl", _segment(writer, second))
+    initial = work.commit("existing segments")
+    assert vault_shapes.classify(work.root, initial).valid
+    work.git("push", "-q", str(bare), "HEAD:main")
+    written = _write(clone, state, 1, "new")
+
+    _share(clone, state)
+
+    assert _ids(bare) == Counter(dict.fromkeys(["old-a", "old-b", *written], 1))
+
+
 def test_proof_t_share_smoke_three_clones_share_concurrently_and_each_event_lands_once(
     tmp_path: Path, bare: Path
 ) -> None:

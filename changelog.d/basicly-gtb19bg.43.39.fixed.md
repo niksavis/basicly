@@ -1,0 +1,1 @@
+- The vault view keeps imported holder history and valid event identities. It derives the current holder from vault claims and writes gapless sequences with valid totals.

@@ -33,10 +33,11 @@ templates = _load("templates.py", "basicly_tracker_kit_templates")
 snapshot = _load("snapshot.py", "basicly_tracker_kit_snapshot")
 vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
 vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
+vault_template = _load("vault_template.py", "basicly_tracker_kit_vault_template")
 
 LEDGER_KIND = "ledger"
 LEDGER_FIELD = "ledger"
-VIEW_FORMAT = "1"
+VIEW_FORMAT = "2"
 VIEW_PREFIX = "view-"
 ALL_PROJECTS_FOLDER = "view.all"
 TRIED_NAME = "view.tried"
@@ -93,10 +94,6 @@ def _in_scope(record: str, want: Want) -> bool:
     return want.all_projects or record.partition(ids.PREFIX_SEP)[0] == want.prefix
 
 
-def _holder_event(event: Any) -> bool:
-    return event.kind == events.KIND_FIELD and event.payload.get("name") == events.HOLDER_FIELD
-
-
 def carried(vault_events: Iterable[Mapping[str, object]], want: Want) -> list[Any]:
 
     found: list[Any] = []
@@ -110,19 +107,11 @@ def carried(vault_events: Iterable[Mapping[str, object]], want: Want) -> list[An
             events.accumulate(events.Totals(), event.kind, event.payload)
         except events.InvalidEventError:
             continue
-        if event.id in seen or not _in_scope(event.record, want) or _holder_event(event):
+        if event.id in seen or not _in_scope(event.record, want):
             continue
         seen.add(event.id)
-        if event.kind == events.KIND_CREATED and events.HOLDER_FIELD in event.payload:
-            payload = {k: v for k, v in event.payload.items() if k != events.HOLDER_FIELD}
-            event = dataclasses.replace(event, payload=payload)
         found.append(event)
     return found
-
-
-def _holder_draft(record: str, holder: Sequence[str]) -> tuple[str, dict[str, object]]:
-    payload: dict[str, object] = {"name": events.HOLDER_FIELD, "value": holder_name(holder)}
-    return events.event_id_for(record, events.KIND_FIELD, payload), payload
 
 
 def renumbered(found: Sequence[Any], holders: Mapping[str, Sequence[str]]) -> list[Any]:
@@ -132,7 +121,7 @@ def renumbered(found: Sequence[Any], holders: Mapping[str, Sequence[str]]) -> li
     stamps: dict[str, str] = {}
 
     def placed(event: Any) -> Any:
-        seq = max(event.seq, seqs.get(event.record, 0) + 1)
+        seq = seqs.get(event.record, 0) + 1
         seqs[event.record] = seq
         total = events.accumulate(
             totals.get(event.record, events.Totals()), event.kind, event.payload
@@ -142,10 +131,17 @@ def renumbered(found: Sequence[Any], holders: Mapping[str, Sequence[str]]) -> li
         return dataclasses.replace(event, seq=seq, totals=total)
 
     shown = [placed(event) for event in found]
+    states = events.fold(shown).records
+    taken = {event.id for event in shown}
     for record in list(seqs):
         holder = holders.get(record)
-        if holder:
-            made, payload = _holder_draft(record, holder)
+        desired = holder_name(holder)
+        current = states[record].fields.get(events.HOLDER_FIELD, "")
+        if holder or current:
+            payload = {"name": events.HOLDER_FIELD, "value": desired}
+            generation = events.available_generation(record, events.KIND_FIELD, payload, taken)
+            made = events.event_id_for(record, events.KIND_FIELD, payload, generation=generation)
+            taken.add(made)
             shown.append(
                 placed(
                     events.Event(
@@ -156,11 +152,13 @@ def renumbered(found: Sequence[Any], holders: Mapping[str, Sequence[str]]) -> li
     return shown
 
 
-def _template(want: Want) -> dict[str, object]:
+def _template(want: Want, valid: Sequence[Mapping[str, object]]) -> dict[str, object]:
 
     try:
-        held = templates.read(want.template_from) if want.template_from else {}
-    except templates.TemplateError as exc:
+        held = vault_template.carried(valid, want.prefix)
+        if held is None:
+            held = templates.read(want.template_from) if want.template_from else {}
+    except (templates.TemplateError, vault_template.VaultTemplateError) as exc:
         raise ViewError(str(exc)) from None
     return {**held, "prefix": want.prefix}
 
@@ -224,7 +222,7 @@ def present(
         ids.validate_prefix(want.prefix)
         if _stale(clone, clock):
             _fetch(clone, clock, runner)
-        template = _template(want)
+        template = _template(want, vault_clone.valid_events(clone))
         key = _key(clone, template)
         marker = view_folder(clone, want) / KEY_NAME
         if key and marker.is_file() and marker.read_text(encoding="utf-8") == key:
