@@ -36,16 +36,16 @@ FORMS = {
     "resolve": [],
     "acknowledge-loss": ["--sequence", "1", "--reason", "lost", "--evidence", "proof"],
 }
-NATIVE = frozenset({"comment", "claim", "unassign"})
+REFUSED = frozenset({"assign", "resolve", "acknowledge-loss", "delete"})
 
 
-def test_every_record_write_form_has_a_vault_born_refusal_control() -> None:
+def test_every_record_write_form_is_in_the_vault_contract_population() -> None:
     assert set(FORMS) == set(cli._WRITES)
 
 
-@pytest.mark.parametrize("verb", sorted(FORMS))
+@pytest.mark.parametrize("verb", sorted(REFUSED))
 @pytest.mark.parametrize("pending", [False, True])
-def test_a_ledger_form_write_on_a_vault_born_record_refuses_without_writing(
+def test_an_unsupported_vault_ledger_write_refuses_without_changing_any_local_file(
     tmp_path: Path, bare: Path, verb: str, pending: bool
 ) -> None:
     root = _repo(tmp_path, bare)
@@ -72,13 +72,14 @@ def test_a_ledger_form_write_on_a_vault_born_record_refuses_without_writing(
     } == before_ledger
     remedy = refused.split("run `", 1)[1].split("`", 1)[0]
     argv = shlex.split(remedy)
-    if verb in NATIVE:
-        args = cli.vault_arguments.FORMS[verb]().parse_args([*argv, "--vault", "vault.git"])
-        assert args.record == record
-        assert args.command == verb + "-vault"
-    else:
-        assert "has no vault form yet" in refused
-        assert "nothing was written" in refused
-        assert "basicly-bebeo6k" in refused
+    if verb == "delete":
         args = cli.arguments.parser().parse_args(argv)
-        assert args.command == "show" and args.record == record
+        assert args.command == "close" and args.resolution == "cancelled"
+        assert args.record == [record]
+    else:
+        args = cli.vault_arguments.FORMS[argv[0]]().parse_args([*argv, "--vault", "vault.git"])
+        if verb == "assign":
+            assert args.command == "claim-vault" and args.record == record
+        else:
+            assert args.command == "fsck-vault" and args.repair
+    assert "nothing was written" in refused

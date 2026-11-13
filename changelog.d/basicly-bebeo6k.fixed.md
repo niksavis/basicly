@@ -1,1 +1,1 @@
-- Create a vault genesis without requiring a personal global Git identity.
+- Create a vault genesis without a personal global Git identity and give real remedies for retired or unsupported vault ledger-form writes.
