@@ -171,6 +171,13 @@ def view_of(target: Target, ledger: Path) -> Path:
         ) from None
 
 
+def born_records(target: Target) -> set[str]:
+    found = vault_clone.valid_events(target.clone)
+    found += vault_queue.pending(target.clone.folder / vault_queue.QUEUE_NAME)
+    carried = vault_view.carried(found, vault_view.Want(target.prefix))
+    return {event.record for event in carried if event.kind == events.KIND_CREATED}
+
+
 def _names_the_holder(event: Any) -> bool:
     return event.kind == events.KIND_FIELD and event.payload.get("name") == events.HOLDER_FIELD
 
