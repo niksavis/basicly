@@ -17,6 +17,7 @@ from tests.test_kit_vault_cli_wiring import (
     _clone,
     _configure,
     _environment,
+    _hold_the_share_slot,
     _kit,
     _owned_repo,
     _repo,
@@ -95,11 +96,14 @@ def _confirm(review: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize("verb", WORKS)
+@pytest.mark.parametrize("pending", [False, True])
 def test_a_vault_born_record_can_complete_each_ordinary_write_without_local_events(
-    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch, verb: str
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch, verb: str, pending: bool
 ) -> None:
     monkeypatch.setenv("AI_AGENT", "fixture")
     root = _repo(tmp_path, bare)
+    if pending:
+        _hold_the_share_slot(tmp_path, bare)
     record = _create(root, "A vault-born task")
     other = _create(root, "A dependency")
     review = _review()
@@ -121,7 +125,11 @@ def test_a_vault_born_record_can_complete_each_ordinary_write_without_local_even
         "close": ["--reason", "The fixture check reported the saved result"],
     }
 
+    local_before = {p.name: p.read_bytes() for p in (root / LEDGER).iterdir() if p.is_file()}
     written = _run(root, verb, LEDGER, record, *forms[verb])
+    assert {
+        p.name: p.read_bytes() for p in (root / LEDGER).iterdir() if p.is_file()
+    } == local_before
     shown = _run(root, "show", LEDGER, written["record"])
 
     checks = {
@@ -181,17 +189,24 @@ def test_a_retired_or_unsupported_vault_write_names_a_real_remedy_and_writes_not
 
 
 @pytest.mark.parametrize("verb", PROTOCOL)
+@pytest.mark.parametrize("pending", [False, True])
 def test_a_vault_ledger_alias_preserves_the_native_protocol_report_and_exit(
-    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch, verb: str
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch, verb: str, pending: bool
 ) -> None:
     root = _repo(tmp_path, bare)
+    if pending:
+        _hold_the_share_slot(tmp_path, bare)
     record = _create(root, "A claimed task")
     _run(root, "claim", record)
     monkeypatch.setenv("BASICLY_TRACKER_SESSION", "another-session")
 
+    local_before = {p.name: p.read_bytes() for p in (root / LEDGER).iterdir() if p.is_file()}
     native = _kit(root, verb, record)
     alias = _kit(root, verb, LEDGER, record)
 
+    assert {
+        p.name: p.read_bytes() for p in (root / LEDGER).iterdir() if p.is_file()
+    } == local_before
     assert native.returncode == alias.returncode == 3, (native.stdout, alias.stdout)
     original, forwarded = _report(native), _report(alias)
     assert set(original) == set(forwarded)

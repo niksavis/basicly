@@ -31,6 +31,24 @@ def message(code: int, report: Mapping[str, object]) -> str:
 
 def ledger_form(verb: str, record: str, directory: str, text: str = "") -> str:
     subject = f"{verb} uses ledger-form input for {record} in a vault repository"
+    if verb in {"resolve", "acknowledge-loss", "assign", "delete"}:
+        argv = ["fsck", "--repair"]
+        why = "is retired in vault mode"
+        if verb == "assign":
+            argv = ["claim", record]
+            why = "has no vault assignment semantics"
+        elif verb == "delete":
+            argv = [
+                "close",
+                directory,
+                record,
+                "--resolution",
+                "cancelled",
+                "--reason",
+                "State why this task is cancelled",
+            ]
+            why = "must preserve its history"
+        return f"{subject} and {why}; nothing was written, run `{shlex.join(argv)}`"
     if verb in {"comment", "claim", "unassign"}:
         argv = [verb, record]
         if verb == "comment":
