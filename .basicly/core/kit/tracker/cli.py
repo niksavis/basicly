@@ -272,24 +272,19 @@ _REFUSABLE: dict[str, Callable[[argparse.Namespace, Callable[[], float]], tuple[
 }
 
 
-def _refuse_vault_ledger_form(args: argparse.Namespace, clock: Callable[[], float]) -> None:
-    if args.command not in _WRITES:
+def _refuse_vault_ledger_form(args: argparse.Namespace) -> None:
+    if args.command not in {"assign", "resolve", "acknowledge-loss", "delete"}:
         return
     ledger = commands.git_layout.shared_ledger(args.directory)
     config = vault_config.load(ledger.resolve())
     if config is None or commands._is_repository(ledger):
         return
-    local = events.fold(events.read_events(ledger)[0]).records
-    target = commands.vault_write.target_of(ledger, os.environ, clock)
-    born = commands.vault_write.born_records(target) if target is not None else set()
     records = getattr(args, "record", getattr(args, "parent", []))
     records = [records] if isinstance(records, str) else records
     for record in records:
-        if record not in local and record in born:
-            directory = ledger.resolve().relative_to(config.path.parent).as_posix()
-            text = getattr(args, "text", "")
-            refusal = vault_refusal.ledger_form(args.command, record, directory, text)
-            raise commands.TrackerCommandError(commands.vault_write.redact.text(refusal))
+        directory = ledger.resolve().relative_to(config.path.parent).as_posix()
+        refusal = vault_refusal.ledger_form(args.command, record, directory)
+        raise commands.TrackerCommandError(commands.vault_write.redact.text(refusal))
 
 
 def _migration(
@@ -301,11 +296,14 @@ def _migration(
 
 def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple[int, Any]:
     clock = events.wall_clock()
+    context = commands.vault_write.WriteContext(redact, clock)
     vault_cli.route_ledger_alias(args)
     vault = vault_cli.HANDLERS.get(args.command)
     if args.command == "migrate" or vault is not None:
         report = (
-            _migration(args, redact, clock) if args.command == "migrate" else vault(args, clock)
+            _migration(args, redact, clock)
+            if args.command == "migrate"
+            else vault(args, context if args.command == "comment-vault" else clock)
         )
         code = report.pop("exit", EXIT_OK)
         code = code if isinstance(code, int) else EXIT_OK
@@ -314,13 +312,14 @@ def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple
                 vault_refusal.message(code, report)
             )
         return code, report
-    _refuse_vault_ledger_form(args, clock)
+    _refuse_vault_ledger_form(args)
     starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
     args.directory = commands.resolve_ledger(args.directory, starts=starts)
     pin.require(args.directory)
-    if args.command in vault_cli.READS and not getattr(args, "json", False):
+    if args.command in vault_cli.READS and not (
+        args.command == "show" and getattr(args, "json", False)
+    ):
         args.directory = vault_cli.view_of(args, clock)
-    context = commands.vault_write.WriteContext(redact, clock)
     if args.command == "create":
         written = create_record(
             args.directory,
@@ -333,7 +332,7 @@ def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple
         return EXIT_OK, {
             "record": record,
             "events": [event.id for event in written],
-            **_owed_of(args.directory, record),
+            **_owed_of(vault_cli.view_of(args, clock), record),
         }
     if (gate := _REFUSABLE.get(args.command)) is not None:
         return gate(args, clock)
@@ -350,7 +349,7 @@ def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple
             "record": record,
             "events": [event.id for event in appended],
             "appended": bool(appended),
-            **_owed_of(args.directory, record),
+            **_owed_of(vault_cli.view_of(args, clock), record),
         }
     records = query_records(
         args.directory, status=args.status, limit=args.limit, query=args.query, summary=args.summary
