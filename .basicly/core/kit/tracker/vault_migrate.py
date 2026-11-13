@@ -41,6 +41,7 @@ vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
 canonical = _load("vault_canonical.py", "basicly_tracker_kit_vault_canonical")
 private_map = _load("vault_private.py", "basicly_tracker_kit_vault_private")
 vault_template = _load("vault_template.py", "basicly_tracker_kit_vault_template")
+vault_citations = _load("vault_citations.py", "basicly_tracker_kit_vault_citations")
 vault_shapes = vault_clone.vault_shapes
 
 COMMIT_BYTES = vault_share.SEGMENT_BYTES
@@ -66,6 +67,14 @@ class Import:
     private_map: Path | None = None
     overwrite_private_map: bool = False
     runner: Runner = git_runner.run
+    code: Path | None = None
+
+
+@dataclass(frozen=True)
+class Prepared:
+    result: Any
+    writer: str
+    lines: list[dict[str, object]]
 
 
 def _text(lines: Sequence[Mapping[str, object]]) -> bytes:
@@ -159,7 +168,7 @@ def digest(found: Sequence[Any], records: Collection[str]) -> str:
 def view_events(valid: Sequence[Mapping[str, object]], want: Any) -> list:
 
     held = {
-        name: state.holder
+        name: (*state.holder, state.name)
         for name, state in vault_view.vault_fold.fold(valid).records.items()
         if state.holder is not None
     }
@@ -242,23 +251,49 @@ def _verified(
     return {"tip": tip, "commits": len(made), "events": len(lines), "digest": shown}
 
 
-def to_vault(
-    found: Sequence[Any], plan: Import, *, template: Mapping[str, object] | None = None
-) -> dict[str, object]:
-
+def prepare(
+    found: Sequence[Any],
+    template: Mapping[str, object],
+    redactor: Redactor | None,
+    *,
+    redact_holders: bool,
+) -> Prepared:
     if not found:
-        raise MigrateError("the source holds no events, so there is nothing to migrate")
-    public = vault_template.prepare(template or {}, plan.redactor)
+        raise MigrateError(
+            "source holds no events; run migrate LEDGER --to-vault --preview to check the source"
+        )
+    public = vault_template.prepare(template, redactor)
     source_template = templates.parse(dict(template or {}), Path(templates.TEMPLATE_FILE))
     public_template = templates.parse(public, Path(templates.TEMPLATE_FILE))
     result = canonical.canonicalize(
         found,
-        redactor=plan.redactor,
-        redact_holders=plan.redact_holders,
+        redactor=redactor,
+        redact_holders=redact_holders,
         template=source_template,
         public_template=public_template,
     )
     writer, lines = lines_of(result.events, public)
+    largest = max((len(_text([line])) for line in lines), default=0)
+    if largest > COMMIT_BYTES - _header_bytes(writer):
+        raise MigrateError(
+            f"one ledger event or migration template is {largest} bytes, "
+            f"above the {COMMIT_BYTES} byte commit limit"
+        )
+    return Prepared(result, writer, lines)
+
+
+def to_vault(
+    found: Sequence[Any], plan: Import, *, template: Mapping[str, object] | None = None
+) -> dict[str, object]:
+    prepared = prepare(found, template or {}, plan.redactor, redact_holders=plan.redact_holders)
+    result, writer, lines = prepared.result, prepared.writer, prepared.lines
+    citations = (
+        vault_citations.census(
+            plan.code, {row["old"] for row in result.mapping if row["old"] != row["new"]}
+        )
+        if plan.code is not None
+        else {"available": False}
+    )
     destination = (
         private_map.prepare(plan.private_map, plan.clone, overwrite=plan.overwrite_private_map)
         if plan.private_map is not None
@@ -270,12 +305,6 @@ def to_vault(
         for index, event in enumerate(events.canonical_order(found))
         if lines[index][vault_view.LEDGER_FIELD] != json.loads(events.to_json(event))
     )
-    largest = max((len(_text([line])) for line in lines), default=0)
-    if largest > COMMIT_BYTES - _header_bytes(writer):
-        raise MigrateError(
-            f"one ledger event or migration template is {largest} bytes, "
-            f"above the {COMMIT_BYTES} byte commit limit"
-        )
     for _attempt in range(vault_share.BULK_ATTEMPTS):
         fetched = vault_clone.fetch(plan.clone, clock=plan.clock, runner=plan.runner)
         _refuse_a_second_import(plan.clone, result.events)
@@ -296,6 +325,7 @@ def to_vault(
             "reminted": result.reminted,
             "touched_fields": list(result.touched),
             "mapping": "saved" if saved else "not-kept",
+            "external_citations": citations,
             "not_in_view": len(lines) - len(vault_view.carried(lines, EVERY_PROJECT)),
             "derived_holder_events": len(view_events(lines, EVERY_PROJECT)) - len(lines),
         }
@@ -309,11 +339,12 @@ def ledger_to_vault(ledger: Path | str, plan: Import) -> dict[str, object]:
     return to_vault(ledger_events(ledger), plan, template=templates.read(ledger))
 
 
-def backlog_to_vault(source: Any, plan: Import) -> dict[str, object]:
-
-    read = beans.READERS[source.format](source.export, name=source.name)
-    vault_clone.private(plan.clone.folder)
-    with tempfile.TemporaryDirectory(dir=plan.clone.folder) as scratch:
+def backlog_events(source: Any) -> list:
+    readers = {**beans.READERS, "br": beans.READERS["beads"]}
+    if source.format not in readers:
+        raise MigrateError("unknown backlog format; use beads, br or beans")
+    read = readers[source.format](source.export, name=source.name)
+    with tempfile.TemporaryDirectory() as scratch:
         report = migrate.import_snapshot(scratch, read, actor="migration", clock=lambda: 0.0)
         refused = [*report.rejected, *report.unreadable]
         if refused:
@@ -321,8 +352,12 @@ def backlog_to_vault(source: Any, plan: Import) -> dict[str, object]:
                 f"{len(refused)} {source.format} record(s) were refused, first "
                 f"{refused[0].subject}: {refused[0].reason}; the vault took nothing"
             )
-        found = ledger_events(scratch)
-    return {**to_vault(found, plan), "records": len(read.records)}
+        return ledger_events(scratch)
+
+
+def backlog_to_vault(source: Any, plan: Import) -> dict[str, object]:
+    found = backlog_events(source)
+    return {**to_vault(found, plan), "records": len({event.record for event in found})}
 
 
 def from_vault(
@@ -340,6 +375,8 @@ def from_vault(
         raise MigrateError(f"the prefix cannot name a record: {exc}") from None
     if events.ledger_paths(target):
         raise MigrateError(f"{target} already holds ledger files; name an empty folder")
+    if target.exists() and (not target.is_dir() or any(target.iterdir())):
+        raise MigrateError("export destination is not empty; name an empty folder")
     vault_clone.fetch(clone, clock=clock, runner=runner)
     template = vault_template.carried(vault_clone.valid_events(clone), prefix) or {"prefix": prefix}
     shown = view_events(vault_clone.valid_events(clone), vault_view.Want(prefix))

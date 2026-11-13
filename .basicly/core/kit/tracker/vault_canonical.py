@@ -64,6 +64,8 @@ def _references(event: Any) -> set[str]:
 def _historical(payload: dict[str, Any]) -> dict[str, Any]:
     if "import_digest" in payload:
         payload = {**payload, "import_digest": "<redacted:source-digest>"}
+    if payload.get("name") == "import_digest":
+        payload = {**payload, "value": "<redacted:source-digest>"}
     if payload.get("artifact") != recovery.LOSS_ARTIFACT:
         return payload
     body = payload.get("body")
@@ -78,14 +80,49 @@ def _historical(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _payload(event: Any, rule: Callable[[str], str], *, redact_holders: bool) -> dict[str, Any]:
-    payload = _walk(_historical(dict(event.payload)), rule)
+def _payload(
+    event: Any, rule: Callable[[str], str], names: Mapping[str, str], *, redact_holders: bool
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in _historical(dict(event.payload)).items():
+        public_key = names.get(key, rule(key)) if event.kind == events.KIND_CREATED else rule(key)
+        if public_key in payload:
+            raise CanonicalError(
+                "template redaction merges fields; choose a name list without collisions"
+            )
+        payload[public_key] = _walk(value, rule)
+    if event.kind == events.KIND_FIELD and isinstance(event.payload.get("name"), str):
+        payload["name"] = names.get(event.payload["name"], payload.get("name"))
     if not redact_holders:
         if event.kind == events.KIND_CREATED and events.HOLDER_FIELD in event.payload:
             payload[events.HOLDER_FIELD] = redact.text(str(event.payload[events.HOLDER_FIELD]))
         elif event.kind == events.KIND_FIELD and event.payload.get("name") == events.HOLDER_FIELD:
             payload["value"] = redact.text(str(event.payload.get("value", "")))
     return payload
+
+
+def _field_names(
+    template: Any, rule: Callable[[str], str], source: Sequence[Any]
+) -> dict[str, str]:
+    if template is None:
+        return {}
+    headings = [*template.sections, *(heading for _, group in template.types for heading in group)]
+    names = {
+        process.shaping.field_of(heading): process.shaping.field_of(rule(heading))
+        for heading in headings
+    }
+    if len(set(names.values())) != len(names):
+        raise CanonicalError(
+            "template redaction merges fields; choose a name list without collisions"
+        )
+    for state in events.fold(source).records.values():
+        if any(
+            old != new and old in state.fields and new in state.fields for old, new in names.items()
+        ):
+            raise CanonicalError(
+                "template redaction overwrites a field; choose a name list without collisions"
+            )
+    return names
 
 
 def check(found: Sequence[Any]) -> None:
@@ -175,9 +212,9 @@ def _evidence(
     try:
         value = json.loads(payload.get("value", ""))
     except ValueError, TypeError:
-        return payload
+        return {**payload, "value": '{"migration":"invalid-source-evidence"}'}
     if not isinstance(value, dict):
-        return payload
+        return {**payload, "value": '{"migration":"invalid-source-evidence"}'}
     report = process.confirmation_report(source, original.record, template=template)
     key = "review" if name == process.REVIEW_FIELD else "confirmation"
     source_fields = events.fold(source).records[original.record].fields
@@ -234,8 +271,9 @@ def canonicalize(
     rows = []
     touched: set[str] = set()
     reminted = 0
+    field_names = _field_names(template, rule, found)
     for one in _dependency_order(found, template):
-        payload = _payload(one, rule, redact_holders=redact_holders)
+        payload = _payload(one, rule, field_names, redact_holders=redact_holders)
         actor = rule(one.actor)
         payload = _evidence(
             one,
@@ -257,7 +295,7 @@ def canonicalize(
             reminted += 1
         mapped[one.id] = made
         changed = sorted(
-            rule("payload." + key)
+            rule("payload." + field_names.get(str(key), str(key)))
             for key in one.payload.keys() | payload.keys()
             if one.payload.get(key) != payload.get(key)
         )

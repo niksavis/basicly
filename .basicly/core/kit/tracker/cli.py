@@ -36,6 +36,8 @@ shaping = _load("shaping.py", "basicly_tracker_kit_shaping")
 record_view = _load("record_view.py", "basicly_tracker_kit_record_view")
 board = _load("board.py", "basicly_tracker_kit_board")
 fields = _load("fields.py", "basicly_tracker_kit_fields")
+cli_fields = _load("cli_fields.py", "basicly_tracker_kit_cli_fields")
+vault_migration_cli = _load("vault_migration_cli.py", "basicly_tracker_kit_vault_migration_cli")
 arguments = _load("arguments.py", "basicly_tracker_kit_arguments")
 vault_arguments = _load("vault_arguments.py", "basicly_tracker_kit_vault_arguments")
 vault_config = _load("vault_config.py", "basicly_tracker_kit_vault_config")
@@ -73,40 +75,9 @@ _BLOCKING_REPORTS = frozenset({
 _STARTS_A_LEDGER = frozenset({"create", "import"})
 
 
-def _field_value(raw: str) -> object:
-
-    try:
-        return json.loads(raw)
-    except ValueError:
-        return raw
-
-
-def _fields(
-    title: str, pairs: Sequence[str], shape: argparse.Namespace | None = None
-) -> dict[str, object]:
-
-    fields: dict[str, object] = {}
-    if title:
-        fields[scheduler.TITLE_FIELD] = title
-    fields.update(_shape_fields(shape))
-    for pair in pairs:
-        name, sep, raw = pair.partition("=")
-        if not sep or not name:
-            raise ValueError(f"--field {pair!r} is not name=value")
-        fields[name] = _field_value(raw)
-    return fields
-
-
-def _shape_fields(shape: argparse.Namespace | None):
-
-    if shape is None:
-        return ()
-    declared = (
-        (shaping.ACCEPTANCE_FIELD, getattr(shape, "acceptance", None)),
-        (shaping.REQUIREMENTS_FIELD, getattr(shape, "requirements", None)),
-        (shaping.DESCRIPTION_FIELD, getattr(shape, "description", None)),
-    )
-    return tuple((name, value) for name, value in declared if value)
+_field_value = cli_fields.field_value
+_fields = cli_fields.fields
+_shape_fields = cli_fields.shape_fields
 
 
 def _minting(fields: dict[str, object]) -> dict[str, object]:
@@ -321,10 +292,20 @@ def _refuse_vault_ledger_form(args: argparse.Namespace, clock: Callable[[], floa
             raise commands.TrackerCommandError(commands.vault_write.redact.text(refusal))
 
 
+def _migration(
+    args: argparse.Namespace, redact: Callable[[str], str] | None, clock: Callable[[], float]
+) -> dict[str, object]:
+    state = None if args.preview or args.state else vault_cli._state_root()
+    return vault_migration_cli.run(args, redact, clock, state)
+
+
 def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple[int, Any]:
     clock = events.wall_clock()
-    if (vault := vault_cli.HANDLERS.get(args.command)) is not None:
-        report = vault(args, clock)
+    vault = vault_cli.HANDLERS.get(args.command)
+    if args.command == "migrate" or vault is not None:
+        report = (
+            _migration(args, redact, clock) if args.command == "migrate" else vault(args, clock)
+        )
         code = report.pop("exit", EXIT_OK)
         code = code if isinstance(code, int) else EXIT_OK
         if code != EXIT_OK and not isinstance(report.get("refused"), str):
@@ -403,7 +384,8 @@ def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | No
     verb = argv[0] if argv else ""
     routed = "--vault" in argv or verb in vault_arguments.VAULT_ONLY
     form = vault_arguments.FORMS.get(verb) if routed else None
-    args = (form or arguments.parser)().parse_args(argv)
+    parser = form() if form else arguments.parser(vault_migration_cli.add_parser)
+    args = parser.parse_args(argv)
     code, report = invoke(args, redact)
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
