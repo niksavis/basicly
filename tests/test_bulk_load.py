@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -135,3 +136,17 @@ def test_proof_t_bulk_small_load_sees_every_event_and_empties_every_queue(
     assert report["queued_after_stop"] == {"m0": 0, "m1": 0}
     assert report["note"] == bulk.UNSCALED
     assert bulk.failures(report) == []
+
+
+def test_a_failed_kit_command_keeps_its_stdout_refusal_sentence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    driver = bulk.Driver(bulk.Load(sessions=1, machines=1), tmp_path)
+    refusal = "the ledger holds no record load-absent"
+    answer = bulk.subprocess.CompletedProcess([], 1, json.dumps({"refused": refusal}), "")
+    monkeypatch.setattr(bulk.subprocess, "run", lambda *_args, **_kwargs: answer)
+
+    assert driver.kit("comment", "load-absent", state=driver.state(0)) is None
+    report = driver.report({}, set(), 0.0)
+
+    assert refusal in report["first_errors"][0]

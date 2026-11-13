@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
 import os
@@ -141,11 +142,48 @@ def make_vault(root: Path) -> Path:
     return target
 
 
+def seed_targets(root: Path, vault: Path, sessions: int) -> None:
+    spec = importlib.util.spec_from_file_location("bulk_load_tracker", KIT_CLI)
+    if spec is None or spec.loader is None:
+        raise ValueError("the bulk load needs the standalone tracker cli")
+    cli = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = cli
+    spec.loader.exec_module(cli)
+    events = cli.events
+    made = events.append(
+        root / "source-ledger",
+        [
+            draft
+            for session in range(sessions)
+            for draft in (
+                events.Draft(
+                    f"load-{session}", events.KIND_CREATED, {"title": f"Bulk target {session}"}
+                ),
+                events.Draft(f"load-{session}", events.KIND_STATUS, {"status": "open"}),
+            )
+        ],
+    )
+    state = root / "fixture-publisher"
+    native = cli.vault_cli
+    clone = native.vault_clone.locate(state, str(vault))
+    drafts = [
+        {"kind": "ledger", "record": event.record, "ledger": json.loads(events.to_json(event))}
+        for event in made
+    ]
+    native.vault_queue.write(
+        clone, drafts, state=state, origin=native.vault_queue.Origin("fixture", False, time.time)
+    )
+    result = native.vault_share.share(clone, state, plan=native.vault_share.Plan(time.time))
+    if result.get("pending") != 0 or result.get("shared") != len(made):
+        raise ValueError("the bulk load could not publish every comment target")
+
+
 class Driver:
     def __init__(self, load: Load, root: Path) -> None:
         self.load = load
         self.root = root
         self.vault = make_vault(root)
+        seed_targets(root, self.vault, load.sessions)
         self.tally = Tally()
         self.env = child_env(os.environ)
         self.reader = root / "reader"
@@ -165,7 +203,7 @@ class Driver:
                 timeout=CALL_TIMEOUT_S,
             )
             answer = json.loads(done.stdout) if done.returncode == 0 else None
-            fault = f"exit {done.returncode}: {done.stderr[-300:]}"
+            fault = f"exit {done.returncode}: {(done.stderr or done.stdout)[-300:]}"
         except (subprocess.TimeoutExpired, ValueError) as exc:
             answer, fault = None, type(exc).__name__
         if not isinstance(answer, dict):
