@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -9,11 +10,15 @@ from typing import Any
 
 import pytest
 
+from basicly import owned_store, owned_write
+from tests.test_kit_consumer_install import _wheel
 from tests.test_kit_vault_cli_wiring import (
     LEDGER,
     _clone,
+    _configure,
     _environment,
     _kit,
+    _owned_repo,
     _repo,
     _report,
     cli,
@@ -193,3 +198,123 @@ def test_a_vault_ledger_alias_preserves_the_native_protocol_report_and_exit(
     original.pop("timing", None)
     forwarded.pop("timing", None)
     assert original == forwarded
+
+
+@pytest.mark.parametrize("form", ["native-comment", "ledger-update"])
+def test_an_absent_vault_record_is_named_and_no_event_is_queued(
+    tmp_path: Path, bare: Path, form: str
+) -> None:
+    root = _repo(tmp_path, bare)
+    existing = _create(root, "An existing task")
+    missing = "acme-missing"
+    assert existing != missing
+    queue = _clone(tmp_path, bare).folder / vault_queue.QUEUE_NAME
+    assert queue.is_file()
+    before = queue.read_bytes()
+    forms = {
+        "native-comment": ["comment", missing, "--text", "A note"],
+        "ledger-update": ["update", LEDGER, missing, "--field", "priority=1"],
+    }
+
+    done = _kit(root, *forms[form])
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    refused = _report(done)["refused"]
+    assert missing in refused
+    assert "\n" not in refused
+    assert queue.read_bytes() == before
+
+
+def test_the_engine_completes_a_vault_born_lifecycle_without_local_events(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AI_AGENT", "fixture")
+    root = _owned_repo(tmp_path)
+    _configure(root, bare)
+    other = _create(root, "A task created by the kit")
+
+    record = owned_write.create(
+        root,
+        ["create", "An engine task", "-t", "task", "-d", TRIGGER, "--acceptance", CRITERION],
+    )
+    assert record.startswith("acme-") and record != other
+    owned_write.append(root, ["update", record, "-p", "1"])
+    owned_write.append(root, ["comments", "add", record, "An engine note"])
+    owned_write.append(root, ["dep", "add", record, other, "-t", "related"])
+    review = _review()
+    owned_write.append(root, ["review", record, "--evidence", json.dumps(review)])
+    _run(root, "claim", record)
+    owned_write.append(root, ["confirm", record, "--evidence", json.dumps(_confirm(review))])
+    owned_write.append(root, ["close", record, "--reason", "The saved check passed"])
+
+    shown = _run(root, "show", LEDGER, record)
+    assert shown["status"] == "closed" and shown["fields"]["priority"] == 1
+    assert any(row["text"] == "An engine note" for row in shown["comment_log"])
+    assert any(edge["id"] == other for edge in shown["dependencies"])
+    assert not list(owned_store.ledger_dir(root).glob("*.jsonl"))
+
+
+@pytest.mark.fresh_runtime
+def test_the_installed_tracker_completes_the_vault_lifecycle_without_the_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AI_AGENT", "fixture")
+    vault = tmp_path / "vault.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(vault)], check=True)
+    root = _repo(tmp_path, vault)
+    wheel = _wheel("tracker", tmp_path / "dist")
+    base = ["uvx", "--from", str(wheel)]
+    probe = subprocess.run(
+        [
+            *base,
+            "python",
+            "-I",
+            "-c",
+            "import importlib.util; assert importlib.util.find_spec('basicly') is None; "
+            "assert importlib.util.find_spec('basicly_tracker') is not None",
+        ],
+        cwd=root,
+        env=dict(os.environ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert probe.returncode == 0, probe.stdout + probe.stderr
+
+    def call(*argv: str) -> dict[str, Any]:
+        done = subprocess.run(
+            [*base, "basicly-tracker", *argv],
+            cwd=root,
+            env=dict(os.environ),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert done.returncode == 0, done.stdout + done.stderr
+        return json.loads(done.stdout)
+
+    call("vault-init", "--vault", str(vault), "--yes")
+    record = call(
+        "create",
+        LEDGER,
+        "--title",
+        "A standalone task",
+        "--field",
+        "issue_type=task",
+        "--description",
+        TRIGGER,
+        "--acceptance",
+        CRITERION,
+    )["record"]
+    call("update", LEDGER, record, "--field", "priority=1")
+    review = _review()
+    call("review", LEDGER, record, "--evidence", json.dumps(review))
+    call("claim", record)
+    call("confirm", LEDGER, record, "--evidence", json.dumps(_confirm(review)))
+    call("close", LEDGER, record, "--reason", "The standalone check passed")
+    shown = call("show", LEDGER, record)
+
+    assert shown["status"] == "closed" and shown["fields"]["priority"] == 1
+    assert not list((root / LEDGER).glob("*.jsonl"))
+    assert not (root / "basicly.toml").exists()
+    assert not (root / ".basicly" / "core").exists()
