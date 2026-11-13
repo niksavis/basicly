@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release adds an opt-in vault for the tracker: a separate git repository that holds the records of several projects, so many developers and agents can claim and write work without merge conflicts. A repository uses the vault only after `vault-init` writes `.basicly-tracker.toml`; without that file, the tracker reads and writes `.basicly/ledger` as before. The release also tightens the push guardrails, makes the board emission cheaper as the ledger grows, keeps repeated builds from changing the manifest, and improves model routing and evaluation evidence.
+
 ## v0.44.1 - 2026-11-10
 
 Delta: v0.44.0..v0.44.1
