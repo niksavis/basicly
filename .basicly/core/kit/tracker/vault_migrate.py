@@ -129,12 +129,7 @@ def _source_time(text: str) -> float:
     normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
     try:
         stamp = datetime.fromisoformat(normalized)
-        offset = stamp.utcoffset()
-        return (
-            calendar.timegm(stamp.timetuple())
-            + stamp.microsecond / 1_000_000
-            - (offset.total_seconds() if offset is not None else 0)
-        )
+        return calendar.timegm(stamp.utctimetuple()) + stamp.microsecond / 1_000_000
     except ValueError:
         return 0.0
     except OverflowError:
