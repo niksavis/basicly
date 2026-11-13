@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import shlex
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -40,6 +41,27 @@ vault_view = _load("vault_view.py", "basicly_tracker_kit_vault_view")
 vault_write = _load("vault_write.py", "basicly_tracker_kit_vault_write")
 
 READS = frozenset({"list", "ready", "show"})
+
+
+def route_ledger_alias(args: argparse.Namespace) -> None:
+    if args.command not in {"claim", "unassign"}:
+        return
+    config = vault_write.config_of(args.directory)
+    if config is None:
+        return
+    incompatible = ("to", "take") if args.command == "claim" else ("by",)
+    if flag := next((name for name in incompatible if getattr(args, name, "")), ""):
+        command = shlex.join([args.command, args.record])
+        fix = (
+            f"{args.command} {args.record} cannot translate --{flag} into the vault protocol; "
+            f"run `{command}`"
+        )
+        raise vault_write.VaultRefusedError({"exit": 1, "record": args.record, "fix": fix})
+    argv = [args.command, args.record, "--vault", config.vault]
+    if args.command == "unassign" and args.take:
+        argv.append("--take")
+    forms = _load("vault_arguments.py", "basicly_tracker_kit_vault_arguments").FORMS
+    args.__dict__.update(vars(forms[args.command]().parse_args(argv)))
 
 
 def _vault_show(args: argparse.Namespace) -> dict[str, object]:

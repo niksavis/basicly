@@ -1,1 +1,1 @@
-- Create a vault genesis without a personal global Git identity and give real remedies for retired or unsupported vault ledger-form writes.
+- Create a vault genesis without a personal global Git identity, route ledger-form claim and unassign through the native protocol, and give real remedies for unsupported vault writes.
