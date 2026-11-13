@@ -320,7 +320,6 @@ def _build_manifest(
 
     return {
         "version": "1",
-        "generated_at": datetime.now(UTC).isoformat(),
         "outputs": merged_outputs,
     }
 
