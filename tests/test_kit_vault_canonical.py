@@ -195,6 +195,38 @@ def test_evidence_never_makes_stale_review_or_confirmation_current(tmp_path: Pat
     assert report["owed"]
 
 
+@pytest.mark.parametrize("fault", ["wrong-writer", "missing-version", "malformed-value"])
+def test_evidence_never_promotes_invalid_source_review_or_leaks_its_revision(
+    tmp_path: Path,
+    fault: str,
+) -> None:
+    found = _reviewed(tmp_path)
+    review = next(
+        event for event in found if event.payload.get("name") == canonical.process.REVIEW_FIELD
+    )
+    payload = dict(review.payload)
+    actor = PRIVATE
+    hidden = "f" * 64
+    if fault == "wrong-writer":
+        value = json.loads(payload["value"])
+        value["writer"] = "another-contributor"
+        payload["value"] = json.dumps(value, sort_keys=True)
+    elif fault == "missing-version":
+        del payload[canonical.process.VERSION_FIELD]
+    else:
+        payload["value"] = "invalid revision " + hidden
+    events.append(
+        tmp_path, [events.Draft(RECORD, "field", payload)], actor=actor, clock=lambda: 4000.0
+    )
+    source = events.read_events(tmp_path)[0]
+    assert not canonical.process.confirmation_report(source, RECORD)["review_current"]
+    made = canonical.canonicalize(source, redactor=_redact, redact_holders=True)
+    report = canonical.process.confirmation_report(made.events, RECORD)
+    assert not report["review_current"]
+    assert report["owed"]
+    assert hidden not in "".join(events.to_json(event) for event in made.events)
+
+
 def test_references_preserve_withdrawal_history_without_private_retired_ids(tmp_path: Path) -> None:
     found = _source(tmp_path)
     retired = found[1].id
