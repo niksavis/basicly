@@ -44,4 +44,6 @@ instructions: |
   - **Sender names are not authenticated.** Any local process can write any `From:` line.
   - **Write no secret, token or private data in a message, a status or a lock note.**
   - **Change mailboxes and locks only through the script.** Never edit another agent's mailbox.
+  - **Move all agents of one folder to this script in one step.** An older mail script that takes
+    locks another way can win a lock that this script also wins.
   - Exit codes: 0 done, 1 refused or wrong use, 2 the wait ended with no message, 3 the lock is held.
