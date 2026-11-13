@@ -3,7 +3,7 @@
 
 ### Code Is Authoritative
 
-Never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`) unless the user explicitly requests observer repair. Fix the cause.
+IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`) unless the user explicitly requests observer repair. Fix the cause.
 
 - For observer repair, work outside the harness controller; run affected checks directly and report bypasses and unfinished verification. Describe bypassed checks as bypassed, never as passing.
 
