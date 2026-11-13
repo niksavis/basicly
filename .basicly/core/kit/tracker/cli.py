@@ -301,6 +301,7 @@ def _migration(
 
 def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple[int, Any]:
     clock = events.wall_clock()
+    vault_cli.route_ledger_alias(args)
     vault = vault_cli.HANDLERS.get(args.command)
     if args.command == "migrate" or vault is not None:
         report = (
