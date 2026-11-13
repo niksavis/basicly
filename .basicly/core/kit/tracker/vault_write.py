@@ -166,9 +166,17 @@ def view_of(target: Target, ledger: Path) -> Path:
         ) from None
 
 
+def _names_the_holder(event: Any) -> bool:
+    return event.kind == events.KIND_FIELD and event.payload.get("name") == events.HOLDER_FIELD
+
+
 def _seed(view: Path, ledger: Path, records: set[str]) -> list[str]:
 
-    shown = events.read_events(view)[0]
+    shown = [
+        event
+        for event in events.read_events(view)[0]
+        if not (event.actor == vault_view.HOLDER_ACTOR and _names_the_holder(event))
+    ]
     in_view = {event.record for event in shown}
     held = events.read_events(ledger)[0] if ledger.is_dir() else []
     found = [event for event in shown if event.record in records]

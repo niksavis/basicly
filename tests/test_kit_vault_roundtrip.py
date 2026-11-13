@@ -90,3 +90,28 @@ def test_a_record_written_through_the_vault_reads_back_unchanged_through_the_vie
     assert [_carried(event) for event in _shown(repo, record)] == [
         _carried(event) for event in (*written, noted)
     ]
+
+
+def test_a_claimed_record_mints_past_the_view_holder_line_without_a_gap(
+    tmp_path: Path, bare: Path
+) -> None:
+    repo = _seeded(tmp_path, bare)
+    written = commands.create_root(
+        repo.ledger, {"title": "held"}, prefix=SEED_PREFIX, context=CONTEXT
+    )
+    _share(repo)
+    record = written[0].record
+    commands.claim(repo.ledger, record, "someone", context=CONTEXT)
+    _share(repo)
+    priority = events.Draft(record, events.KIND_FIELD, {"name": "priority", "value": 1})
+
+    (noted,) = _land(repo, events.Draft(record, events.KIND_COMMENT, {"text": "held"}))
+    _share(repo)
+    (raised,) = _land(repo, priority)
+    _share(repo)
+    repeated = _land(repo, priority)
+    _share(repo)
+
+    carried = [_carried(event) for event in _shown(repo, record) if event.actor != "vault"]
+    assert carried == [_carried(event) for event in (*written, noted, raised)]
+    assert repeated == []
