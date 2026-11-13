@@ -82,11 +82,7 @@ TEMPLATE_FILE = owned_store.TEMPLATE_FILE
 
 
 def present_ledger(repo_root: Path) -> Path:
-
-    try:
-        return owned_store.present_ledger(repo_root)
-    except owned_store.LedgerMissingError:
-        return ledger_dir(repo_root)
+    return owned_store.readable_ledger(repo_root)
 
 
 def ledger_template(repo_root: Path) -> Any:

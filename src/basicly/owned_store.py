@@ -148,6 +148,14 @@ def present_ledger(repo_root: Path, *, all_projects: bool = False) -> Path:
     return ledger
 
 
+def readable_ledger(repo_root: Path) -> Path:
+
+    try:
+        return present_ledger(repo_root)
+    except LedgerMissingError:
+        return ledger_dir(repo_root)
+
+
 def set_kit_version_reader(reader: Callable[[Path], str | None] | None) -> None:
 
     _kit_version_reader.clear()

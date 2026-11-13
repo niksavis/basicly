@@ -111,6 +111,18 @@ def test_the_graph_gate_and_label_readers_read_the_vault_view(tmp_path: Path, ba
     ]
 
 
+def test_the_board_graph_gate_and_label_readers_read_no_ledger_folder_as_empty(
+    tmp_path: Path,
+) -> None:
+    repo = owned_repo(tmp_path / "bare-repo")
+    (repo / owned_store.LEDGER_DIR).rmdir()
+
+    assert dependency_graph.owned_blocked(repo) == ()
+    assert label_source.owned_labelled(repo, LABEL) == {}
+    assert gate_source.owned_gates(repo, FIRST) == []
+    assert board_snapshot._read_and_fold(repo) is not None
+
+
 READS: dict[str, Callable[[Path], set[str]]] = {
     "ledger_events": lambda r: {e.record for e in tracker.ledger_events(r)[0]},
     "activity_source": lambda r: {e.record for e in tracker.activity_source(r)[0]},

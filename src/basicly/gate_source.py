@@ -13,7 +13,7 @@ def owned_gates(repo_root: Path, issue_id: str) -> list[dict]:
 
     kit_module = owned_store.kit(repo_root)
     gates = owned_store.kit(repo_root, owned_store.GATES_KIT_MODULE)
-    found = kit_module.read_ledger(owned_store.present_ledger(repo_root))
+    found = kit_module.read_ledger(owned_store.readable_ledger(repo_root))
     state = kit_module.events.fold(found).records.get(issue_id)
     if state is not None and state.tombstoned:
         return []
