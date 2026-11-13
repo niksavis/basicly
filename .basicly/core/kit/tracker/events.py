@@ -624,6 +624,8 @@ class _Memo:
     events: list[Event]
     ordered: list[Event] | None = None
     folded: FoldResult | None = None
+    grouped: Mapping[str, tuple[Event, ...]] | None = None
+    fields: Mapping[str, Mapping[str, object]] | None = None
 
 
 _MEMOS: dict[tuple[int, ...], _Memo] = {}
@@ -670,12 +672,41 @@ def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = No
     return _copied(_shared_fold(collected))
 
 
-def fields_by_record(events: Iterable[Event]) -> Mapping[str, Mapping[str, object]]:
+def _grouped(ordered: list[Event]) -> Mapping[str, tuple[Event, ...]]:
+    grouped: dict[str, list[Event]] = {}
+    for event in ordered:
+        grouped.setdefault(event.record, []).append(event)
+    return MappingProxyType({record: tuple(held) for record, held in grouped.items()})
 
-    folded = _shared_fold(list(events))
+
+def _fields(folded: FoldResult) -> Mapping[str, Mapping[str, object]]:
     return MappingProxyType({
         name: MappingProxyType(state.fields) for name, state in folded.records.items()
     })
+
+
+def record_index(
+    events: Iterable[Event],
+) -> tuple[Mapping[str, Mapping[str, object]], Mapping[str, tuple[Event, ...]]]:
+
+    collected = list(events)
+    if len(collected) < MEMO_MIN_EVENTS:
+        return _fields(_folded(collected)), _grouped(_ordered(collected))
+    held = _memo(collected)
+    with _MEMO_LOCK:
+        if held.fields is None:
+            if held.folded is None:
+                held.folded = _folded(held.events)
+            held.fields = _fields(held.folded)
+        if held.grouped is None:
+            if held.ordered is None:
+                held.ordered = _ordered(held.events)
+            held.grouped = _grouped(held.ordered)
+    return held.fields, held.grouped
+
+
+def fields_by_record(events: Iterable[Event]) -> Mapping[str, Mapping[str, object]]:
+    return record_index(events)[0]
 
 
 def _folded(collected: list[Event], seed: Mapping[str, RecordState] | None = None) -> FoldResult:

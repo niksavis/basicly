@@ -109,16 +109,17 @@ def _revision(found: Sequence[Any], record: str, context: RevisionContext) -> st
         context.template,
         context.legacy,
     )
-    states = events.fields_by_record(found)
+    states, grouped = events.record_index(found)
     held = dict(fields) if fields is not None else dict(states[record])
     headings = _headings(held, template, legacy)
     names = SEMANTIC_FIELDS | frozenset(shaping.field_of(heading) for heading in headings)
-    semantic = sorted({event.id for event in found if _semantic(event, record, names)})
+    own = grouped.get(record, ())
+    semantic = sorted({event.id for event in own if _semantic(event, record, names)})
     pending = [dict(draft.payload) for draft in drafts if _semantic(draft, record, names)]
     content = {name: held.get(name) for name in sorted(names)}
     edges = {}
-    for event in events.canonical_order(found):
-        if event.record == record and event.kind in (events.KIND_EDGE, events.KIND_EDGE_RETRACTED):
+    for event in own:
+        if event.kind in (events.KIND_EDGE, events.KIND_EDGE_RETRACTED):
             target_key, type_key = labels.DIALECT_KEYS[labels.edge_dialect(event.payload)]
             edges[(event.payload.get(target_key), event.payload.get(type_key))] = (
                 event.kind == events.KIND_EDGE
@@ -135,7 +136,11 @@ def _revision(found: Sequence[Any], record: str, context: RevisionContext) -> st
         )
         dependencies[target] = [
             target_headings,
-            sorted({event.id for event in found if _semantic(event, target, target_names)}),
+            sorted({
+                event.id
+                for event in grouped.get(target, ())
+                if _semantic(event, target, target_names)
+            }),
         ]
     packed = json.dumps(
         [record, semantic, content, pending, dependencies, headings],
@@ -167,14 +172,12 @@ def _saved(found: Sequence[Any], record: str, fields: Mapping[str, object], name
         return {}
     matching = [
         event
-        for event in found
-        if event.record == record
-        and event.kind == events.KIND_FIELD
-        and event.payload.get("name") == name
+        for event in events.record_index(found)[1].get(record, ())
+        if event.kind == events.KIND_FIELD and event.payload.get("name") == name
     ]
     if not matching:
         return {}
-    last = events.canonical_order(matching)[-1]
+    last = matching[-1]
     return (
         value
         if last.payload.get("value") == raw
