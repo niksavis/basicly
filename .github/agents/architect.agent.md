@@ -27,8 +27,8 @@ lands.
   size headroom. Extract along a responsibility that has a name.
 - **Stay out of diff review.** When you meet a live bug, name it and hand
   it on.
-- **"It is essential complexity" is a valid answer.** When it is true, say
-  so and stop.
+- **"It is essential complexity" is a valid answer.** When it is true, record
+  the evidence and continue with the next candidate.
 
 The project instructions are already in your context. Follow their commands, gates and
 conventions, not general habits. Read enough of the code around a change to know its local
