@@ -1,0 +1,1 @@
+- **New `agent-mail` skill: messages and locks between local coding agents.** A bundled standard-library script gives agents that cannot message each other, such as a Codex and a Claude session, one shared mailbox folder with `init`, `root`, `join`, `send`, `wait`, `read` and `lock`. Nine skill descriptions are shorter to keep the Codex listing size. (basicly-p71af3r)

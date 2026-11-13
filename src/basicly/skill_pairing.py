@@ -24,6 +24,7 @@ UNPAIRED_EXEMPTIONS: dict[str, str] = {
     "skill-creator": "operator: a skill is drafted and measured with the user in the session",
     "find-skills": "operator: the user approves each search and install in the session",
     "tier-injection": "operator: installing the tier kit is host setup, not lane work",
+    "agent-mail": "operator: a top-level session talks to peer sessions, a lane role never does",
     "retention-probe": (
         "diagnostic: any role runs it on itself when guidance looks missing, so it belongs "
         "to no single role"

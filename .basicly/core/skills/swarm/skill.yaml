@@ -1,10 +1,10 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 token_cost:
-  listing: 84
+  listing: 72
 name: swarm
 invocation: model
-description: "Runs several fresh agents on one artifact, one lens each, and merges their evidence into a verdict table; in teardown mode it also verifies, answers and fixes every finding. Use when asked for an agent swarm, several reviewers, a multi-agent review, or to tear down or find everything wrong with a diff, plan, design or document."
+description: "Runs fresh agents on one artifact, one lens each, and merges their evidence into a verdict table; teardown mode also fixes each finding. Use for an agent swarm, several reviewers, a multi-agent review, or to tear down or find everything wrong with a diff, plan, design or document."
 instructions: |
   # Swarm
 
