@@ -1,0 +1,1 @@
+- Repeated builds preserve a clean working tree by omitting the unused wall-clock timestamp from the generated manifest. Existing manifests remain readable.
