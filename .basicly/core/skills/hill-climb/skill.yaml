@@ -1,10 +1,10 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 token_cost:
-  listing: 65
+  listing: 50
 name: hill-climb
 invocation: model
-description: "Improves a plan, design, code or skill in graded rounds: fresh reviewers grade fixed properties and a script decides when to stop. Use when asked to hill-climb, iterate to a better version or improve something in rounds."
+description: "Improves a plan, design, code or skill in rounds graded by fresh reviewers until a script says stop. Use when asked to hill-climb, iterate to a better version or improve something in rounds."
 instructions: |
   # Hill Climb
 

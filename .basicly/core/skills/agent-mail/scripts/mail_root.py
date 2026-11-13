@@ -20,6 +20,8 @@ def git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str] | None:
             capture_output=True,
             check=False,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
     except OSError:

@@ -97,7 +97,10 @@ def read_body() -> str:
     stream = sys.stdin
     if stream is None or stream.isatty():
         raise RefusedError("no body: pipe the message text into the command")
-    body = stream.read().rstrip("\n")
+    try:
+        body = stream.buffer.read().decode("utf-8").replace("\r\n", "\n").rstrip("\n")
+    except UnicodeDecodeError:
+        raise RefusedError("the body is not UTF-8 text: send it as UTF-8") from None
     if not body.strip():
         raise RefusedError("empty body: pipe the message text into the command")
     return body

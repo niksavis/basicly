@@ -341,6 +341,33 @@ def test_the_projected_script_runs_without_engine_or_site_packages(
     assert "found above the current folder" in run("root").stdout
 
 
+def test_a_non_ascii_body_survives_a_non_utf8_locale(tmp_path: Path) -> None:
+    env = clean_env(tmp_path)
+    assert mail(tmp_path, "init", env=env).returncode == 0
+    for name in ("left", "right"):
+        assert mail(tmp_path, "join", "--as", name, env=env).returncode == 0
+    legacy = {**env, "PYTHONUTF8": "0", "PYTHONIOENCODING": "cp1252", "LC_ALL": "C"}
+    body = "Grüße ✓ naïve 漢字"
+
+    def raw(*args: str, data: bytes) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [sys.executable, "-S", "-B", str(SCRIPT), *args],
+            cwd=tmp_path,
+            input=data,
+            capture_output=True,
+            check=False,
+            env=legacy,
+            timeout=60,
+        )
+
+    assert raw("send", "left", "right", "hello", data=body.encode("utf-8")).returncode == 0
+    shown = raw("read", "right", data=b"")
+    assert shown.returncode == 0
+    assert body in shown.stdout.decode("utf-8")
+    refused = raw("send", "left", "right", "bad", data=b"\xff\xfe broken")
+    assert refused.returncode == 1
+
+
 def test_the_script_parses_on_its_python_floor() -> None:
     for module in MODULES:
         ast.parse((SCRIPTS / module).read_text(encoding="utf-8"), feature_version=(3, 12))

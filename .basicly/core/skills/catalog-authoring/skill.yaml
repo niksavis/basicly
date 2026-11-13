@@ -4,7 +4,7 @@ token_cost:
   listing: 54
 name: catalog-authoring
 invocation: model
-description: "Authors catalog sources in YAML (fragments, output styles, skill.yaml) and projects them. Use before editing a generated file such as SKILL.md or CLAUDE.md, or when adding a fragment or output style."
+description: "Authors catalog sources in YAML (fragments, output styles, skill.yaml) and projects them. Use before editing a generated file such as SKILL.md, CLAUDE.md or AGENTS.md, or when adding a fragment or output style."
 instructions: |
   # Catalog Authoring
 
