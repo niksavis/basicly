@@ -1,0 +1,1 @@
+- Add a local migration rehearsal that retains source copies and scratch vaults, compares independent canonical imports, checks integrity and process evidence, counts old beads records, and prepares consumer controls without touching the live vault. (basicly-gtb19bg.43.33)
