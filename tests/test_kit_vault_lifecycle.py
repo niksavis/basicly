@@ -225,6 +225,47 @@ def test_an_absent_vault_record_is_named_and_no_event_is_queued(
     assert queue.read_bytes() == before
 
 
+@pytest.mark.parametrize(
+    ("form", "cause"),
+    [
+        ("priority", "priority"),
+        ("status", "status"),
+        ("field", "unread_field"),
+        ("dependency", "acme-missing"),
+        ("close", "confirmation"),
+    ],
+)
+def test_vault_admission_preserves_the_existing_write_checks_without_queueing(
+    tmp_path: Path,
+    bare: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    form: str,
+    cause: str,
+) -> None:
+    monkeypatch.setenv("AI_AGENT", "fixture")
+    root = _repo(tmp_path, bare)
+    record = _create(root, "A guarded task")
+    if form == "close":
+        _run(root, "review", LEDGER, record, "--evidence", json.dumps(_review()))
+        _run(root, "claim", record)
+    queue = _clone(tmp_path, bare).folder / vault_queue.QUEUE_NAME
+    assert queue.is_file()
+    before = queue.read_bytes()
+    forms = {
+        "priority": ["update", LEDGER, record, "--field", "priority=9"],
+        "status": ["update", LEDGER, record, "--status", "invented"],
+        "field": ["update", LEDGER, record, "--field", "unread_field=value"],
+        "dependency": ["dep", LEDGER, record, "acme-missing", "--type", "blocks"],
+        "close": ["close", LEDGER, record, "--reason", "A premature completion"],
+    }
+
+    done = _kit(root, *forms[form])
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert cause in _report(done)["refused"].lower()
+    assert queue.read_bytes() == before
+
+
 def test_the_engine_completes_a_vault_born_lifecycle_without_local_events(
     tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
