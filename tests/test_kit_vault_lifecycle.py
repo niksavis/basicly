@@ -248,6 +248,8 @@ def test_an_absent_vault_record_is_named_and_no_event_is_queued(
         ("field", "unread_field"),
         ("dependency", "acme-missing"),
         ("close", "confirmation"),
+        ("holder", "assignee"),
+        ("start", "claim"),
     ],
 )
 def test_vault_admission_preserves_the_existing_write_checks_without_queueing(
@@ -272,6 +274,8 @@ def test_vault_admission_preserves_the_existing_write_checks_without_queueing(
         "field": ["update", LEDGER, record, "--field", "unread_field=value"],
         "dependency": ["dep", LEDGER, record, "acme-missing", "--type", "blocks"],
         "close": ["close", LEDGER, record, "--reason", "A premature completion"],
+        "holder": ["update", LEDGER, record, "--field", "assignee=teammate"],
+        "start": ["update", LEDGER, record, "--status", "in_progress"],
     }
 
     done = _kit(root, *forms[form])

@@ -75,7 +75,36 @@ def _write(clone: Any, state: Path, count: int, tag: str) -> list[str]:
 
 def _ids(bare: Path) -> Counter:
     events = vault_shapes.valid_events(vault_shapes.check(bare, "main"))
-    return Counter(str(e["id"]) for e in events if e.get("kind") == "comment")
+    return Counter(
+        str(e["id"])
+        for e in events
+        if e.get("kind") == "comment"
+        or (
+            e.get("kind") == "ledger"
+            and isinstance(body := e.get("ledger"), dict)
+            and body.get("kind") == cli.events.KIND_NOTE
+        )
+    )
+
+
+def _seed_native_target(tmp_path: Path, bare: Path, record: str) -> None:
+    events = cli.events
+    made = events.append(
+        tmp_path / "native-source",
+        [
+            events.Draft(record, events.KIND_CREATED, {"title": "A real native comment target"}),
+            events.Draft(record, events.KIND_STATUS, {"status": "open"}),
+        ],
+    )
+    clone, state = _machine(tmp_path, bare, "fixture-publisher")
+    drafts = [
+        {"kind": "ledger", "record": event.record, "ledger": json.loads(events.to_json(event))}
+        for event in made
+    ]
+    vault_queue.write(
+        clone, drafts, state=state, origin=vault_queue.Origin("fixture", False, time.time)
+    )
+    _share(clone, state)
 
 
 def test_a_share_pushes_one_batch_commit_and_empties_the_queue(tmp_path: Path, bare: Path) -> None:
@@ -245,6 +274,7 @@ def test_a_share_that_crashes_at_any_step_leaves_each_event_once_after_the_next_
 def test_sync_vault_prints_the_shared_count_and_the_new_head(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _seed_native_target(tmp_path, bare, "acme-a1b2")
     monkeypatch.setattr(cli.vault_cli.vault_hooks, "slot_due", lambda *_: False)
     state = tmp_path / "s"
     cli.main(["comment", "acme-a1b2", "--vault", str(bare), "--text", "hi", "--state", str(state)])

@@ -81,6 +81,8 @@ def resolve_ledger(directory: Path | str, *, starts: bool = False) -> Path:
         )
     if starts:
         return given
+    if vault_write.config_of(given) is not None:
+        return given
     _ledger(given)
     if _holds_ledger(given) or not any(one.name != pin.PIN_FILE for one in given.iterdir()):
         return given
@@ -131,7 +133,8 @@ def update(  # noqa: PLR0913 — one argument per thing an update can set
     claimant: str = "",
 ) -> list:
 
-    ledger = _ledger(directory)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = _ledger(admitted)
     named = dict(fields or {})
     if not named and not status and not add_labels and not remove_labels:
         raise TrackerCommandError("update " + record + " asks for no change")
@@ -151,7 +154,8 @@ def update(  # noqa: PLR0913 — one argument per thing an update can set
             )
         if status:
             drafts.append(events.Draft(record, events.KIND_STATUS, {"status": status}))
-        drafts = holders.claimed_by({record: state}, drafts, claimant)
+        if not isinstance(context, vault_write.WriteContext) or context.target is None:
+            drafts = holders.claimed_by({record: state}, drafts, claimant)
         return _append(ledger, drafts, context, lock)
 
 
@@ -186,7 +190,8 @@ def close(
     context: Any = None,
 ) -> list:
 
-    ledger = _ledger(directory)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = _ledger(admitted)
     if not records:
         raise TrackerCommandError("close names no record")
     with events.LedgerLock(ledger) as lock:
@@ -218,7 +223,8 @@ def comment(
     context: Any = None,
 ) -> list:
 
-    ledger = _ledger(directory)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = _ledger(admitted)
     if not text:
         raise TrackerCommandError("a comment on " + record + " needs a body")
     with events.LedgerLock(ledger) as lock:
@@ -237,7 +243,8 @@ def add_dependency(
     context: Any = None,
 ) -> list:
 
-    ledger = _ledger(directory)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = _ledger(admitted)
     if not edge_type:
         edge_type = differential.DEFAULT_VOCABULARY.parent_child_type
     with events.LedgerLock(ledger) as lock:
@@ -258,7 +265,8 @@ def remove_dependency(
     context: Any = None,
 ) -> list:
 
-    ledger = _ledger(directory)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = _ledger(admitted)
     with events.LedgerLock(ledger) as lock:
         _require(ledger, record)
         edges.refuse_retraction(queries.views_and_children(ledger)[0], record, target, edge_type)
@@ -274,7 +282,8 @@ def delete(
     context: Any = None,
 ) -> list:
 
-    ledger = _ledger(directory)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = _ledger(admitted)
     with events.LedgerLock(ledger) as lock:
         _require(ledger, record)
         return _append(ledger, [events.Draft(record, events.KIND_TOMBSTONE, {})], context, lock)
@@ -289,12 +298,14 @@ def create_root(
     context: Any = None,
 ) -> list:
 
-    ledger = Path(directory)
+    prefix = vault_write.prefix(directory, prefix)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = Path(admitted)
     ledger.mkdir(parents=True, exist_ok=True)
     with events.LedgerLock(ledger) as lock:
         folded = events.fold(events.read_events(ledger)[0])
         record = ids.mint_root_id(
-            vault_write.prefix(ledger, prefix),
+            prefix,
             ids.minted_ever(
                 [key for key, state in folded.records.items() if not state.tombstoned],
                 [key for key, state in folded.records.items() if state.tombstoned],
@@ -316,7 +327,8 @@ def create_child(
     context: Any = None,
 ) -> list:
 
-    ledger = _ledger(directory)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = _ledger(admitted)
     with events.LedgerLock(ledger) as lock:
         _require(ledger, parent)
         folded = events.fold(events.read_events(ledger)[0])
@@ -336,7 +348,8 @@ def create_child(
 
 def migrate_fields(directory: Path | str, *, context: Any = None) -> list:
 
-    ledger = _ledger(directory)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = _ledger(admitted)
     shaping = values.fields.shaping
     with events.LedgerLock(ledger) as lock:
         states = events.fold(events.read_events(ledger)[0]).records
@@ -374,7 +387,8 @@ def _restated(record: str, state: Any, key: str) -> list:
 
 def resolve(directory: Path | str, record: str, *, context: Any = None) -> list:
 
-    ledger = _ledger(directory)
+    admitted, context = vault_write.admission(directory, context, environment())
+    ledger = _ledger(admitted)
     with events.LedgerLock(ledger) as lock:
         state = _require(ledger, record)
         ordered = events.canonical_order(events.read_events(ledger)[0])
