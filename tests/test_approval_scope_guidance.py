@@ -31,7 +31,10 @@ def test_a_different_unapproved_ci_edit_still_requires_explicit_approval(target:
     rule = _section(target, "Require Explicit Confirmation")
     assert "These actions need explicit approval" in rule
     assert "only for the same action and scope" in rule
-    assert "- edit CI/CD, deployment, infrastructure, ignore or secrets files;" in rule
+    assert (
+        "- edit CI/CD, deployment, infrastructure, ignore or secrets files "
+        "(examples: `.github/workflows/` and `.gitignore`);" in rule
+    )
 
 
 @pytest.mark.parametrize("target", TARGETS)
@@ -68,7 +71,8 @@ def test_prior_approval_changes_neither_confirmation_categories_nor_gate_protect
         "`git checkout -- <path>`, `git restore`, `git stash`, `git clean`, `rm -rf`;",
         "- read or write a `.env*` file;",
         "- delete files, branches or data outside the task;",
-        "- edit CI/CD, deployment, infrastructure, ignore or secrets files;",
+        "- edit CI/CD, deployment, infrastructure, ignore or secrets files "
+        "(examples: `.github/workflows/` and `.gitignore`);",
         "- add, remove or upgrade a dependency;",
         "- make a network call outside the task.",
     )

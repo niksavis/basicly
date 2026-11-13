@@ -1,0 +1,1 @@
+- Clarify agent continuation and evidence rules, scope error handling and approval boundaries, and align skill routing, evaluation and model selection instructions with current guidance.

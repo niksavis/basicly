@@ -10,12 +10,20 @@ Compare the harness files with the vendor documentation of today, not with what 
 The checklist in [references/checklist.md](references/checklist.md) is the offline floor.
 A live page overrides it.
 
+## Choose the scope
+
+Use audit-only for review without implementation authorization, or when changes are forbidden.
+Audit-only reads files and live documentation, then reports findings without writing files or tracker state.
+Read live pages without saving them. Do not run the download script or discovery that requires saved indexes.
+Run only checks whose side effects fit this scope. Name checks and discovery steps that you did not run.
+Use remediation when implementation is already authorized. Keep writes within that scope and the Ask first boundaries.
+
 ## Rules
 
 - **Pull the docs before the audit.** A rule, a limit or a field can change in any release.
 - **Fetch listed sources by default.** Discovery reports unlisted candidates without downloading them.
   Fetch an unlisted URL only within existing authorization or after approval.
-- **Keep fetched pages in the scratch directory; never commit them.** The script refuses an `--out` inside a git working tree.
+- **For remediation, keep fetched pages in the scratch directory. Never commit them.** The script refuses `--out` inside a git tree.
 - **Cite the page for every finding.** A finding with no source is an opinion.
 - **Mark an API-only rule "not applicable"** when the repository does not call the Messages API.
   Name that reason once in the report.
@@ -33,8 +41,8 @@ Audit progress:
 - [ ] 5 Report and fix
 ```
 
-**1 Pull the current docs.** Run the script from the directory of this skill. It needs Python 3.11 or later
-and no package:
+**1 Pull the current docs.** In audit-only, read live pages without saving them.
+For remediation, run the script from this skill directory. It needs Python 3.11 or later and no package:
 
 ```sh
 python3 scripts/fetch_docs.py
@@ -49,7 +57,7 @@ python3 scripts/fetch_docs.py
 
 `python3 scripts/fetch_docs.py --list` prints the sources.
 
-Discover model guides from the saved vendor indexes without a network call:
+For remediation, discover model guides from saved vendor indexes without another network call:
 
 ```sh
 python3 scripts/fetch_docs.py --discover
@@ -68,6 +76,7 @@ instruction files, hooks, subagents, permissions, context and cache. For each ru
 changed or absent from the checklist, record a finding "checklist stale", with the page and the
 quoted sentence. Review the model prompting guide against the models actually in use.
 Read both `claude-code-index.txt` and `claude-platform-index.txt` for relevant pages outside the discovery routes.
+In audit-only, read the live indexes instead of saved copies.
 Name unlisted sources in the report before deciding whether to fetch them.
 
 Label each finding as a vendor requirement, vendor recommendation, or repository choice.
@@ -90,12 +99,15 @@ Do not treat a recommendation as a vendor requirement.
 
 Measure a size on the projected file, not on the catalog YAML.
 
-**4 Run the gates.** In a basicly repository, run the projection gates that `CLAUDE.md` lists, plus `basicly catalog lint`, and read each summary line. A gate that fails is a finding.
+**4 Run the gates.** In audit-only, run only read-only checks and name checks that you did not run.
+For remediation in basicly, run the listed projection gates and `basicly catalog lint`. Read each summary line.
+A gate that fails is a finding.
 
 **5 Report and fix.** A finding is a failed checklist row, stale rule, or failed gate.
 Report each finding with its classification, source, repository evidence, verdict, and proposed fix.
 Give passing and not-applicable counts separately.
 
-File one tracker record for each class of finding, then fix it. Fix a skill, fragment or agent in its catalog YAML as `catalog-authoring` shows, never the projected file.
-When the checklist is stale, update `references/checklist.md` in the same change. When a mistake
-can repeat, propose a lint or a test that refuses it.
+In audit-only, finish with the report. Do not file records, edit the checklist or apply fixes.
+For authorized remediation, file one tracker record for each class of finding, then fix it within scope.
+Edit catalog YAML as `catalog-authoring` shows, then regenerate projected files.
+Update a stale checklist within the authorized change. Propose a lint or test for a mistake that can repeat.
