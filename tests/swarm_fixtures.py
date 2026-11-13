@@ -5,12 +5,16 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[1] / ".basicly/core/skills/swarm/scripts/swarm.py"
 _spec = importlib.util.spec_from_file_location("swarm_script", SCRIPT)
 assert _spec is not None and _spec.loader is not None
 swarm = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = swarm
-_spec.loader.exec_module(swarm)
+with pytest.MonkeyPatch.context() as imports:
+    imports.syspath_prepend(str(SCRIPT.parent))
+    _spec.loader.exec_module(swarm)
 
 
 def _reply(directory: Path, lens: str, payload: dict | None, prose: str = "Done.\n") -> None:
