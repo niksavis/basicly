@@ -13,7 +13,8 @@ A live page overrides it.
 ## Rules
 
 - **Pull the docs before the audit.** A rule, a limit or a field can change in any release.
-- **Fetch only the listed sources.** Ask the user before you fetch any other URL.
+- **Fetch listed sources by default.** Discovery reports unlisted candidates without downloading them.
+  Fetch an unlisted URL only within existing authorization or after approval.
 - **Keep fetched pages in the scratch directory; never commit them.** The script refuses an `--out` inside a git working tree.
 - **Cite the page for every finding.** A finding with no source is an opinion.
 - **Mark an API-only rule "not applicable"** when the repository does not call the Messages API.
@@ -48,11 +49,32 @@ python3 scripts/fetch_docs.py
 
 `python3 scripts/fetch_docs.py --list` prints the sources.
 
+Discover model guides from the saved vendor indexes without a network call:
+
+```sh
+python3 scripts/fetch_docs.py --discover
+```
+
+When the fetch used `--out`, pass the same directory to discovery.
+Discovery scans known prompting, migration, model update, effort, and advisor routes.
+It excludes listed sources and limits the candidate report.
+Exit code `1` reports unreadable indexes or omitted candidates.
+Treat either condition as incomplete discovery.
+Inspect the saved indexes when candidates were omitted.
+An empty report does not prove that no relevant guide exists.
+
 **2 Compare the docs with the checklist.** Read each fetched page for rules on skills,
 instruction files, hooks, subagents, permissions, context and cache. For each rule that is new,
 changed or absent from the checklist, record a finding "checklist stale", with the page and the
-quoted sentence. Then read `claude-code-index.txt` for pages that are not in `--list` and cover the
-same subjects. Name them in the report.
+quoted sentence. Review the model prompting guide against the models actually in use.
+Read both `claude-code-index.txt` and `claude-platform-index.txt` for relevant pages outside the discovery routes.
+Name unlisted sources in the report before deciding whether to fetch them.
+
+Label each finding as a vendor requirement, vendor recommendation, or repository choice.
+Use requirement only for explicit constraints on the interface in use.
+For recommendations, state the observed problem and proposed measurement.
+For repository choices, cite the owning instruction or user decision.
+Do not treat a recommendation as a vendor requirement.
 
 **3 Audit the harness files.** For each checklist row, record pass, fail or not applicable, with
 `path:line` evidence:
@@ -70,10 +92,9 @@ Measure a size on the projected file, not on the catalog YAML.
 
 **4 Run the gates.** In a basicly repository, run the projection gates that `CLAUDE.md` lists, plus `basicly catalog lint`, and read each summary line. A gate that fails is a finding.
 
-**5 Report and fix.** A finding is a checklist row that fails, a stale checklist rule or a failed gate. Report one row per finding, and the count of passing and not-applicable rows in one line:
-
-| Rule | Source | Evidence | Verdict | Fix |
-| --- | --- | --- | --- | --- |
+**5 Report and fix.** A finding is a failed checklist row, stale rule, or failed gate.
+Report each finding with its classification, source, repository evidence, verdict, and proposed fix.
+Give passing and not-applicable counts separately.
 
 File one tracker record for each class of finding, then fix it. Fix a skill, fragment or agent in its catalog YAML as `catalog-authoring` shows, never the projected file.
 When the checklist is stale, update `references/checklist.md` in the same change. When a mistake
