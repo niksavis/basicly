@@ -93,6 +93,27 @@ def test_init_with_yes_pushes_a_genesis_the_shape_check_accepts_and_writes_the_c
     assert f'vault = "{bare}"' in config
 
 
+def test_init_creates_its_generated_genesis_without_a_personal_git_identity(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for role in ("AUTHOR", "COMMITTER"):
+        for field in ("NAME", "EMAIL"):
+            monkeypatch.delenv(f"GIT_{role}_{field}", raising=False)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "no-global-config"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    bare = _empty(tmp_path)
+
+    code, shown = _run(["vault-init", "--vault", str(bare), "--yes"], capsys)
+
+    assert code == 0 and shown["pushed"] is True
+    assert vault_shapes.check(bare, "refs/heads/main")[0].valid
+    identities = _git("show", "-s", "--format=%an <%ae>%n%cn <%ce>", "main", cwd=bare)
+    assert identities.splitlines() == [
+        "basicly tracker <tracker@writers.basicly.invalid>",
+        "basicly tracker <tracker@writers.basicly.invalid>",
+    ]
+
+
 def test_init_refuses_a_repository_that_already_has_commits_and_names_it(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

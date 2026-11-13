@@ -118,7 +118,11 @@ def _commit(work: Path, runner: Runner) -> str:
         runner(entry, bare, env=env)
     tree = runner(["write-tree"], bare, env=env).strip()
     made = ["-c", "commit.gpgSign=false", "commit-tree", tree, "-m", "genesis"]
-    return runner(made, bare).strip()
+    who = {"NAME": "basicly tracker", "EMAIL": "tracker@writers.basicly.invalid"}
+    identity = {
+        f"GIT_{role}_{key}": value for role in ("AUTHOR", "COMMITTER") for key, value in who.items()
+    }
+    return runner(made, bare, env=identity).strip()
 
 
 def init(text: str, *, confirmed: bool, runner: Runner = git_runner.run) -> dict[str, object]:
