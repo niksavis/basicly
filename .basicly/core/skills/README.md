@@ -27,7 +27,7 @@ field: every skill root advertises its first body paragraph instead.
 | `falsify-first` | `model` | any | Tries to break a claim, invariant or measurement with a concrete counterexample. Use before it enters a plan, a design or a gate, or before a high-risk number, root cause or coverage claim enters a report. |
 | `find-skills` | `model` | any | Searches the catalog, then skills.sh, for an existing community skill out there, and installs one only after the user agrees. Use when asking: is there a skill for this? |
 | `harness-client` | `model` | any | Attaches to a running supervisor: shows what the factory does and records answers to its decisions. Use while a supervisor runs or a lane waits on a human judgment. |
-| `harness-loop` | `model` | any | Drives tracked work through the basicly loop, intake to ship. Use to start or resume work, or to move an issue past a checkpoint or gate. |
+| `harness-loop` | `model` | any | Drives tracked development through the basicly loop. Use to intake, decompose, start, resume or advance an explicitly loop-managed issue through its next phase, checkpoint or gate. |
 | `hill-climb` | `model` | any | Improves a plan, design, code or skill in graded rounds: fresh reviewers grade fixed properties 0 to 10, the author revises, and a script decides when to stop. Use when asked to hill-climb, iterate to a better version or improve something in rounds. |
 | `interface-facts` | `model` | any | Establishes a third-party CLI flag, API field, model, price or limit from the tool and live vendor docs. Use before code depends on it. |
 | `no-comments` | `model` | any | Keeps prose comments and docstrings out of code: where a fact goes instead and which tool directives stay. Use when writing a comment or docstring, or when the no-comments gate refuses a commit. |
@@ -36,7 +36,7 @@ field: every skill root advertises its first body paragraph instead.
 | `python` | `model` | `python` | Writes typed Python with pathlib and Windows-safe subprocesses, and judges if an abstraction earns its keep. Use for .py edits, an except clause, a size gate or a silenced warning. |
 | `release-process` | `model` | any | Cuts a release with basicly release, pushes it and confirms it published. Use when cutting, tagging or checking a release. |
 | `repair-in-place` | `model` | any | Fixes a named defect in the lane's own worktree from its findings, with no new plan. Use at REPAIR after verify or validate failed. |
-| `retention-probe` | `model` | any | Tests if this session still holds the always-on instruction file. Use when a repo rule seems missing, in a new subagent or after compaction. |
+| `retention-probe` | `model` | any | Tests suspected loss of repository instructions. Use when a rule seems missing, including after compaction or in a new subagent. |
 | `root-cause` | `model` | any | Finds the cause of a failure, a bug that came back or a test that fails intermittently, link by link with evidence, to a control this repository owns. Use when asked why something broke, keeps breaking or fails, and the cause is unclear. |
 | `session-finish` | `model` | any | Summarizes what changed and what is still open. Use to wrap up a session or run a retro. Write only new recovery facts. |
 | `skill-creator` | `model` | any | Writes a new skill or improves one with evals, a benchmark, graded versions and description tuning. Use when adding a new skill to the catalog, turning a workflow into a skill, comparing runs with and without a skill, or when a skill never gets picked up. |
