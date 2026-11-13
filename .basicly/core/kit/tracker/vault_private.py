@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -60,10 +61,19 @@ def _common(directory: Path) -> Path | None:
 
 def _local_source(url: str) -> Path | None:
     if url.startswith("file:"):
-        try:
-            return Path.from_uri(url).resolve()
-        except ValueError:
+        if not url.startswith("file://"):
             return None
+        raw = re.sub(
+            rb"%([0-9A-Fa-f]{2})",
+            lambda match: bytes([int(match[1], 16)]),
+            url[7:].encode("utf-8", errors="surrogateescape"),
+        )
+        text = os.fsdecode(raw)
+        if not text.startswith("/"):
+            text = "//" + text
+        if os.name == "nt" and len(text) > 2 and text[0] == "/" and text[2] == ":":
+            text = text[1:]
+        return Path(text).resolve()
     candidate = Path(url)
     return candidate.resolve() if "://" not in url and candidate.is_dir() else None
 
@@ -116,7 +126,15 @@ def prepare(path: Path, clone: Any, *, overwrite: bool = False) -> Destination:
                     "choose a private folder outside it"
                 ) from None
         return Destination(resolved, clone, overwrite)
-    except OSError, RuntimeError, git_runner.GitRunnerError:
+    except OSError:
+        raise PrivateMapError(
+            "private map destination could not be checked; choose another private folder"
+        ) from None
+    except RuntimeError:
+        raise PrivateMapError(
+            "private map destination could not be checked; choose another private folder"
+        ) from None
+    except git_runner.GitRunnerError:
         raise PrivateMapError(
             "private map destination could not be checked; choose another private folder"
         ) from None

@@ -55,7 +55,10 @@ def census(directory: Path, changed: Collection[str]) -> dict[str, object]:
             if b"\0" in body:
                 continue
             text = body.decode("utf-8")
-        except OSError, UnicodeError:
+        except OSError:
+            unreadable += 1
+            continue
+        except UnicodeError:
             unreadable += 1
             continue
         examined += 1

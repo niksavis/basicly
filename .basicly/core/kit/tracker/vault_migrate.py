@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import hashlib
 import importlib.util
 import json
@@ -7,7 +8,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -124,6 +125,22 @@ def writer_of(found: Sequence[Any], template: Mapping[str, object] | None = None
     return hashlib.sha256(("canonical-migration-v1\n" + text).encode()).hexdigest()[:32]
 
 
+def _source_time(text: str) -> float:
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        stamp = datetime.fromisoformat(normalized)
+        offset = stamp.utcoffset()
+        return (
+            calendar.timegm(stamp.timetuple())
+            + stamp.microsecond / 1_000_000
+            - (offset.total_seconds() if offset is not None else 0)
+        )
+    except ValueError:
+        return 0.0
+    except OverflowError:
+        return 0.0
+
+
 def lines_of(
     found: Sequence[Any], template: Mapping[str, object] | None = None
 ) -> tuple[str, list[dict[str, object]]]:
@@ -132,12 +149,7 @@ def lines_of(
     attached: set[str] = set()
     lines = []
     for event in found:
-        try:
-            stamp = datetime.fromisoformat(event.ts)
-            at = stamp.replace(tzinfo=stamp.tzinfo or UTC).timestamp()
-        except ValueError, OverflowError:
-            at = 0.0
-        line = line_of(event, writer, at)
+        line = line_of(event, writer, _source_time(event.ts))
         prefix = event.record.partition("-")[0]
         held = source_templates[prefix]
         line[vault_template.IDENTITY] = vault_template.identity(held)

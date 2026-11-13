@@ -211,7 +211,9 @@ def _evidence(
         return payload
     try:
         value = json.loads(payload.get("value", ""))
-    except ValueError, TypeError:
+    except ValueError:
+        return {**payload, "value": '{"migration":"invalid-source-evidence"}'}
+    except TypeError:
         return {**payload, "value": '{"migration":"invalid-source-evidence"}'}
     if not isinstance(value, dict):
         return {**payload, "value": '{"migration":"invalid-source-evidence"}'}
