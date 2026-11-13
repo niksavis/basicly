@@ -89,6 +89,7 @@ class RevisionContext:
     drafts: Sequence[Any] = ()
     template: Any = None
     legacy: bool = False
+    index: Any = None
 
 
 def revision(
@@ -109,7 +110,7 @@ def _revision(found: Sequence[Any], record: str, context: RevisionContext) -> st
         context.template,
         context.legacy,
     )
-    states, grouped = events.record_index(found)
+    states, grouped = context.index if context.index is not None else events.record_index(found)
     held = dict(fields) if fields is not None else dict(states[record])
     headings = _headings(held, template, legacy)
     names = SEMANTIC_FIELDS | frozenset(shaping.field_of(heading) for heading in headings)
@@ -160,7 +161,9 @@ def _current(saved, found, record, context: RevisionContext) -> bool:
     )
 
 
-def _saved(found: Sequence[Any], record: str, fields: Mapping[str, object], name: str) -> Mapping:
+def _saved(
+    found: Sequence[Any], record: str, fields: Mapping[str, object], name: str, index: Any = None
+) -> Mapping:
     raw = fields.get(name)
     if not isinstance(raw, str):
         return {}
@@ -172,7 +175,7 @@ def _saved(found: Sequence[Any], record: str, fields: Mapping[str, object], name
         return {}
     matching = [
         event
-        for event in events.record_index(found)[1].get(record, ())
+        for event in (index if index is not None else events.record_index(found))[1].get(record, ())
         if event.kind == events.KIND_FIELD and event.payload.get("name") == name
     ]
     if not matching:
@@ -219,6 +222,21 @@ def readiness(
     *,
     template=None,
 ) -> tuple[str, ...]:
+    return _readiness(found, record, RevisionContext(fields, drafts, template))
+
+
+def readiness_many(
+    found: Sequence[Any], fields: Mapping[str, Mapping[str, object]], *, template: Any = None
+) -> dict[str, tuple[str, ...]]:
+    index = events.record_index(found)
+    return {
+        record: _readiness(found, record, RevisionContext(held, template=template, index=index))
+        for record, held in fields.items()
+    }
+
+
+def _readiness(found: Sequence[Any], record: str, context: RevisionContext) -> tuple[str, ...]:
+    fields = context.fields
     if fields is None:
         state = events.fold(found).records.get(record)
         held = dict(state.fields) if state is not None else {}
@@ -226,8 +244,8 @@ def readiness(
         held = dict(fields)
     if small(held):
         return small_task.owed(held, len(criteria(held)))
-    saved = _saved(found, record, held, REVIEW_FIELD)
-    current = _current(saved, found, record, RevisionContext(held, drafts, template))
+    saved = _saved(found, record, held, REVIEW_FIELD, context.index)
+    current = _current(saved, found, record, replace(context, fields=held))
     if _compact_type(held) and (
         not current or set(saved) - {"contract"} == {"checks", "revision", "writer"}
     ):
