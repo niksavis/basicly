@@ -106,3 +106,21 @@ def test_private_map_rechecks_repository_admission_before_writing(tmp_path: Path
     with pytest.raises(private.PrivateMapError, match="not ignored"):
         private.write(destination, [])
     assert not (folder / "map.json").exists()
+
+
+def test_private_map_recognizes_an_encoded_vault_url_without_new_pathlib_methods(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delattr(Path, "from_uri", raising=False)
+    vault = Vault(tmp_path / "vault with space-é")
+    vault.write(".gitignore", "map.json\n")
+    vault.commit("ignored map fixture")
+    assert "%20" in vault.root.as_uri()
+    assert "%C3%A9" in vault.root.as_uri()
+    clone = _clone(vault, tmp_path)
+    with pytest.raises(private.PrivateMapError, match="vault repository"):
+        private.prepare(vault.root / "map.json", clone)
+    destination = private.prepare(tmp_path / "outside.json", clone)
+    private.write(destination, [])
+    assert json.loads((tmp_path / "outside.json").read_text())["events"] == []

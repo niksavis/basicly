@@ -83,3 +83,21 @@ def test_export_refuses_a_nonempty_destination_before_fetching(
     with pytest.raises(vault_migrate.MigrateError, match="not empty"):
         vault_migrate.from_vault(None, "demo", target, clock=time.time)
     assert (target / "template.json").read_text() == '{"prefix":"other"}'
+
+
+@pytest.mark.parametrize(
+    "stamp", ["1970-01-01T00:00:01Z", "1970-01-01T02:00:01+02:00", "1970-01-01T00:00:01"]
+)
+def test_wrapper_time_uses_the_source_instant_without_a_new_datetime_alias(stamp: str) -> None:
+    payload = {"title": "A public record"}
+    event = events.Event(
+        events.event_id_for(RECORD, "created", payload),
+        RECORD,
+        1,
+        "created",
+        "contributor",
+        stamp,
+        payload,
+    )
+    _, lines = vault_migrate.lines_of([event])
+    assert lines[0]["at"] == 1.0
