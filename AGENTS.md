@@ -3,7 +3,7 @@
 
 ### Code Is Authoritative
 
-IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`) unless the user explicitly requests observer repair. Fix the cause.
+never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`) unless the user explicitly requests observer repair. Fix the cause.
 
 - For observer repair, work outside the harness controller; run affected checks directly and report bypasses and unfinished verification. Describe bypassed checks as bypassed, never as passing.
 
@@ -14,7 +14,7 @@ IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a 
 - Never admit unvalidated external input past a trust boundary.
 - Never concatenate input into shell syntax or queries; pass arguments and values as parameters.
 - Never put secrets in the repository or logs; use environment variables or a secret manager.
-- Never expose internal details in returned errors. Log the detail and return a generic message.
+- Never expose internal details in errors that cross a trust boundary, such as an HTTP response to an untrusted caller. Log the detail and return a generic message. A command-line usage error names the wrong input and the correct command, and never a secret or a stack trace.
 - Never commit machine paths, user names or host names. Only the tracker's holder field may record the name chosen with `git config basicly.holder`.
 
 ## Ask first
@@ -26,7 +26,7 @@ These actions need explicit approval. Reuse it only for the same action and scop
 - force-push, rewrite history, or discard uncommitted work: `git reset --hard`, `git checkout -- <path>`, `git restore`, `git stash`, `git clean`, `rm -rf`;
 - read or write a `.env*` file;
 - delete files, branches or data outside the task;
-- edit CI/CD, deployment, infrastructure, ignore or secrets files;
+- edit CI/CD, deployment, infrastructure, ignore or secrets files (examples: `.github/workflows/` and `.gitignore`);
 - add, remove or upgrade a dependency;
 - make a network call outside the task.
 
@@ -90,7 +90,7 @@ uv run basicly permissions-check
 - Keep one responsible owner from task to completion; the tracker ledger and latest handover preserve shared history.
 - Delegate only for independent work, context pressure, independent review or specialist capabilities.
 - Use `basicly session start` when useful. Direct work needs no controller or skill; `harness-loop` is for an owner handoff or `--execution worker`.
-- The user task request authorizes its scope. Do not request a grant or a mandatory token budget.
+- The user task request authorizes its scope, except the actions under Ask first. Do not request a grant or a mandatory token budget.
 - Keep verification gates and destructive-action protections enabled. Honor limits the user explicitly sets.
 
 ### External Review
@@ -111,7 +111,7 @@ uv run basicly permissions-check
 
 ### Ownership
 
-- Own the approved outcome and necessary harness fixes; fix demonstrated causes with the smallest effective regression or control.
+- Own the approved outcome and necessary harness fixes within the approved scope; fix demonstrated causes with the smallest effective regression or control.
 - Use current vendor and expert practice unless it makes install, use or upgrade less safe for a person who makes a mistake.
 
 ### Core Rules

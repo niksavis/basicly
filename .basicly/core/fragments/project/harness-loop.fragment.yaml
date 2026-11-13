@@ -19,5 +19,5 @@ body: |
   - Keep one responsible owner from task to completion; the tracker ledger and latest handover preserve shared history.
   - Delegate only for independent work, context pressure, independent review or specialist capabilities.
   - Use `basicly session start` when useful. Direct work needs no controller or skill; `harness-loop` is for an owner handoff or `--execution worker`.
-  - The user task request authorizes its scope. Do not request a grant or a mandatory token budget.
+  - The user task request authorizes its scope, except the actions under Ask first. Do not request a grant or a mandatory token budget.
   - Keep verification gates and destructive-action protections enabled. Honor limits the user explicitly sets.
