@@ -136,3 +136,15 @@ def test_harness_trial_results_missing_acceptance_has_unknown_accepted_cost() ->
     result = load_results().summarize([trial("one")])[0]
     assert result["accepted"] == 0
     assert result["cost_per_accepted"] is None
+
+
+@pytest.mark.parametrize("outcome", ["passed", "infrastructure_error"])
+def test_value_results_refuse_acceptance_without_verified_loading(outcome: str) -> None:
+    row = trial(
+        "one",
+        outcome=outcome,
+        arm_conditions={"mode": "full-basicly", "loading_verified": False},
+        acceptance={"outcome": "passed"},
+    )
+    with pytest.raises(ValueError, match="loading"):
+        load_results().summarize([row])

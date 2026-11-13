@@ -32,6 +32,18 @@ def validate(row: Mapping[str, Any]) -> None:
         or (isinstance(acceptance, Mapping) and acceptance.get("outcome") == "passed")
     ):
         raise ValueError(f"trial {row['id']} accepts output after a model mismatch")
+    conditions = row.get("arm_conditions")
+    if conditions is not None and not isinstance(conditions, Mapping):
+        raise ValueError(f"trial {row['id']} has invalid arm loading evidence")
+    if (
+        conditions is not None
+        and conditions.get("loading_verified") is not True
+        and (
+            row.get("outcome") == "passed"
+            or (isinstance(acceptance, Mapping) and acceptance.get("outcome") == "passed")
+        )
+    ):
+        raise ValueError(f"trial {row['id']} accepts output without verified arm loading")
     for key in MEASUREMENTS:
         value = row.get(key)
         if value is None:

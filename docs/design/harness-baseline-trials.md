@@ -86,7 +86,7 @@ Keep the task brief, model, effort, acceptance command and stopping limits ident
 The installed arms require projected instructions, skills and Git hooks.
 They also require configured verification checks.
 The gates-only arm preserves those files and hooks.
-It uses Codex settings to suppress automatic instruction and skill loading.
+Codex uses settings to suppress automatic instruction and skill loading.
 The [official configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
 describes `project_doc_max_bytes` and `skills.config`.
 The [official skill guide](https://learn.chatgpt.com/docs/build-skills)
@@ -97,6 +97,34 @@ It binds the trace to the session, workspace and model.
 It checks the effective effort, approval policy and sandbox.
 It checks which project instructions and skills loaded before the first assistant response.
 An unsupported trace or a loading mismatch invalidates the attempt.
+Claude also supports these value arms.
+Its installed arms require `.claude/CLAUDE.md` and model-invoked skills under `.claude/skills/`.
+The gates-only arm keeps Git hooks and verification configuration.
+It suppresses memory through `claudeMdExcludes` and skills through `--disable-slash-commands`.
+The plain arm uses the same suppression controls.
+All Claude arms disable automatic memory.
+They use `acceptEdits` permission mode with permission prompts disabled.
+An action that requires approval therefore remains denied.
+The [Claude CLI reference](https://code.claude.com/docs/en/cli-reference) describes these flags.
+The [settings reference](https://code.claude.com/docs/en/settings-reference#claudemdexcludes) describes memory exclusions.
+
+Claude verification reads the native transcript referenced by its session identifier.
+It checks the initial SDK request against its recorded shape and message references.
+It requires source markers for project instructions.
+It checks model-invoked skill names and descriptions against the installed files.
+Skill discovery does not prove that Claude used a skill correctly.
+It checks requested models and efforts across the recorded SDK requests.
+The initial stream event supplies the workspace and permission mode.
+Missing, malformed, or unsupported evidence invalidates the attempt.
+Invalid loading prevents task acceptance.
+Known token use remains recorded for invalid attempts.
+
+Native transcript formats can change with Claude updates.
+The loading controls were measured with Claude Code `2.1.323` using a local API fixture.
+The command `claude --version` supplied that version.
+Fixture token counts verify accounting only.
+Live task trials must establish the harness's effect on cost and completed work.
+
 Inherited personal instructions and remote policy still need separate assessment.
 Suppression stops automatic loading.
 It does not prevent an agent from reading a repository file through a tool.

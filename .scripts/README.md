@@ -82,7 +82,13 @@ Advisor arrangements remain separate in summaries.
 Completed trials record observed models and reject mismatched model results.
 Missing model evidence remains unverified.
 Managed effort caps and advisor availability still need live verification.
-Complete Claude harness comparisons remain tracked in `basicly-gtb19bg.49`.
+Claude value comparisons support `plain`, `gates-only`, and `full-basicly` snapshots.
+These comparisons require separate task and harness setup commands.
+Follow [the value comparison procedure](../docs/design/harness-baseline-trials.md) to prepare those inputs.
+The evaluator requires native evidence for instruction discovery, skill discovery, model, effort, and permissions.
+Unsupported evidence invalidates the attempt.
+Local API fixtures verify the comparison controls and token accounting.
+Live model trials must establish any improvement in cost or task completion.
 
 Codex effort follows [the configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference#model_reasoning_effort) and [current model capabilities](https://developers.openai.com/api/docs/guides/deployment-checklist).
 The Claude effort policy follows [Claude's model configuration](https://code.claude.com/docs/en/model-config#adjust-effort-level).

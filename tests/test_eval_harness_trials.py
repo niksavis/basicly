@@ -315,11 +315,13 @@ def test_value_comparison_refuses_missing_conditions(
     assert not args.output.exists()
 
 
+@pytest.mark.parametrize("family", ["codex", "claude"])
 def test_value_comparison_records_modes_and_shared_acceptance(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, family: str
 ) -> None:
     module = load_driver(monkeypatch)
     args = arguments(tmp_path)
+    args.family = family
     payload = json.loads(args.cases.read_text())
     payload["cases"][0].update(task_setup=[], harness_setup=[])
     args.cases.write_text(json.dumps(payload))

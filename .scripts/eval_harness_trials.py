@@ -89,6 +89,7 @@ def runtime_manifest(spec: runner.RunnerSpec, configuration_files: list[Path]) -
             for name in (
                 "eval_harness_trials.py",
                 "harness_trial_models.py",
+                "harness_trial_claude.py",
                 "harness_trial_evidence.py",
                 "harness_trial_results.py",
                 "harness_trial_arms.py",
@@ -140,6 +141,8 @@ def validate_trial_location(output: Path) -> None:
 
 
 def load_arms(values: list[str], family: str) -> list[tuple[str, dict[str, str], str, str]]:
+    if family not in {"codex", "claude"}:
+        raise ValueError("value comparisons require a native Codex or Claude family")
     loaded = [load_arm(value) for value in values]
     modes = {name: mode for name, _, _, mode in loaded}
     if len(modes) != len(loaded):
@@ -147,8 +150,6 @@ def load_arms(values: list[str], family: str) -> list[tuple[str, dict[str, str],
     value_comparison = any(mode != "guidance" for mode in modes.values())
     if value_comparison and (len(loaded) != 3 or set(modes.values()) != VALUE_MODES):
         raise ValueError("value comparison requires plain, gates-only and full-basicly modes")
-    if value_comparison and family != "codex":
-        raise ValueError("value trials currently require Codex loading controls")
     return loaded
 
 

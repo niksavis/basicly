@@ -45,7 +45,6 @@ def save_execution(
     if error := report.get("protocol", {}).get("error"):
         raise ValueError(error)
     report["session_id"] = observed_session(spec, result)
-    verify_value_loading(spec, directory / "workspace", report)
     resolution = result.model_resolution
     report["model_resolution"] = dataclasses.asdict(resolution) if resolution else None
     observed = runner.observed_models(spec, result)
@@ -68,5 +67,6 @@ def save_execution(
     report["cost_source"] = "client-side CLI estimate" if report["cost"] is not None else "unknown"
     if report.get("protocol", {}).get("kind") == "resume":
         report.update(tokens=None, cost=None, cost_source="unreconciled multi-stage usage")
+    verify_value_loading(spec, directory / "workspace", report, result)
     if report["model_mismatch"]:
         raise ValueError(report["model_mismatch"])

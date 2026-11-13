@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import harness_trial_claude
+
 if TYPE_CHECKING:
     from basicly import runner
 
@@ -45,8 +47,8 @@ def configure_value_arm(
 ) -> tuple[runner.RunnerSpec, dict[str, Any]]:
     if mode == "guidance":
         return spec, {}
-    if spec.name != "codex":
-        raise ValueError("value trials currently require Codex; other hosts need loading controls")
+    if spec.name not in {"codex", "claude"}:
+        raise ValueError("value trials require native Codex or Claude loading controls")
     surfaces = ["AGENTS.md", "AGENTS.override.md", "CLAUDE.md", ".basicly", ".agents", ".claude"]
     if mode == "plain":
         if any((workspace / name).exists() for name in surfaces):
@@ -56,7 +58,12 @@ def configure_value_arm(
             for p in (workspace / ".git/hooks").glob("*")
         ):
             raise ValueError("plain arm contains active Git hooks")
-        return spec, {"mode": mode, "installed": False, "repository_instructions": False}
+        return (harness_trial_claude.configure(spec, mode) if spec.name == "claude" else spec), {
+            "mode": mode,
+            "installed": False,
+            "repository_instructions": False,
+            "loading_verified": False,
+        }
     if mode not in VALUE_MODES:
         raise ValueError(f"unknown comparison mode: {mode}")
     hooks = workspace / ".git/hooks"
@@ -66,14 +73,19 @@ def configure_value_arm(
     config = tomllib.loads((workspace / "basicly.toml").read_text())
     if not config.get("verify", {}).get("checks"):
         raise ValueError("installed arm requires configured verification checks")
-    skills = sorted((workspace / ".agents/skills").glob("*/SKILL.md"))
-    if not (workspace / "AGENTS.md").is_file() or not skills:
+    instruction = workspace / (".claude/CLAUDE.md" if spec.name == "claude" else "AGENTS.md")
+    skills = sorted(
+        (workspace / (".claude/skills" if spec.name == "claude" else ".agents/skills")).glob(
+            "*/SKILL.md"
+        )
+    )
+    if not instruction.is_file() or not skills:
         raise ValueError("installed arm requires projected instructions and skills")
     evidence = {
         "mode": mode,
         "installed": True,
         "repository_instructions": mode == "full-basicly",
-        "instructions_sha256": hashlib.sha256((workspace / "AGENTS.md").read_bytes()).hexdigest(),
+        "instructions_sha256": hashlib.sha256(instruction.read_bytes()).hexdigest(),
         "configuration_sha256": hashlib.sha256(
             (workspace / "basicly.toml").read_bytes()
         ).hexdigest(),
@@ -86,6 +98,10 @@ def configure_value_arm(
         },
         "loading_verified": False,
     }
+    if spec.name == "claude":
+        if not harness_trial_claude.skill_catalog(workspace):
+            raise ValueError("Claude installed arm requires model-invoked skills")
+        return harness_trial_claude.configure(spec, mode), evidence
     if mode == "full-basicly":
         return spec, evidence
     disabled = ",".join("{path=" + json.dumps(str(path)) + ",enabled=false}" for path in skills)
@@ -178,8 +194,26 @@ def loading_evidence(
     }
 
 
-def verify_value_loading(spec: runner.RunnerSpec, workspace: Path, report: dict[str, Any]) -> None:
+def verify_value_loading(
+    spec: runner.RunnerSpec, workspace: Path, report: dict[str, Any], result: runner.RunResult
+) -> None:
     if conditions := report.get("arm_conditions"):
+        if spec.name == "claude":
+            loading = harness_trial_claude.loading_evidence(workspace, report["session_id"], result)
+            conditions["loading"] = loading
+            expected = conditions["mode"] == "full-basicly"
+            conditions["loading_verified"] = (
+                loading["native_models"] == [spec.model]
+                and loading["native_effort"] == [report["effort"]]
+                and loading["native_permission_mode"] == "acceptEdits"
+                and loading["instructions_loaded"] == expected
+                and loading["root_instructions_verified"] == expected
+                and loading["project_skills_loaded"]
+                == (loading["expected_project_skills"] if expected else [])
+            )
+            if not conditions["loading_verified"]:
+                raise ValueError("native Claude loading differs from the declared comparison arm")
+            return
         loading = loading_evidence(workspace, report["session_id"], spec.model or "")
         conditions["loading"] = loading
         expected = conditions["mode"] == "full-basicly"

@@ -300,6 +300,10 @@ def _save_acceptance(
     checked = grade_preserved(workspace, case, preserved, timeout)
     if report.get("model_mismatch"):
         checked.update(model_matches=False, outcome="failed")
+    if conditions := report.get("arm_conditions"):
+        checked["loading_verified"] = conditions.get("loading_verified") is True
+        if not checked["loading_verified"]:
+            checked["outcome"] = "failed"
     if "protocol" in report:
         checked["protocol_satisfied"] = report["protocol"]["satisfied"]
         if not checked["protocol_satisfied"]:

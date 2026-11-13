@@ -1,0 +1,1 @@
+- Claude value comparisons now verify native instruction and skill discovery before accepting task results. They record tokens per accepted task for each arm. Invalid loading keeps known usage and prevents acceptance.
