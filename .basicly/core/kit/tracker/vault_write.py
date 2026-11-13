@@ -93,7 +93,7 @@ class Target:
     session: str
     immediate: bool
     clock: Clock
-    prefix: str
+    prefix: str = ""
 
     def origin(self) -> Any:
         return vault_queue.Origin(self.session, self.immediate, self.clock)
