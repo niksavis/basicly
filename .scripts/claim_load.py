@@ -170,7 +170,7 @@ def _claim(
     deadline = CLAIM_DEADLINE_S / setup.config.scale
     argv = [sys.executable, str(CLI), "claim", record, "--vault", str(setup.bare)]
     argv += ["--state", str(state), "--session", session, "--deadline", str(deadline)]
-    env = {**setup.env, "CLAIM_LOAD_TAG": tag}
+    env = {**setup.env, "CLAIM_LOAD_TAG": tag, "BASICLY_HOLDER": f"load {session}"}
     done = subprocess.run(argv, env=env, capture_output=True, text=True, check=False)  # nosec B603
     return done.returncode, _timing(done.stdout)
 

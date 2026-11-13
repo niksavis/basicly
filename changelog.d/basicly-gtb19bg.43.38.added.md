@@ -1,0 +1,1 @@
+- A vault claim now carries the holder name from `git config basicly.holder` (or `BASICLY_HOLDER`). The vault view writes that name as the assignee, `vault-show` and `fsck --repair` show it beside the writer id, and a claim without a plain name refuses with the command that sets it.

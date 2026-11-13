@@ -138,7 +138,11 @@ def _claims_lost(clone: Any, lost: list[dict]) -> list[dict[str, object]]:
             gone.append({
                 "kind": CLAIM_LOST,
                 "record": line.get("record"),
-                "payload": {"claim": line.get("id"), "writer": line.get("writer")},
+                "payload": {
+                    "claim": line.get("id"),
+                    "writer": line.get("writer"),
+                    "name": vault_fold.holder_name_of(line),
+                },
             })
     return gone
 

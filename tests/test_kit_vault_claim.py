@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from tests.conftest import VAULT_TEST_HOLDER as HOLDER
 from tests.test_kit_vault_share import _machine, _share, bare
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,7 @@ git_runner = vault_claim.git_runner
 
 
 def _ask(clone: Any, state: Path, session: str, record: str = "acme-a1b2", **kw: Any) -> Any:
-    return vault_claim.Ask(clone, state, record, session, time.time, **kw)
+    return vault_claim.Ask(clone, state, record, session, time.time, **{"name": HOLDER, **kw})
 
 
 def _queued(clone: Any) -> list[dict]:

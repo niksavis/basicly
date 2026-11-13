@@ -81,6 +81,10 @@ kit = owned_store.kit
 TEMPLATE_FILE = owned_store.TEMPLATE_FILE
 
 
+def present_ledger(repo_root: Path) -> Path:
+    return owned_store.readable_ledger(repo_root)
+
+
 def ledger_template(repo_root: Path) -> Any:
 
     ledger = ledger_dir(repo_root)
@@ -95,19 +99,20 @@ def set_ledger_prefix(repo_root: Path, prefix: str) -> None:
 
 
 def owed_of(repo_root: Path, record: str) -> dict[str, object]:
-    return kit(repo_root, "record_view").owed_of(ledger_dir(repo_root), record)
+    return kit(repo_root, "record_view").owed_of(present_ledger(repo_root), record)
 
 
 def ledger_events(repo_root: Path) -> tuple[list[Any], list[Any]]:
-    return kit(repo_root, "events").read_events(ledger_dir(repo_root))
+    return kit(repo_root, "events").read_events(present_ledger(repo_root))
 
 
 def source_loss(repo_root: Path, record: str) -> list[dict]:
-    return owned_store.packaged_kit("record_view").read_source_loss(ledger_dir(repo_root), record)
+    loss = owned_store.packaged_kit("record_view").read_source_loss
+    return loss(present_ledger(repo_root), record)
 
 
 def ledger_fingerprint(repo_root: Path) -> tuple:
-    directory = ledger_dir(repo_root)
+    directory = present_ledger(repo_root)
     files = sorted([*directory.glob("events-*.jsonl"), *directory.glob("pending-*.jsonl")])
     version = []
     for path in files:
@@ -118,20 +123,21 @@ def ledger_fingerprint(repo_root: Path) -> tuple:
 
 def activity_source(repo_root: Path) -> tuple[list[Any], Any]:
     module = kit(repo_root)
-    return module.read_ledger(ledger_dir(repo_root)), module
+    return module.read_ledger(present_ledger(repo_root)), module
 
 
 def confirmation_evidence(repo_root: Path, record: str) -> tuple[dict[str, Any], bool] | str:
 
     events = kit(repo_root, "events")
     process = kit(repo_root, "process_evidence")
-    found, quarantine = ledger_events(repo_root)
+    ledger = present_ledger(repo_root)
+    found, quarantine = events.read_events(ledger)
     if quarantine:
         return f"confirmation for {record} refuses quarantined tracker evidence"
     state = events.fold(found).records.get(record)
     if state is None:
         return f"confirmation requires existing record {record}"
-    template = kit(repo_root, "templates").load(ledger_dir(repo_root))
+    template = kit(repo_root, "templates").load(ledger)
     report = process.confirmation_report(found, record, template=template)
     closing = bool(process.closing_owed(found, record, state.fields, template=template))
     return report, closing
@@ -148,7 +154,7 @@ def readiness(
     shaping = kit(repo_root, "shaping")
     process = kit(repo_root, "process_evidence")
     if found is None:
-        found = kit(repo_root, "events").read_events(ledger_dir(repo_root))[0]
+        found = kit(repo_root, "events").read_events(present_ledger(repo_root))[0]
     identity = str(record.get("id") or record.get("record") or "")
     debt = process.readiness(found, identity, record, template=template)
     required = (*shaping.required(record, template), *debt)
@@ -164,7 +170,7 @@ def owned_record(repo_root: Path, issue_id: str) -> dict | None:
 
     try:
         kit_module = kit(repo_root)
-        found = kit_module.read_ledger(ledger_dir(repo_root))
+        found = kit_module.read_ledger(present_ledger(repo_root))
         ledger_fold = kit_module.events.fold(found)
         state = ledger_fold.records.get(issue_id)
         if state is None or state.tombstoned:
@@ -368,7 +374,7 @@ def try_write(repo_root: Path, args: list[str]) -> bool:
 def _owned_comment_rows(repo_root: Path) -> dict[str, list[dict]]:
 
     kit_module = kit(repo_root)
-    return comment_rows.from_ledger(kit_module, kit_module.read_ledger(ledger_dir(repo_root)))
+    return comment_rows.from_ledger(kit_module, kit_module.read_ledger(present_ledger(repo_root)))
 
 
 def add_comment(repo_root: Path, issue_id: str, body: str) -> None:
@@ -441,7 +447,7 @@ def add_artifact(repo_root: Path, issue_id: str, kind: str, body: object) -> Non
 def read_artifacts(repo_root: Path, issue_id: str) -> dict[str, object]:
 
     kit_module = kit(repo_root)
-    ledger_fold = kit_module.events.fold(kit_module.read_ledger(ledger_dir(repo_root)))
+    ledger_fold = kit_module.events.fold(kit_module.read_ledger(present_ledger(repo_root)))
     state = ledger_fold.records.get(issue_id)
     if state is None or state.tombstoned:
         return {}
@@ -519,7 +525,7 @@ def read_snapshot(repo_root: Path, issue_id: str) -> dict | None:
 
 
 def artifact_states(repo_root: Path, kind: str) -> dict[str, object]:
-    ledger = ledger_dir(repo_root)
+    ledger = present_ledger(repo_root)
     if not ledger.is_dir():
         return {}
     events = owned_store.packaged_kit("events")
@@ -563,9 +569,10 @@ def held_by_another(repo_root: Path, record: Mapping[str, object]) -> str:
 def owned_ranking(repo_root: Path, limit: int | None = None) -> dict:
 
     scheduler = kit(repo_root, SCHEDULER_KIT_MODULE)
-    answer = scheduler.ranking(ledger_dir(repo_root))
+    ledger = present_ledger(repo_root)
+    answer = scheduler.ranking(ledger)
     events = kit(repo_root, "events")
-    states = events.fold(events.read_events(ledger_dir(repo_root))[0]).records
+    states = events.fold(events.read_events(ledger)[0]).records
     free = [
         entry
         for entry in answer.records
@@ -754,7 +761,7 @@ def all_records(repo_root: Path) -> list[dict]:
 
     try:
         kit_module = kit(repo_root)
-        found = kit_module.read_ledger(ledger_dir(repo_root))
+        found = kit_module.read_ledger(present_ledger(repo_root))
         ledger_fold = kit_module.events.fold(found)
         views = kit_module.views_from_events(found)
     except TrackerDivergenceError, OSError, ValueError:

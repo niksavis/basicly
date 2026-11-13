@@ -64,6 +64,8 @@ def holder_name(holder: Sequence[str] | None) -> str:
 
     if not holder:
         return ""
+    if len(holder) > 2 and holder[2]:
+        return str(holder[2])
     writer, session = holder[0], holder[1]
     return f"{writer}/{session}" if session else str(writer)
 
@@ -173,7 +175,7 @@ def build(clone: Any, want: Want, key: str, template: Mapping[str, object]) -> P
     vault_clone.private(folder)
     valid = vault_clone.valid_events(clone)
     held = {
-        name: state.holder
+        name: (*state.holder, state.name)
         for name, state in vault_fold.fold(valid).records.items()
         if state.holder is not None
     }
@@ -251,10 +253,13 @@ def show(directory: Path, clone: Any, records: Sequence[str]) -> list[dict[str, 
             continue
         state = folded.get(record)
         holder = state.holder if state is not None else None
+        named = state.name if state is not None else ""
         shown.append({
             "id": record,
             "status": view.status,
-            "holder": {"writer": holder[0], "session": holder[1]} if holder else None,
+            "holder": {"writer": holder[0], "session": holder[1], "name": named}
+            if holder
+            else None,
             "links": [{"target": edge.target, "type": edge.type} for edge in view.dependencies],
         })
     return shown

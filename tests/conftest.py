@@ -121,6 +121,7 @@ def _ambient_git_env_stays_scrubbed() -> Iterator[None]:
 
 
 VAULT_RUN_VARIABLES = ("CI", "BASICLY_TRACKER_EPHEMERAL", "BASICLY_TRACKER_SESSION")
+VAULT_TEST_HOLDER = "vault tester"
 
 
 @pytest.fixture(autouse=True)
@@ -132,6 +133,7 @@ def _vault_tests_start_the_same_on_ci_and_locally(
     if name.startswith(("test_kit_vault", "test_claim_load")):
         for variable in VAULT_RUN_VARIABLES:
             monkeypatch.delenv(variable, raising=False)
+        monkeypatch.setenv("BASICLY_HOLDER", VAULT_TEST_HOLDER)
 
 
 @pytest.fixture(autouse=True)

@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from tests.conftest import VAULT_TEST_HOLDER
 from tests.test_kit_vault_share import _machine, _share, bare
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -60,7 +61,7 @@ def _queued(clone: Any) -> list[dict]:
 
 
 def _claim(clone: Any, state: Path, record: str, session: str = "s1") -> None:
-    ask = vault_claim.Ask(clone, state, record, session, time.time)
+    ask = vault_claim.Ask(clone, state, record, session, time.time, name=VAULT_TEST_HOLDER)
     assert vault_claim.claim(ask)["exit"] == vault_claim.LANDED
 
 

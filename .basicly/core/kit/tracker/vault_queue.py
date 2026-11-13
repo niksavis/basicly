@@ -138,6 +138,22 @@ def requeue(clone: Any, lines: Sequence[Mapping[str, object]]) -> int:
     return len(fresh)
 
 
+HOLDER_KINDS = frozenset({"claim", "take"})
+HOLDER_NAME = "name"
+
+
+def _redacted(draft: Mapping[str, object]) -> dict[str, object]:
+
+    line = dict(redact.event(dict(draft)))
+    payload = draft.get("payload")
+    if draft.get("kind") not in HOLDER_KINDS or not isinstance(payload, Mapping):
+        return line
+    named = payload.get(HOLDER_NAME)
+    if isinstance(named, str) and isinstance(line.get("payload"), dict):
+        line["payload"] = {**line["payload"], HOLDER_NAME: named}
+    return line
+
+
 def write(
     clone: Any,
     drafts: Sequence[Mapping[str, object]],
@@ -151,7 +167,7 @@ def write(
     now = origin.clock()
     lines = [
         {
-            **dict(redact.event(dict(draft))),
+            **_redacted(draft),
             "id": uuid.uuid4().hex,
             "writer": writer,
             "session": redact.text(origin.session),

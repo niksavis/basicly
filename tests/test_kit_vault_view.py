@@ -181,7 +181,7 @@ def test_show_prints_id_status_holder_and_links(tmp_path: Path, bare: Path) -> N
         {
             "id": "acme-a1",
             "status": "open",
-            "holder": {"writer": writer, "session": "s1"},
+            "holder": {"writer": writer, "session": "s1", "name": ""},
             "links": [{"target": "acme-b2", "type": "blocks"}],
         },
         {"id": "acme-b2", "status": "open", "holder": None, "links": []},

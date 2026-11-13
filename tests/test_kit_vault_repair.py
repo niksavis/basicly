@@ -57,7 +57,7 @@ def _rewritten(tmp_path: Path, bare: Path) -> dict[str, Any]:
     genesis = git_runner.run(["rev-list", "--max-parents=0", "main"], bare).strip()
     w_clone, w_state = _machine(tmp_path, bare, "w")
     origin = vault_queue.Origin("ws", False, time.time)
-    claim = {"kind": "claim", "record": "acme-a1b2"}
+    claim = {"kind": "claim", "record": "acme-a1b2", "payload": {"name": "alex kim"}}
     drafts = [claim, vault_queue.comment("acme-a1b2", "w note")]
     lost = vault_queue.write(w_clone, drafts, state=w_state, origin=origin)["events"]
     _share(w_clone, w_state)
