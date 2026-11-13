@@ -35,6 +35,26 @@ def test_ledger_claim_and_unassign_run_the_native_protocol_once(tmp_path: Path, 
     assert _report(claimed)["record"] == _report(released)["record"] == record
 
 
+def test_ledger_unassign_forwards_the_explicit_native_take_flag(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path, bare)
+    made = _kit(root, "create", LEDGER, "--title", "A held task")
+    assert made.returncode == 0, made.stdout + made.stderr
+    record = _report(made)["record"]
+    claimed = _kit(root, "claim", record)
+    assert claimed.returncode == 0, claimed.stdout + claimed.stderr
+    monkeypatch.setenv("BASICLY_TRACKER_SESSION", "another-session")
+
+    guarded = _kit(root, "unassign", record)
+    released = _kit(root, "unassign", LEDGER, record, "--take")
+
+    assert guarded.returncode == 3, guarded.stdout + guarded.stderr
+    assert released.returncode == 0, released.stdout + released.stderr
+    assert _report(released)["schema"] == "basicly.tracker.unassign-vault.v1"
+    assert _report(released)["record"] == record
+
+
 @pytest.mark.parametrize(
     "form", [["claim", "--to", "teammate"], ["claim", "--take"], ["unassign", "--by", "other"]]
 )
