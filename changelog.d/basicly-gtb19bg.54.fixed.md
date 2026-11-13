@@ -1,0 +1,1 @@
+- The tier resolver now applies the hook worker-default restriction to environment variables and CLI flags. Invalid defaults return the same reason. Explicit maximum tiers remain available. Agent calls that name the Fable alias receive a warning without changing their input.
