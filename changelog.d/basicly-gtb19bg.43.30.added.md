@@ -1,0 +1,1 @@
+- The standalone tracker can preview and import ledger, beads, br and beans backlogs into a vault, then export a prefix. Record ids stay intact. Changed payloads receive valid ids with an optional private map. Import checks counts, digests and ledger integrity before publication.

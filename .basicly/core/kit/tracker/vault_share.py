@@ -81,36 +81,63 @@ def prune(clone: Any) -> list[dict[str, object]]:
     return keep
 
 
-def _segment(git: Runner, head: str, writer: str) -> tuple:
+def _segment(git: Runner, head: str, writer: str, *, incoming: int = 0) -> tuple:
 
     folder = f"{vault_clone.vault_shapes.LOG_ROOT}/{writer}/"
     listed = git(["ls-tree", "--name-only", head, folder]).split()
     if not listed:
         return f"{folder}00001.jsonl", ""
-    path = max(listed)
+    if any(not Path(path).stem.isdecimal() or Path(path).suffix != ".jsonl" for path in listed):
+        raise ShareError("a segment filename is not numeric JSONL; run vault-check before sharing")
+    path = max(listed, key=lambda path: int(Path(path).stem))
     old = git(["cat-file", "blob", f"{head}:{path}"])
-    if len(old.encode("utf-8")) < SEGMENT_BYTES:
+    if len(old.encode("utf-8")) + incoming <= SEGMENT_BYTES:
         return path, old
     return f"{folder}{int(Path(path).stem) + 1:05d}.jsonl", ""
 
 
+def _segments(git: Runner, head: str, writer: str, batch: list) -> dict[str, bytes]:
+    header = _text([{"kind": vault_clone.vault_shapes.SEGMENT_KIND, "writer": writer}]).encode(
+        "utf-8"
+    )
+    lines = [_text([line]).encode("utf-8") for line in batch]
+    if not lines:
+        raise ShareError("an empty batch cannot create a segment")
+    for line in lines:
+        if len(header) + len(line) > SEGMENT_BYTES:
+            raise ShareError(
+                f"one event is {len(line)} bytes, above the segment limit of "
+                f"{SEGMENT_BYTES - len(header)} bytes; nothing was pushed"
+            )
+    path, old = _segment(git, head, writer, incoming=len(lines[0]))
+    content = bytearray(old.encode("utf-8") if old else header)
+    packed: dict[str, bytes] = {}
+    for line in lines:
+        if len(content) + len(line) > SEGMENT_BYTES:
+            packed[path] = bytes(content)
+            held = Path(path)
+            path = (held.parent / f"{int(held.stem) + 1:05d}.jsonl").as_posix()
+            content = bytearray(header)
+        content.extend(line)
+    packed[path] = bytes(content)
+    return packed
+
+
 def _build(clone: Any, head: str, writer: str, batch: list, git: Runner) -> str:
 
-    path, old = _segment(git, head, writer)
-    header = (
-        "" if old else _text([{"kind": vault_clone.vault_shapes.SEGMENT_KIND, "writer": writer}])
-    )
+    packed = _segments(git, head, writer, batch)
     token = uuid.uuid4().hex
     blob_file = clone.folder / f"share-{token}.blob"
     index = clone.folder / f"share-{token}.index"
     env = {"GIT_INDEX_FILE": str(index)}
     try:
-        blob_file.write_bytes((old + header + _text(batch)).encode("utf-8"))
-        hashed = ["hash-object", "-w", "--no-filters", str(blob_file)]
-        blob = git(hashed).strip()
         git(["read-tree", head], env=env)
-        entry = ["update-index", "--add", "--cacheinfo", f"100644,{blob},{path}"]
-        git(entry, env=env)
+        for path, content in packed.items():
+            blob_file.write_bytes(content)
+            hashed = ["hash-object", "-w", "--no-filters", str(blob_file)]
+            blob = git(hashed).strip()
+            entry = ["update-index", "--add", "--cacheinfo", f"100644,{blob},{path}"]
+            git(entry, env=env)
         tree = git(["write-tree"], env=env).strip()
     finally:
         for leftover in (blob_file, index, index.with_name(index.name + ".lock")):

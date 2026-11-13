@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from typing import Any
 
 DEFAULT_STATUS = "open"
@@ -63,11 +64,13 @@ def all_projects_argument(parser: Any) -> None:
     )
 
 
-def parser() -> argparse.ArgumentParser:
+def parser(extend: Callable[[Any], None] | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Create, read, query and advance work items in a tracker kit ledger."
     )
     sub = parser.add_subparsers(dest="command", required=True)
+    if extend is not None:
+        extend(sub)
 
     create = sub.add_parser("create", help="mint a record id and append its first events")
     create.add_argument("directory", help=DIRECTORY_HELP)
