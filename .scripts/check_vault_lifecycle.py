@@ -66,7 +66,20 @@ def unchanged(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> None
 
 
 def local_logs(repository: Path) -> dict[str, str]:
-    return {path.name: path.read_bytes().hex() for path in (repository / LEDGER).glob("*.jsonl")}
+    ledger = repository / LEDGER
+    if ledger.is_file():
+        archive = ledger.with_name("ledger-archive")
+        if not archive.is_dir() or ledger.is_symlink() or archive.is_symlink():
+            raise ValueError("the frozen consumer needs its regular marker and complete archive")
+        paths = [ledger, repository / ".basicly-tracker.toml", *sorted(archive.rglob("*"))]
+        if any(path.is_symlink() for path in paths):
+            raise ValueError("the frozen consumer contains an unsafe archive link")
+        return {
+            path.relative_to(repository).as_posix(): path.read_bytes().hex()
+            for path in paths
+            if path.is_file()
+        }
+    return {path.name: path.read_bytes().hex() for path in ledger.glob("*.jsonl")}
 
 
 def caller(kit: Path, repository: Path, transcript: list[dict[str, Any]]) -> Any:

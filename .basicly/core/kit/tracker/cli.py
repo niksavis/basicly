@@ -295,6 +295,8 @@ def _migration(
 
 
 def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple[int, Any]:
+    if not (args.command == "migrate" and getattr(args, "freeze", False)):
+        vault_cli.check_frozen()
     clock = events.wall_clock()
     context = commands.vault_write.WriteContext(redact, clock)
     vault_cli.route_ledger_alias(args)
@@ -367,6 +369,8 @@ def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None)
         code = report.pop("exit", EXIT_REFUSED)
         code = code if isinstance(code, int) else EXIT_REFUSED
         report["refused"] = commands.vault_write.redact.text(vault_refusal.message(code, report))
+    except (events.FrozenLedgerError, vault_cli.ledger_freeze.FreezeError) as exc:
+        code, report = 2, {"refused": str(exc)}
     except events.LedgerError as exc:
         code, report = EXIT_REFUSED, {"refused": str(exc)}
     except ValueError as exc:

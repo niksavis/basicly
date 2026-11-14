@@ -75,6 +75,7 @@ def _holds_ledger(path: Path) -> bool:
 def resolve_ledger(directory: Path | str, *, starts: bool = False) -> Path:
 
     given = git_layout.shared_ledger(directory)
+    _load("ledger_freeze.py", "basicly_tracker_kit_ledger_freeze").check_source(given)
     if _is_repository(given):
         raise TrackerCommandError(
             f"{given} is a repository, not a ledger; name the ledger directory inside it"

@@ -14,7 +14,9 @@ OWNED_PROVENANCE = "engine"
 
 
 def ledger_git_rules() -> tuple[str, ...]:
-    globs = (owned_store.packaged_constant("events", name) for name in ("LOG_GLOB", "PENDING_GLOB"))
+    globs = (
+        owned_store.packaged_constant("ledger_files", name) for name in ("LOG_GLOB", "PENDING_GLOB")
+    )
     return tuple(f"{glob} -text merge=union" for glob in globs)
 
 
@@ -158,22 +160,27 @@ def check_close(repo_root: Path, record: str, reason: str) -> None:
     events = kit_module.events
     args = ["close", record, "--reason", reason]
     try:
-        adapter, ledger, context = _write_admission(repo_root)
+        adapter, ledger, _context, target = _write_admission(repo_root)
         with events.LedgerLock(ledger):
-            source = ledger if context.target is not None else None
+            source = ledger if target is not None else None
             drafts = _admitted(repo_root, args, kit_module, False, source)
-            if context.target is not None:
-                adapter._vault_refused(context.target, ledger, drafts)
+            if target is not None:
+                adapter._vault_refused(target, ledger, drafts)
     except (events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(f"completion admission for {record} refused: {exc}") from exc
 
 
-def _write_admission(repo_root: Path) -> tuple[Any, Path, Any]:
+def _write_admission(repo_root: Path) -> tuple[Any, Path, Any, Any]:
     commands = owned_store.kit(repo_root, "commands")
     adapter = commands.vault_write
     context = adapter.WriteContext(redact.redact_committed, commands.events.wall_clock())
-    ledger, context = adapter.admission(owned_store.ledger_dir(repo_root), context, os.environ)
-    return adapter, ledger, context
+    ledger = owned_store.ledger_dir(repo_root)
+    admit = getattr(adapter, "admission", None)
+    if not callable(admit):
+        return adapter, ledger, context, None
+    admitted: Any = admit(ledger, context, os.environ)
+    ledger, context = admitted
+    return adapter, ledger, context, context.target
 
 
 def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
@@ -199,9 +206,9 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
     kit_module = owned_store.kit(repo_root)
     events = kit_module.events
     try:
-        adapter, ledger, context = _write_admission(repo_root)
+        adapter, ledger, context, target = _write_admission(repo_root)
         with events.LedgerLock(ledger) as lock:
-            source = ledger if context.target is not None else None
+            source = ledger if target is not None else None
             stamped = _admitted(repo_root, args, kit_module, repeat, source)
             if source is not None:
                 write = adapter.Write(ledger, context, lock, os.environ)
@@ -228,10 +235,10 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
     parent = dict(tracker_argv.flag_pairs(args, tracker_argv.VALUE_FLAGS["create"])).get(
         "--parent", ""
     )
-    adapter, ledger, context = _write_admission(repo_root)
+    adapter, ledger, context, target = _write_admission(repo_root)
     prefix = (
-        context.target.prefix
-        if context.target is not None
+        target.prefix
+        if target is not None
         else owned_store.tracker_prefix(repo_root)
         if not parent
         else None
@@ -253,7 +260,7 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
                 else events.ids.mint_root_id(events.ids.validate_prefix(prefix or ""), minted)
             )
             drafts = mirror.drafts(kit_module, args, json.dumps({"id": record}))
-            if context.target is not None:
+            if target is not None:
                 adapter.land(
                     adapter.Write(ledger, context, lock, os.environ), _stamped(kit_module, drafts)
                 )

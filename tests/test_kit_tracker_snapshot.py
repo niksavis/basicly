@@ -853,6 +853,8 @@ def _consumer_kit(tmp_path: Path) -> Path:
     consumer.mkdir(parents=True)
     for source in (SNAPSHOT_SOURCE, EVENTS_SOURCE, IDS_SOURCE, KIT_DIR / "locking.py"):
         shutil.copy2(source, consumer / source.name)
+    for name in ("ledger_files.py", "ledger_freeze.py", "vault_config.py"):
+        shutil.copy2(KIT_DIR / name, consumer / name)
     return consumer
 
 

@@ -753,6 +753,9 @@ def test_a_consumer_with_no_basicly_can_import_their_tracker(tmp_path: Path) -> 
     consumer = tmp_path / "consumer" / "kit" / "tracker"
     consumer.mkdir(parents=True)
     for name in (
+        "ledger_files.py",
+        "ledger_freeze.py",
+        "vault_config.py",
         "beads.py",
         "values.py",
         "fields.py",

@@ -1035,6 +1035,8 @@ def test_the_log_is_written_and_folded_with_no_basicly_importable(tmp_path: Path
     shutil.copy2(EVENTS_SOURCE, consumer / EVENTS_SOURCE.name)
     shutil.copy2(IDS_SOURCE, consumer / IDS_SOURCE.name)
     shutil.copy2(KIT_DIR / "locking.py", consumer / "locking.py")
+    for name in ("ledger_files.py", "ledger_freeze.py", "vault_config.py"):
+        shutil.copy2(KIT_DIR / name, consumer / name)
     driver = tmp_path / "drive.py"
     driver.write_text(_DRIVER, encoding="utf-8")
     ledger = tmp_path / "their-ledger"
