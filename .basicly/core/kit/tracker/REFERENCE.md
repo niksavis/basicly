@@ -405,6 +405,21 @@ Every record, filtered by `--status` and cut by `--limit`.
 python3 .basicly/kit/tracker/cli.py list .basicly/ledger --status open --limit 20
 ```
 
+With the basicly engine installed, a board can read every project in the configured vault:
+
+```sh
+basicly tracker list --json --all-projects
+```
+
+The response has `read_at` (UTC), `vault_head` (the captured published commit) and
+`records`. Each record has `id`, `title`, `status`, `holder`, `priority`, `project` and
+`ready`. A holder is `{ "writer": "...", "session": "..." }` or `null`; it comes from
+the canonical claim, rather than a historical assignee field. Readiness uses each
+project's template and the shared dependency graph. Own unshared records and changes
+are included with `sharing: pending`; `vault_head` still names the published baseline.
+The existing `--status`, `--query` and `--limit` filters also apply. A repository without
+vault configuration refuses `--all-projects` and names `.basicly-tracker.toml`.
+
 ## Shape
 
 ### dor

@@ -1,0 +1,1 @@
+- List every vault project's records for a board with `basicly tracker list --json --all-projects`, including the captured vault head, read time, canonical holders, priorities and readiness.
