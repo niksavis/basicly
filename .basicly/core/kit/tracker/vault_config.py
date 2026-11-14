@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 CONFIG_PATH = Path(".basicly-tracker.toml")
 KEYS = ("vault", "prefix")
@@ -55,7 +55,18 @@ def load(start: Path) -> Config | None:
     return None if path is None else parse(path)
 
 
+def address(vault: str) -> str:
+    if "\\" in vault and PureWindowsPath(vault).is_absolute():
+        vault = PureWindowsPath(vault).as_posix()
+    if not vault or not vault.isprintable() or '"' in vault or "\\" in vault:
+        raise ConfigError("vault must be a printable Git address using forward slashes")
+    return vault
+
+
 def text(vault: str, prefix: str) -> str:
+    vault = address(vault)
+    if not _PREFIX.fullmatch(prefix):
+        raise ConfigError("prefix must be lowercase, like basicly")
     return f'vault = "{vault}"\nprefix = "{prefix}"\n'
 
 

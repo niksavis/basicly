@@ -157,8 +157,38 @@ def readiness(
         found = kit(repo_root, "events").read_events(present_ledger(repo_root))[0]
     identity = str(record.get("id") or record.get("record") or "")
     debt = process.readiness(found, identity, record, template=template)
+    return _ready_fields(shaping, record, template, debt)
+
+
+def _ready_fields(
+    shaping: Any, record: Mapping[str, object], template: Any, debt: tuple[str, ...]
+) -> tuple[tuple[str, ...], frozenset[str]]:
     required = (*shaping.required(record, template), *debt)
     return tuple(required), frozenset(shaping.refused(record, template=template, process=debt))
+
+
+def readiness_many(
+    repo_root: Path,
+    records: Mapping[str, Mapping[str, object]],
+    template: Any,
+    *,
+    found: Sequence[Any],
+) -> dict[str, tuple[tuple[str, ...], frozenset[str]]]:
+    shaping = kit(repo_root, "shaping")
+    process = kit(repo_root, "process_evidence")
+    batch = getattr(process, "readiness_many", None)
+    debts: Any = (
+        batch(found, records, template=template)
+        if callable(batch)
+        else {
+            record: process.readiness(found, record, fields, template=template)
+            for record, fields in records.items()
+        }
+    )
+    return {
+        record: _ready_fields(shaping, fields, template, debts[record])
+        for record, fields in records.items()
+    }
 
 
 LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")

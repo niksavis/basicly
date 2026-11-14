@@ -209,7 +209,8 @@ def test_the_gate_reads_the_kits_constants_rather_than_a_second_spelling(
 ) -> None:
 
     kit = host / KIT_RELATIVE
-    log_source = kit / "events.py"
+    log_source = kit / "ledger_files.py"
+    assert 'LOG_GLOB = "events-*.jsonl"' in log_source.read_text(encoding="utf-8")
     log_source.write_text(
         log_source.read_text(encoding="utf-8").replace(
             'LOG_GLOB = "events-*.jsonl"', 'LOG_GLOB = "ledger-*.jsonl"'

@@ -76,6 +76,7 @@ layers =
     comment_rows | mirror | re_record
     write_verbs
     owned_store
+    kit_namespace
     tracker_argv
     dispatch_phase
     runner_envelope

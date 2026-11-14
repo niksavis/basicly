@@ -190,11 +190,21 @@ def test_describe_json_matches_contract_v1(tmp_path: Path) -> None:
     }
 
 
-def test_an_older_repository_kit_is_refused_by_name(tmp_path: Path) -> None:
+def test_a_vault_repository_kit_missing_admission_is_refused_by_name(tmp_path: Path) -> None:
     repo = _seeded_repo(tmp_path)
     state.write_install_state(repo / ".basicly" / "state" / "install.json", "0.20.2", {})
     markers = tmp_path / "markers"
     _plant(repo, markers)
+    assert _basicly(repo, "tracker", "items", "--json").returncode == 0
+    source = repo / tracker.KIT_TRACKER_DIR / "vault_write.py"
+    original = source.read_text(encoding="utf-8")
+    assert original.count("def admission(") == 1
+    source.write_text(
+        original.replace("def admission(", "def retired_admission("), encoding="utf-8"
+    )
+    (repo / ".basicly-tracker.toml").write_text(
+        'vault = "file:///unreachable-generation-vault.git"\nprefix = "rs"\n', encoding="utf-8"
+    )
     before = _ledger_bytes(repo)
 
     refused = _basicly(repo, *A_WRITE)
@@ -206,7 +216,6 @@ def test_an_older_repository_kit_is_refused_by_name(tmp_path: Path) -> None:
     assert "unexpected keyword" not in refused.stderr
     assert _ran(markers) == []
     assert _ledger_bytes(repo) == before
-    assert _basicly(repo, "tracker", "items", "--json").returncode == 0
 
 
 def test_a_repository_kit_of_the_engine_version_is_admitted(tmp_path: Path) -> None:
