@@ -58,10 +58,19 @@ def run(argv: list[str], cwd: Path, env: dict[str, str], output: Path) -> str:
 
 def copy_ledger(module: Any, source: Path, target: Path) -> None:
     target.mkdir(parents=True)
-    for path in module.events.ledger_paths(source):
-        shutil.copyfile(path, target / path.name)
+    paths = module.events.ledger_paths(source)
     if (source / "template.json").is_file():
-        shutil.copyfile(source / "template.json", target / "template.json")
+        paths = [*paths, source / "template.json"]
+    before = evidence.files_digest(source, paths)
+    for path in paths:
+        shutil.copyfile(path, target / path.name)
+    current = module.events.ledger_paths(source)
+    if (source / "template.json").is_file():
+        current = [*current, source / "template.json"]
+    if before != evidence.files_digest(source, current) or before != evidence.files_digest(
+        target, target.rglob("*")
+    ):
+        raise ValueError("the source ledger changed during copying; start a new rehearsal")
 
 
 def compare(module: Any, source: Path, target: Path) -> dict[str, int]:
@@ -165,6 +174,7 @@ def part1(args: argparse.Namespace, module: Any, env: dict[str, str]) -> dict[st
     report: dict[str, Any] = {
         "result": "pending",
         "provenance": provenance(),
+        "source_sha256": evidence.files_digest(source, source.rglob("*")),
         "source_records": len({e.record for e in found}),
         "source_events": len(found),
         "map": "not-kept",
@@ -232,6 +242,8 @@ def part1(args: argparse.Namespace, module: Any, env: dict[str, str]) -> dict[st
         .splitlines()[-1]
     )
     report["human_fixture"] = human_fixture(module, out)
+    if report["source_sha256"] != evidence.files_digest(source, source.rglob("*")):
+        raise ValueError("the copied ledger changed during the rehearsal")
     report.update(result="pass", part2="pending", scratch_vault="vault-0.git")
     (out / "part1.json").write_text(json.dumps(report, indent=2) + "\n")
     return report

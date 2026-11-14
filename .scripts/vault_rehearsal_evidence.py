@@ -4,19 +4,18 @@ import argparse
 import hashlib
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
 KIT = Path(".basicly/core/kit")
 
 
-def provenance(root: Path, helper: Path) -> dict[str, str]:
-    paths = sorted((root / KIT).rglob("*"))
+def files_digest(root: Path, paths: Iterable[Path]) -> str:
     digest = hashlib.sha256()
-    for path in paths:
+    for path in sorted(paths):
         if path.is_symlink():
-            raise ValueError("the rehearsal kit contains a symlink")
+            raise ValueError("a rehearsal source contains a symlink")
         if path.is_file() and "__pycache__" not in path.parts:
             if any(part.startswith(".env") for part in path.relative_to(root).parts):
                 continue
@@ -24,13 +23,15 @@ def provenance(root: Path, helper: Path) -> dict[str, str]:
             digest.update(b"\0")
             digest.update(path.read_bytes())
             digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def provenance(root: Path, helper: Path) -> dict[str, str]:
     if not (root / KIT / "tracker/cli.py").is_file():
         raise ValueError("the rehearsal kit is missing its CLI")
     return {
-        "kit_sha256": digest.hexdigest(),
-        "helper_sha256": hashlib.sha256(
-            helper.read_bytes() + Path(__file__).read_bytes()
-        ).hexdigest(),
+        "kit_sha256": files_digest(root, (root / KIT).rglob("*")),
+        "helper_sha256": files_digest(helper.parent, [helper, Path(__file__)]),
     }
 
 
@@ -38,6 +39,11 @@ def require_source(out: Path, source: dict[str, str]) -> dict[str, Any]:
     report = json.loads((out / "part1.json").read_text())
     if report.get("provenance") != source:
         raise ValueError("the rehearsal source changed; start with a new output directory")
+    snapshot = out / "workspace-source"
+    if not snapshot.is_dir() or report.get("source_sha256") != files_digest(
+        snapshot, snapshot.rglob("*")
+    ):
+        raise ValueError("the copied ledger changed; start with a new output directory")
     return report
 
 
