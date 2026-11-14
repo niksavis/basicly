@@ -14,16 +14,16 @@ import yaml
 from basicly import hooks, lefthook_config, verify
 from basicly.config import VerifyCheck
 from tests.native_hooks import repository
-from tests.test_kit_vault_push_guard_consumer import exercise_vault_push_guard
 from tests.vault_permissions_consumer import fetch_private_state
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_vault_push_guard_runs_on_the_native_platform_with_quoted_paths(tmp_path: Path) -> None:
+    consumer = importlib.import_module("tests.test_kit_vault_push_guard_consumer")
     root = tmp_path / "vault clone's files"
     root.mkdir()
-    exercise_vault_push_guard(root)
+    consumer.exercise_vault_push_guard(root)
 
 
 @pytest.mark.skipif(

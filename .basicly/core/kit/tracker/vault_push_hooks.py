@@ -11,7 +11,15 @@ from pathlib import Path
 from typing import Any
 
 _HERE = Path(__file__).resolve().parent
-SOURCE_FILES = ("vault_push_guard.py", "vault_shapes.py", "git_runner.py")
+SOURCE_FILES = (
+    "vault_push_guard.py",
+    "vault_shapes.py",
+    "git_runner.py",
+    "events.py",
+    "ids.py",
+    "locking.py",
+    "ledger_files.py",
+)
 HOOK_PREFIX = "#!/bin/sh\nBASICLY_VAULT_PUSH_GUARD=1\n"
 
 

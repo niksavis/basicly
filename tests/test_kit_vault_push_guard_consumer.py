@@ -154,3 +154,67 @@ def test_one_forbidden_ref_blocks_every_update_in_the_actual_push(tmp_path: Path
         ["git", "for-each-ref", "--format=%(refname)"], cwd=remote, text=True
     )
     assert refs.splitlines() == ["refs/heads/main"]
+
+
+@pytest.mark.parametrize("kind", ["claim", "take", "unassign"])
+@pytest.mark.parametrize("session", ["", "named-session"])
+def test_ownership_events_require_a_session_before_actual_publication(
+    tmp_path: Path, kind: str, session: str
+) -> None:
+    source, remote = _clone(tmp_path)
+    _load("vault_push_hooks").install(source.root)
+    before = _head(remote)
+    event = {**_event(), "kind": kind, "session": session, "payload": {"name": "fixture"}}
+    source.write(f"log/{WRITER_A}/00001.jsonl", _segment(WRITER_A, event))
+    tip = source.commit("ownership event")
+    pushed = _push(source, "HEAD:refs/heads/main")
+    if session:
+        assert pushed.returncode == 0, pushed.stderr
+        assert _head(remote) == tip
+    else:
+        assert pushed.returncode != 0 and "session" in pushed.stderr
+        assert _head(remote) == before
+
+
+def test_a_human_comment_keeps_its_supported_empty_session(tmp_path: Path) -> None:
+    source, remote = _clone(tmp_path)
+    _load("vault_push_hooks").install(source.root)
+    source.write(f"log/{WRITER_A}/00001.jsonl", _segment(WRITER_A, {**_event(), "session": ""}))
+    tip = source.commit("human comment")
+    pushed = _push(source, "HEAD:refs/heads/main")
+    assert pushed.returncode == 0, pushed.stderr
+    assert _head(remote) == tip
+
+
+@pytest.mark.parametrize("body_kind", ["empty", "wrong-record", "valid-human", "invalid-spend"])
+def test_carried_ledger_bodies_use_the_existing_codec_and_match_the_envelope(
+    tmp_path: Path, body_kind: str
+) -> None:
+    source, remote = _clone(tmp_path)
+    _load("vault_push_hooks").install(source.root)
+    before = _head(remote)
+    body = {
+        "id": "demo-a1-ledger-1234567890",
+        "record": "demo-a1",
+        "seq": 1,
+        "kind": "created",
+        "actor": "human",
+        "ts": "2026-01-01T00:00:00Z",
+        "payload": {"title": "Fixture"},
+    }
+    if body_kind == "empty":
+        body = {}
+    elif body_kind == "wrong-record":
+        body["record"] = "other-a1"
+    elif body_kind == "invalid-spend":
+        body["payload"] = {"spend_micros": 1.5}
+    event = {**_event(), "kind": "ledger", "session": "", "ledger": body}
+    source.write(f"log/{WRITER_A}/00001.jsonl", _segment(WRITER_A, event))
+    tip = source.commit("carried ledger event")
+    pushed = _push(source, "HEAD:refs/heads/main")
+    if body_kind == "valid-human":
+        assert pushed.returncode == 0, pushed.stderr
+        assert _head(remote) == tip
+    else:
+        assert pushed.returncode != 0 and "ledger" in pushed.stderr
+        assert _head(remote) == before

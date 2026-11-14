@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import math
 import re
 import sys
@@ -115,6 +116,25 @@ def _tree(repository: Path, tip: str) -> None:
             )
 
 
+def _ledger(body: object, record: str) -> None:
+    if not isinstance(body, dict):
+        raise PushRefusedError(
+            "A vault ledger event lacks its record data. Preserve the queue and inspect it."
+        )
+    codec = _load("events")
+    try:
+        carried = codec.from_json(json.dumps(body))
+        codec.accumulate(codec.Totals(), carried.kind, carried.payload)
+    except codec.InvalidEventError as exc:
+        raise PushRefusedError(
+            "A carried ledger event is invalid. Preserve the queue and inspect its record data."
+        ) from exc
+    if carried.record != record:
+        raise PushRefusedError(
+            "A carried ledger event names another record. Preserve the queue and inspect it."
+        )
+
+
 def _event(event: Mapping[str, Any]) -> None:
     identity = event.get("id")
     if not isinstance(identity, str) or not _EVENT_ID.fullmatch(identity):
@@ -137,10 +157,12 @@ def _event(event: Mapping[str, Any]) -> None:
         raise PushRefusedError(
             "A vault event lacks its session or record. Preserve the queue and inspect it."
         )
-    if event.get("kind") == "ledger" and not isinstance(event.get("ledger"), dict):
+    if event["kind"] in {"claim", "take", "unassign"} and not event["session"]:
         raise PushRefusedError(
-            "A vault ledger event lacks its record data. Preserve the queue and inspect it."
+            "An ownership event has no session. Name the session before claiming or releasing."
         )
+    if event["kind"] == "ledger":
+        _ledger(event.get("ledger"), record)
     if "payload" in event and not isinstance(event["payload"], dict):
         raise PushRefusedError(
             "A vault event has invalid payload data. Preserve the queue and inspect it."
