@@ -176,7 +176,9 @@ jobs:
         run: python3 src/basicly/lefthook_artifacts.py --download
 
       - name: Build distribution artifacts
-        run: uv build
+        run: |
+          uv build
+          uv build --wheel packages/basicly-tracker --out-dir dist
 
       - name: Bundle the standalone tracker into one file
         shell: bash
