@@ -89,6 +89,21 @@ def _hook_checks(repository: Path, record: str, paths: list[Path]) -> dict[str, 
     }
 
 
+def _offered_forms(calls: list[dict[str, Any]]) -> list[str]:
+    mirror = importlib.import_module("basicly.mirror")
+    usage = importlib.import_module("basicly.tracker_usage")
+    offered = set(mirror._MIRRORED_WRITES) | {"review", "confirm"}
+    exercised = {usage.split_invocation(list(row["argv"]))[0] for row in calls if not row["read"]}
+    if exercised != offered or not {"create", "comments add"} <= offered:
+        raise ValueError("the engine proof does not cover every offered write form")
+    queries = importlib.import_module("basicly.tracker_query")
+    offered_reads = set(queries.HANDLERS) - {"serve"}
+    exercised_reads = {row["argv"][0] for row in calls if row["read"]}
+    if exercised_reads != offered_reads or not {"list", "show"} <= offered_reads:
+        raise ValueError("the engine proof does not cover every offered read command")
+    return sorted(offered)
+
+
 def worker(repository: Path) -> dict[str, Any]:
     cli = importlib.import_module("basicly.cli")
     owned_store = importlib.import_module("basicly.owned_store")
@@ -189,20 +204,16 @@ def worker(repository: Path) -> dict[str, Any]:
         ("ready", "--json"),
         ("blocked", "--json"),
         ("stats", "--json"),
+        ("items", "--json"),
+        ("describe", "--json"),
     ):
         invoke(*argv, read=True)
     found, unreadable = commands.events.read_events(ledger)
     if unreadable:
         raise ValueError("the engine produced unreadable history")
-    mirror = importlib.import_module("basicly.mirror")
-    usage = importlib.import_module("basicly.tracker_usage")
-    offered = set(mirror._MIRRORED_WRITES) | {"review", "confirm"}
-    exercised = {usage.split_invocation(list(row["argv"]))[0] for row in calls if not row["read"]}
-    if exercised != offered or not {"create", "comments add"} <= offered:
-        raise ValueError("the engine proof does not cover every offered write form")
     return {
         "calls": calls,
-        "forms": sorted(offered),
+        "forms": _offered_forms(calls),
         "hook": _hook_checks(repository, record, commands.events.ledger_paths(ledger)),
         "events": [json.loads(commands.events.to_json(event)) for event in found],
     }

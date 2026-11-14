@@ -19,4 +19,4 @@ def test_actual_engine_write_reports_and_events_match_the_released_engine(
 
     assert report["result"] == "pass"
     assert report["forms"] == 9
-    assert report["reads"] == 5
+    assert report["reads"] == 7
