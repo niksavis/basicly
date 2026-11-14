@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -127,6 +128,63 @@ def test_install_is_idempotent_and_keeps_its_guard_usable(tmp_path: Path) -> Non
     before = (source.root / ".git/hooks/pre-push").read_bytes()
     assert not installer.install(source.root)["changed"]
     assert (source.root / ".git/hooks/pre-push").read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "change", ["unchanged", "snapshot", "configuration", "global-configuration", "executable"]
+)
+def test_owned_clone_rechecks_protection_before_an_actual_push(
+    tmp_path: Path, change: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if change == "executable" and os.name == "nt":
+        pytest.skip("Windows does not use the POSIX executable permission bit.")
+    source, remote = _clone(tmp_path)
+    owned = tmp_path / "owned.git"
+    source.git("clone", "--bare", "-q", str(remote), str(owned))
+    installer = _load("vault_push_hooks")
+    assert installer.install(owned, owned=True)["protected"]
+    hook = owned / "hooks/pre-push"
+    if change == "snapshot":
+        snapshot = next((owned / "basicly-vault-guard").glob("*/vault_push_guard.py"))
+        snapshot.write_text("raise RuntimeError('modified fixture')\n", encoding="utf-8")
+        before = snapshot.read_bytes()
+        with pytest.raises(ValueError, match="guard was changed"):
+            installer.install(owned, owned=True)
+        assert snapshot.read_bytes() == before
+        return
+    if change in {"configuration", "global-configuration"}:
+        external = tmp_path / "external-hooks"
+        external.mkdir()
+        scope = "--local"
+        if change == "global-configuration":
+            monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "global-config"))
+            scope = "--global"
+        subprocess.run(
+            ["git", "config", scope, "core.hooksPath", str(external)],
+            cwd=owned,
+            check=True,
+        )
+    elif change == "executable":
+        hook.chmod(0o600)
+    assert installer.install(owned, owned=True)["protected"]
+    source.write("application.py", "print('unrelated fixture')\n")
+    source.commit("unrelated code")
+    subprocess.run(
+        ["git", "fetch", str(source.root), "main:main"],
+        cwd=owned,
+        check=True,
+        capture_output=True,
+    )
+    before = _head(remote)
+    refused = subprocess.run(
+        ["git", "push", "origin", "main:main"],
+        cwd=owned,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert refused.returncode != 0 and "vault-push" in refused.stderr
+    assert _head(remote) == before
 
 
 def test_explicit_protection_refuses_a_non_repository_without_a_traceback(tmp_path: Path) -> None:

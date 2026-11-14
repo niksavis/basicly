@@ -514,14 +514,14 @@ class _Landing:
         self.bead = bead
         self.clock = clock
         self.started = clock()
-        self._at = self.started
+        self._at = 0.0
         self.stages: list[tuple[str, float]] = []
         self.checks: tuple[tuple[str, float], ...] = ()
         self.report: verify.VerifyReport | None = None
 
     def mark(self, stage: str) -> None:
 
-        now = self.clock()
+        now = round(self.clock() - self.started, 3)
         self.stages.append((stage, round(now - self._at, 3)))
         self._at = now
 

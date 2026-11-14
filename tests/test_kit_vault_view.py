@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -12,6 +13,7 @@ from typing import Any
 import pytest
 
 from basicly import owned_store
+from tests.test_kit_vault_shapes import Vault, _segment
 from tests.test_kit_vault_share import _machine, _share, bare, vault_queue
 from tests.tracker_process_fixture import recorded_review
 
@@ -75,11 +77,28 @@ def test_the_view_holds_valid_carried_events_in_vault_order_and_ready_reads_it(
     tmp_path: Path, bare: Path
 ) -> None:
     first, second = _record("acme-a1"), _record("acme-b2")
-    _push(tmp_path, bare, "m1", _carry(first))
+    first_writer = _push(tmp_path, bare, "m1", _carry(first))
     broken = {"kind": "ledger", "record": "acme-b2", "ledger": {"id": "x"}}
     unfoldable = _carry([_ev("acme-b2", "status", {"status": 5}, 3)])
     comment = vault_queue.comment("acme-b2", "hi")
-    _push(tmp_path, bare, "m2", [*_carry(second), broken, *unfoldable, comment])
+    external = Vault(tmp_path / "unprotected-external")
+    external.git("pull", "-q", str(bare), "main")
+    writer = "0" * 32 if first_writer != "0" * 32 else "1" * 32
+    drafts = [*_carry(second), broken, *unfoldable, comment]
+    published = [
+        {
+            **draft,
+            "id": hashlib.sha256(f"external-fixture-{index}".encode()).hexdigest(),
+            "writer": writer,
+            "session": "s1",
+            "at": index,
+        }
+        for index, draft in enumerate(drafts)
+    ]
+    external.write(f"log/{writer}/00001.jsonl", _segment(writer, *published))
+    external.commit("seed hostile reader input")
+    assert not (external.root / ".git/hooks/pre-push").exists()
+    external.git("push", "-q", str(bare), "HEAD:refs/heads/main")
 
     _reader, folder = _view(tmp_path, bare)
 

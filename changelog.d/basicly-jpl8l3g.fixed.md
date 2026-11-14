@@ -1,0 +1,1 @@
+- Allocate rounded landing stages from cumulative elapsed time so their total cannot exceed the measured landing duration.

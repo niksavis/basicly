@@ -6,6 +6,7 @@ import os
 import shlex
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -104,6 +105,74 @@ class Target:
     override: bool
 
 
+@dataclass(frozen=True)
+class Installed:
+    target: Target
+    snapshot: Path
+    config: bytes
+
+
+_INSTALLED: dict[Path, Installed] = {}
+_CACHE_LOCK = threading.Lock()
+
+
+def _script(target: Target, snapshot: Path) -> bytes:
+    argv = [
+        Path(sys.executable).as_posix(),
+        "-I",
+        "-S",
+        (snapshot / "vault_push_guard.py").as_posix(),
+        "--repository",
+        target.gitdir.as_posix(),
+        "--origin-root",
+        target.root.as_posix(),
+        "--expected-remote",
+        target.expected,
+    ]
+    return (HOOK_PREFIX + "exec " + shlex.join(argv) + ' "$@"\n').encode("utf-8")
+
+
+def _current(repository: Path) -> bool:
+    root = repository.resolve()
+    with _CACHE_LOCK:
+        installed = _INSTALLED.get(root)
+    if installed is None or (root / ".git").exists():
+        return False
+    target, snapshot = installed.target, installed.snapshot
+    hook = target.hooks / "pre-push"
+    try:
+        if (
+            target.hooks.is_symlink()
+            or snapshot.is_symlink()
+            or snapshot.parent.is_symlink()
+            or hook.is_symlink()
+            or not os.access(hook, os.X_OK)
+            or (root / "config").read_bytes() != installed.config
+            or hook.read_bytes() != _script(target, snapshot)
+        ):
+            return False
+        for name in SOURCE_FILES:
+            path = snapshot / name
+            if path.is_symlink() or path.read_bytes() != (_HERE / name).read_bytes():
+                return False
+        configured = _configured(root, "core.hooksPath")
+        hooks = Path(configured) if configured else target.hooks
+        hooks = hooks if hooks.is_absolute() else root / hooks
+        return hooks.resolve() == target.hooks
+    except OSError:
+        return False
+
+
+def _remember(target: Target, snapshot: Path) -> None:
+    if target.root != target.gitdir:
+        return
+    installed = Installed(target, snapshot, (target.gitdir / "config").read_bytes())
+    with _CACHE_LOCK:
+        if target.root not in _INSTALLED and len(_INSTALLED) >= 128:
+            _INSTALLED.pop(next(iter(_INSTALLED)))
+        _INSTALLED[target.root] = installed
+
+
 def _target(repository: Path, owned: bool) -> Target:
     root = repository.resolve(strict=True)
     gitdir = Path(_git(root, "rev-parse", "--absolute-git-dir")).resolve()
@@ -152,29 +221,19 @@ def _target(repository: Path, owned: bool) -> Target:
 
 
 def _install(repository: Path, owned: bool) -> dict[str, object]:
+    if owned and _current(repository):
+        return {"protected": True, "changed": False, "repository": str(repository.resolve())}
     target = _target(repository, owned)
-    root, gitdir, hooks, expected = target.root, target.gitdir, target.hooks, target.expected
+    root, gitdir, hooks = target.root, target.gitdir, target.hooks
     hook = hooks / "pre-push"
     hooks.mkdir(exist_ok=True)
     with events.LedgerLock(gitdir / "vault-push-install"):
         snapshot = _snapshot(gitdir)
-        argv = [
-            Path(sys.executable).as_posix(),
-            "-I",
-            "-S",
-            (snapshot / "vault_push_guard.py").as_posix(),
-            "--repository",
-            gitdir.as_posix(),
-            "--origin-root",
-            root.as_posix(),
-            "--expected-remote",
-            expected,
-        ]
-        text = HOOK_PREFIX + "exec " + shlex.join(argv) + ' "$@"\n'
+        content = _script(target, snapshot)
         before = hook.read_bytes() if hook.exists() else None
-        changed = before != text.encode("utf-8")
+        changed = before != content or not os.access(hook, os.X_OK)
         if changed:
-            _replace(hook, text.encode("utf-8"))
+            _replace(hook, content)
         try:
             if target.override:
                 _git(root, "config", "--local", "core.hooksPath", str(hooks))
@@ -184,6 +243,8 @@ def _install(repository: Path, owned: bool) -> dict[str, object]:
             else:
                 _replace(hook, before)
             raise
+        if owned:
+            _remember(target, snapshot)
     return {"protected": True, "changed": changed, "repository": str(root)}
 
 
