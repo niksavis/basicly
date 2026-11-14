@@ -92,13 +92,27 @@ def test_the_real_claim_hook_checks_canonical_ownership_with_a_file_guard(
     staged = _run(project, "git", "add", "change.txt")
     assert staged.returncode == 0, staged.stderr
 
+    preserved = {
+        path.relative_to(project).as_posix(): path.read_bytes()
+        for path in (project / ".basicly").rglob("*")
+        if path.is_file() and not path.is_relative_to(project / PLACED)
+    }
+
     committed = _run(project, "git", "commit", "-q", "-m", "fix: use the vault record (demo-a1b2)")
 
+    assert committed.returncode == 0, committed.stdout + committed.stderr
     if claimed:
-        assert committed.returncode == 0, committed.stdout + committed.stderr
+        assert '"warning"' not in committed.stderr
     else:
-        assert committed.returncode == 1
-        assert "Claim" in committed.stderr or "claim" in committed.stderr
+        assert "this session does not hold demo-a1b2" in committed.stderr
+        assert "claim demo-a1b2" in committed.stderr
+        (project / "change.txt").write_text("Another real code change", encoding="utf-8")
+        assert _run(project, "git", "add", "change.txt").returncode == 0
+        unnamed = _run(project, "git", "commit", "-q", "-m", "fix: use the vault record")
+        assert unnamed.returncode == 1
+        assert "Record: none" in unnamed.stderr
+        assert "claim RECORD" in unnamed.stderr
+    assert {name: (project / name).read_bytes() for name in preserved} == preserved
 
 
 def test_reinstalling_hooks_preserves_the_frozen_ledger_and_archive(
