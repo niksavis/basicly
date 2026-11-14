@@ -184,21 +184,22 @@ def _retire(
         wanted = [line["id"] for line in found]
         if settled and held == mine and not wanted and not fenced:
             wanted = ["settled:" + ask.record]
-        made = []
-        if held is None or held == mine:
-            drafts = [
-                {"kind": "unassign", "record": ask.record, "payload": {CANCELLED: identity}}
-                for identity in wanted
-                if identity not in markers
-            ]
-            if drafts:
-                made = queue.write(
-                    ask.clone,
-                    drafts,
-                    state=ask.state,
-                    origin=queue.Origin(ask.session, False, ask.clock),
-                    lock_wait=remaining(),
-                )["events"]
+        drafts = [
+            {"kind": "unassign", "record": ask.record, "payload": {CANCELLED: identity}}
+            for identity in wanted
+            if identity not in markers
+        ]
+        made = (
+            queue.write(
+                ask.clone,
+                drafts,
+                state=ask.state,
+                origin=queue.Origin(ask.session, False, ask.clock),
+                lock_wait=remaining(),
+            )["events"]
+            if drafts
+            else []
+        )
         _drop(ask.clone, {line["id"] for line in found}, remaining=remaining)
         return [line["id"] for line in found], [line["id"] for line in fenced] + made
 
@@ -359,7 +360,13 @@ def wait(ask: Any, *, ticks: Clock = time.monotonic, deadline: float = claim.DEA
             if fetched.get("fetched"):
                 held = claim.holder(ask.clone, ask.record)
                 if held is not None and held != (writer, ask.session):
-                    _retire(ask, {line["id"] for line in wanted}, remaining=budget.left)
+                    _removed, fences = _retire(
+                        ask, {line["id"] for line in wanted}, remaining=budget.left
+                    )
+                    if fences:
+                        _share(ask, budget, locked=False)
+                        if not set(fences) <= clone_api.valid_ids(ask.clone):
+                            continue
                     return claim._lost(ask.clone, ask.record) or claim._held_elsewhere(
                         ask.record, ask.clone.url, held
                     )
