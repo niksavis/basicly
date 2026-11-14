@@ -1,0 +1,1 @@
+- Restrict Windows tracker state to the current user before fetching private vault data. Protect inherited access, verify the access list, and refuse files, junctions or permission failures before Git runs.

@@ -14,8 +14,18 @@ import yaml
 from basicly import hooks, lefthook_config, verify
 from basicly.config import VerifyCheck
 from tests.native_hooks import repository
+from tests.vault_permissions_consumer import fetch_private_state
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.skipif(
+    os.name != "nt", reason="This hook consumer checks native Windows access lists."
+)
+def test_vault_state_stays_private_when_the_commit_hook_fetches(tmp_path: Path) -> None:
+    report = fetch_private_state(tmp_path, hook=True)
+    assert report["only_current_user"]
+    assert report["hook_refused_missing_id"]
 
 
 def test_strict_hook_reports_unicode_without_a_child_output_crash(tmp_path: Path) -> None:

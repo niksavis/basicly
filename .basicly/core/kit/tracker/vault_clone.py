@@ -103,9 +103,17 @@ def locate(state: Path, vault: str) -> Clone:
 
 
 def private(path: Path) -> None:
+    if os.name == "nt":
+        try:
+            _load("windows_permissions.py", "basicly_tracker_kit_windows_permissions").private(path)
+        except OSError as error:
+            raise CloneError(
+                "could not restrict Windows vault state to the current user; "
+                "set BASICLY_TRACKER_STATE to a private NTFS directory and retry"
+            ) from error
+        return
     path.mkdir(parents=True, exist_ok=True)
-    if os.name != "nt":
-        path.chmod(0o700)
+    path.chmod(0o700)
 
 
 def _ensure(clone: Clone, runner: Runner, timeout: float) -> None:
