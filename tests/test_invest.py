@@ -48,6 +48,24 @@ def _kit_shaping():
     return module
 
 
+def test_bulk_owed_preserves_debt_with_an_older_single_record_readiness_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_kit(tmp_path)
+    ledger = tracker.ledger_dir(tmp_path)
+    ledger.mkdir(parents=True, exist_ok=True)
+    (ledger / "template.json").write_text('{"prefix":"test"}', encoding="utf-8")
+    records = [owned_write.create(tmp_path, ["create", title]) for title in ("first", "second")]
+    events = tracker.kit(tmp_path, "events")
+    states = events.fold(events.read_events(ledger)[0]).records
+    collected = [states[record] for record in records]
+    expected = invest.owed(collected, tmp_path)
+    assert all(set(DEBTS) <= set(expected[record]) for record in records)
+    monkeypatch.delattr(tracker.kit(tmp_path, "process_evidence"), "readiness_many")
+
+    assert invest.owed(collected, tmp_path) == expected
+
+
 shaping = _kit_shaping()
 
 _PATCHING = (

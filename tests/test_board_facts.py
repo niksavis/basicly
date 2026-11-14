@@ -17,6 +17,7 @@ from basicly import (
     board_snapshot,
     integrity,
     loop_state,
+    owned_store,
     supervise,
     tracker,
 )
@@ -188,7 +189,7 @@ def test_the_phase_map_covers_every_record_and_folds_the_log_once(
 
     records = tuple(f"bd-{index}" for index in range(11))
     repo = _owned_repo(tmp_path, *records)
-    kit = tracker.kit(repo)
+    kit = owned_store.packaged_kit()
     folds: list[int] = []
     real_fold = kit.events.fold
 
