@@ -1283,6 +1283,13 @@ def _setup_tracker(repo_root: Path, *, dry_run: bool = False) -> None:
 
     refuse_ignored_tracker_prefix(repo_root)
     ledger = repo_root / owned_store.LEDGER_DIR
+    if (
+        (repo_root / ".basicly-tracker.toml").exists()
+        or ledger.is_file()
+        or (repo_root / ".basicly/ledger-archive").exists()
+    ) and owned_store.packaged_kit("vault_cli").harness_config(repo_root) is not None:
+        print("Tracker vault binding exists; frozen ledger and archive left unchanged.")
+        return
     if ledger.is_dir():
         print("Tracker ledger exists; left unchanged.")
     else:
