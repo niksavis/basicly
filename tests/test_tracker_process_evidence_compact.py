@@ -241,3 +241,50 @@ def test_engine_compact_review_uses_the_same_no_comment_completion_contract(
         event.record == record and event.kind in cli.events.PROSE_KINDS
         for event in cli.events.read_events(ledger)[0]
     )
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        (["/".join(["", "home", "fixture", "python"]), "check.py"], True),
+        (["python3", "/".join(["", "tmp", "fixture", "check.py"])], False),
+        (["python3", "C:" + chr(92) + "fixture" + chr(92) + "check.py"], True),
+    ],
+)
+@pytest.mark.parametrize("operation", ["review", "confirm"])
+def test_process_evidence_refuses_machine_paths_but_keeps_plain_arguments(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    operation: str,
+    case: tuple[list[str], bool],
+) -> None:
+    command, refused = case
+    ledger = tmp_path / "ledger"
+    record = _card(ledger, capsys)
+    code, report = _run(
+        capsys, "update", str(ledger), record, "--field", "issue_type=task", "--field", "size=small"
+    )
+    assert code == cli.EXIT_OK, report
+    before = cli.events.read_events(ledger)[0]
+    evidence = {
+        "checks": [
+            {
+                "criterion": "When a task is saved, show shall return its title.",
+                "command": command,
+                "result": "The fixture observed the saved title.",
+                "exit_code": 0,
+            }
+        ]
+    }
+    if operation == "review":
+        evidence["checks"][0].pop("exit_code")
+        evidence["checks"][0]["expected"] = evidence["checks"][0].pop("result")
+    code = cli.main([operation, str(ledger), record, "--evidence", json.dumps(evidence)])
+    report = json.loads(capsys.readouterr().out)
+    assert code == (cli.EXIT_REFUSED if refused else cli.EXIT_OK), report
+    after = cli.events.read_events(ledger)[0]
+    if refused:
+        assert "redact" in report["refused"] and "python3" in report["refused"]
+        assert after == before
+    else:
+        assert len(after) == len(before) + 1

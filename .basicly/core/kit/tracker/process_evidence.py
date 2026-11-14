@@ -5,7 +5,7 @@ import importlib.util
 import json
 import os
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -274,13 +274,11 @@ def _draft(record: str, name: str, value: Mapping[str, object], writer: str) -> 
     )
 
 
-def _machine_path(checks: Sequence[Mapping[str, Any]]) -> str | None:
-
-    rules = _load("beads").MACHINE_PATH_RULES
-    for check in checks:
-        if any(pattern.search(part) for part in check["command"] for _, pattern in rules):
-            return str(check["criterion"])
-    return None
+def _safe_commands(
+    checks: Sequence[Mapping[str, Any]], redactor: Callable[[str], str] | None = None
+) -> None:
+    if fault := evidence_checks.command_privacy_fault(checks, redactor):
+        raise ProcessEvidenceError(fault)
 
 
 def review_draft(
@@ -301,12 +299,7 @@ def review_draft(
         _full_review(found, record, payload)
     if fault := _check_fault(state.fields, payload["checks"]):
         raise ProcessEvidenceError(f"Confirmation Plan refused: {fault}")
-    if (criterion := _machine_path(payload["checks"])) is not None:
-        raise ProcessEvidenceError(
-            f"Confirmation Plan command for {criterion!r} holds a machine path that the ledger "
-            "redacts, which would void the review; name the program on PATH, such as python3 "
-            "or uv run, or a path relative to the repository"
-        )
+    _safe_commands(payload["checks"])
     value = {
         **payload,
         "revision": revision(found, record, template=template),
@@ -368,6 +361,7 @@ def confirmation_draft(
         )
     if fault := _check_fault(state.fields, payload["checks"], completed=True):
         raise ProcessEvidenceError(f"Completion Confirmation refused: {fault}")
+    _safe_commands(payload["checks"])
     review = report["review"]
     if not isinstance(review, Mapping):
         raise ProcessEvidenceError("confirm requires a recorded review")
@@ -440,4 +434,7 @@ def record_process(
             commands.writers.writer_class(os.environ),
             template=commands.templates.load(ledger),
         )
+        if isinstance(redact, commands.vault_write.WriteContext) and redact.target is not None:
+            saved = json.loads(draft.payload["value"])
+            _safe_commands(saved["checks"], commands.vault_write.effective_redactor(redact))
         return commands._append(ledger, [draft], redact, lock)

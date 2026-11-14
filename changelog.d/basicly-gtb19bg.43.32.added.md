@@ -1,0 +1,1 @@
+- Ship MCP tools, client registration, agent launchers and agent skills with tracker 0.3.0 and the harness. Default init to user scope. Keep repository installation explicit. Preserve claim identity and all tracker gates. Refuse evidence commands before the active privacy policy changes their arguments.

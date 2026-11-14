@@ -67,6 +67,7 @@ from . import (
     state,
     supervise,
     tracker,
+    tracker_agent,
     tracker_import,
     tracker_query,
     tracker_write,
@@ -2447,12 +2448,18 @@ def cmd_tracker_fold(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tracker_agent(args: argparse.Namespace) -> int:
+    context = ["--session", args.session] if args.session is not None else []
+    return tracker_agent.main([*context, *args.argv])
+
+
 def cmd_tracker(args: argparse.Namespace) -> int:
     handlers = {
         "write": tracker_write.cmd_write,
         "import": cmd_tracker_import,
         "scrub": cmd_tracker_scrub,
         "fold": cmd_tracker_fold,
+        "agent": cmd_tracker_agent,
         **tracker_query.HANDLERS,
     }
     return _dispatch(args, "tracker_command", handlers, group="tracker")
@@ -5446,6 +5453,9 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     tracker_sub = tracker_parser.add_subparsers(dest="tracker_command", required=True)
     tracker_query.add_parsers(tracker_sub)
+    t_agent = tracker_sub.add_parser("agent", help="Launch an agent with its own tracker session")
+    t_agent.add_argument("--session", help="An existing tracker session for an intentional resume")
+    t_agent.add_argument("argv", nargs=argparse.REMAINDER, help="Launcher options and client argv")
     t_write = tracker_sub.add_parser(
         "write",
         help="Make a tracker write through the engine seam" + tracker_query.RUNS_REPOSITORY_KIT,

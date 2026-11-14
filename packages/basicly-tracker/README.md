@@ -1,156 +1,193 @@
 # basicly-tracker
 
-**An append-only work tracker whose ledger merges cleanly when two people work in
-parallel.** Records are events rather than rows edited in place, so two branches that each
-append conflict never — which is the reason to replace a tracker whose file is rewritten on
-every change. It needs no `basicly`: standard library only, no third-party package, no
-network.
+The standalone tracker includes the CLI, human board, agent skills, plugin exporter and MCP tools.
+It runs without the basicly harness or third-party runtime packages.
+The package supports Python 3.9 or later, as declared in `pyproject.toml`.
 
-The install includes the tracker, the human UI, the agent guidance and the plugin
-exporter. It needs no basicly engine.
+Install the tool for the user by default.
+Each repository chooses its tracker and project prefix explicitly.
+A private backlog vault can hold work from several public or private code repositories.
+Everyone who can read that vault can read all its projects.
 
-**Install the code once per machine; keep the ledger and agent guidance in each repository.** This
-is the default mode:
+## Install
 
-```console
-$ uv tool install 'git+https://github.com/niksavis/basicly@v0.45.0#subdirectory=packages/basicly-tracker'
-$ basicly-tracker init
-tracker: added to .gitattributes: events-*.jsonl -text merge=union
-tracker: created the ledger .basicly/ledger
-tracker: pinned the ledger to tracker 0.21.0
-tracker: commit-msg now refuses a code commit on a record you do not hold
-basicly-tracker: wrote the user skill to ~/.claude/skills/basicly-tracker/SKILL.md
-basicly-tracker: wrote the user skill to ~/.agents/skills/basicly-tracker/SKILL.md
-$ basicly-tracker ready .basicly/ledger
-{"count": 0, "records": [], "schema": "basicly.scheduler.v1", ...}
-```
-
-That `.gitattributes` line is the point of the tracker: it is what makes two branches that
-each append an event merge clean instead of conflicting. `init` writes it first, and
-refuses to install at all if it cannot.
-
-`init` writes no kit code into the repository. It refuses, with the install command, when
-no `basicly-tracker` is installed for the user. `.basicly/ledger/.kit-version` pins the
-version, and every command refuses a ledger that pins another one, because an older reader
-drops the event kinds it does not know.
-
-**One file per repository instead: the sandbox mode.** `init --sandbox` writes
-`.basicly/tracker.pyz`, a single archive that runs on any platform with Python 3.9 or later,
-and a repository skill that names it. It needs no user install:
+Install the standalone package with uv.
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init --sandbox
-python3 .basicly/tracker.pyz ready .basicly/ledger
+uv tool install 'git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker'
+basicly-tracker init
 ```
 
-On its first run the archive unpacks itself into a cache directory named after its own
-content (`%LOCALAPPDATA%`, else `$XDG_CACHE_HOME`, else `~/.cache`, under `basicly-kits`),
-and runs from there. It still needs Python: it is not a native executable.
+Plain `init` installs for the user. `--user` and `--scope user` select the same scope.
+Repository options such as `--into`, `--sandbox` and `--import` select project installation.
+An explicit user scope refuses repository options before writing files.
 
-`init` and `init --sandbox` switch a repository between the modes and leave the files of
-one mode only. A repository that vendors the older `.basicly/kit/tracker/` folder moves with
-`update --sandbox`, or with `update`, which removes the folder only when the user install
-accepts the pinned version. The commit hook runs the tracker from `.basicly/tracker.pyz`,
-then `.basicly/kit/tracker/`, then `basicly-tracker` on PATH, and refuses the commit when it
-finds none.
+The user installation writes tracker skills under `~/.claude/skills/` and `~/.agents/skills/`.
+It leaves repository files alone.
+The installer refuses to overwrite a skill it does not own.
 
-**A repository that already has a backlog brings it across with `import`**, rather than
-retyping it. It reads a JSONL export one record per line, keeps the ids, and carries the
-comments and the dependency edges with them. Preview it first — `--dry-run` reports the
-same plan by the same code path and writes nothing:
+For an existing local tracker, keep using its current storage until migration passes.
+Use the migration reference before switching an existing ledger.
+Never attach existing history by writing vault configuration alone.
 
-```console
-$ basicly-tracker import .basicly/ledger issues.jsonl --dry-run
-{
-  "absent": [],
-  "diverged": [],
-  "dry_run": true,
-  "imported": ["demo-aa11", "demo-bb22"],
-  "rejected": [{"reason": "not a record id", "subject": "'not-an-id'"}],
-  "schema": "basicly.tracker.import.v1",
-  "source": "issues.jsonl",
-  "tombstoned": []
-}
+For a new repository and an empty vault, initialize and attach explicitly.
+Run these commands from the repository root.
+Replace the vault address and prefix with your choices.
+
+```sh
+basicly-tracker vault-init --vault VAULT-ADDRESS --prefix PROJECT-PREFIX
+basicly-tracker vault-init --vault VAULT-ADDRESS --prefix PROJECT-PREFIX --yes
 ```
 
-`init` finds a beads or beans backlog by its files and offers the import. It never runs
-`bd`, `br` or `beans`. At a terminal it shows the dry-run plan and asks once. With no
-terminal it imports nothing and prints the command, for example
-`basicly-tracker init --import beads`. A bd Dolt store with no `.beads/issues.jsonl`
-needs `bd export -o .beads/issues.jsonl` first. The imported records land in `refine`,
-because they carry no acceptance criteria yet, so `ready` shows 0 until you shape them.
+The first command previews publication.
+The confirmed command publishes genesis and attaches only after its safeguards pass.
+Existing history requires the migration procedure instead.
+A vault attachment uses `.basicly-tracker.toml` and a frozen `.basicly/ledger` guard.
+Keep that guard and `.basicly/ledger-archive/` intact.
 
-**Trial it beside br with a mirror.** `basicly-tracker init --mirror beads` imports
-`.beads/issues.jsonl` and installs no claim gate, because br stays the source of truth.
-`basicly-tracker sync .basicly/ledger` re-imports it, and br wins for status.
-`basicly-tracker init --end-mirror` ends the trial and installs the claim gate.
+A repository can still use a local ledger.
+This command installs its Git claim gate and uses the user tool.
 
-A record the importer cannot name is **refused and reported, never dropped quietly**.
-Re-running the same export appends nothing, so an import can be repeated while the other
-tracker is still authoritative. Every imported record records where it came from, which
-`--source` names if the file name is not the name you want.
-
-**The tracker includes a human UI and an HTTP API.** Run
-`basicly-tracker serve .basicly/ledger` to open the page on `127.0.0.1:8765`.
-A person reads, writes and edits stories there, and an agent refinement pass shapes them
-before they are ready. The sandbox archive supports the same command:
-`python3 .basicly/tracker.pyz serve .basicly/ledger`. The separate
-[`basicly-board`](../basicly-board/README.md) package remains available; both reuse the
-same page, server and ledger rules.
-
-**Export a plugin from the installed tracker.** Run
-`basicly-tracker plugin --out ./tracker-plugin`, choosing a directory that does not
-exist. Export refuses an existing destination without changing its contents. The output
-contains a portable root `plugin.json`, a Claude compatibility manifest and the
-`basicly-tracker` skill with a bundled `scripts/tracker.pyz`. It needs Python 3.9 or
-later, without an installed engine or tracker package. The skill explains how to resolve
-its script path, install repository gates with `init --sandbox`, and serve the human UI.
-
-The package follows the [Agent Plugins 1.0 layout](https://agent-plugins.org/specification)
-accepted by [OpenAI plugins](https://developers.openai.com/plugins/build/plugins), with
-the [Claude plugin layout](https://code.claude.com/docs/en/plugins-reference) as a
-compatibility overlay. In a repository managed by basicly, keep its existing ledger and
-instructions and use `basicly tracker`; the plugin creates no second tracker.
-
-Every command, with one example each:
-[`kit/tracker/REFERENCE.md`](../../.basicly/core/kit/tracker/REFERENCE.md).
-
-Full specification, including the collision budget the ids are sized from:
-[`kit/SPEC.md`](../../.basicly/core/kit/tracker/SPEC.md).
-
-## Install with a coding agent
-
-Give a coding agent the link to this section, or copy the prompt into it. Run the agent
-in the root of your repository. The agent installs the tracker and its UI, and it asks
-you before it imports a backlog.
-
-```text
-Install the basicly work tracker and its board in this repository, as
-https://github.com/niksavis/basicly/blob/main/packages/basicly-tracker/README.md#install-with-a-coding-agent
-describes. Do the four steps in order.
-
-1. Install. Run these commands in the target repository root:
-   uv tool install 'git+https://github.com/niksavis/basicly@v0.45.0#subdirectory=packages/basicly-tracker'
-   basicly-tracker init
-2. Configure. When init reports a beads or beans backlog, tell me how many records it holds.
-   Then stop and ask me whether to import it. Never import without my yes.
-   On yes, run the import command that init printed, for example `basicly-tracker init --import beans`.
-   Set the id prefix with `basicly-tracker config .basicly/ledger set prefix <prefix>`.
-   Use the prefix of the imported ids, or else a short lowercase name for this repository.
-3. Use. `basicly-tracker ready .basicly/ledger` lists the work that can start now.
-   `basicly-tracker refine .basicly/ledger` lists the records that need acceptance criteria first.
-   An imported record starts in refine. Tell me both counts.
-4. See. Start the board in the background with `basicly-tracker serve .basicly/ledger`.
-   When port 8765 is taken, add `--port` with a free port.
-   Check that the URL it prints answers, then give me the URL.
-   The board can stop when this session ends. Give me the serve command that starts it again.
+```sh
+basicly-tracker init --scope project
 ```
 
-The same commands at a terminal end in the same state. At a terminal, `init` asks the
-import question itself.
+## Register agent tools
 
-The installer writes guidance in both `.claude/skills/` and `.agents/skills/`, in the
-repository and at user scope. Claude, Codex and Copilot can discover the same workflow.
-Unmanaged skills are kept; a colliding name refuses installation before replacing it.
-The commit hook checks the staged ledger, so stage a claim with its code. A linked
-worktree uses the effective Git hooks directory.
+MCP exposes discoverable tools with typed input fields.
+The adapter calls the existing tracker CLI and preserves its admission and refusal rules.
+It uses the [MCP stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
+Each server process binds to one repository root.
+Tool arguments cannot select another repository, vault, prefix or identity.
+
+Print registration for the client you use.
+The default scope is the user.
+
+```sh
+basicly-tracker mcp-config --client codex --repository "$PWD"
+basicly-tracker mcp-config --client claude --repository "$PWD"
+```
+
+Merge the returned `configuration` into its named `destination`.
+Preserve unrelated settings and existing server entries.
+The command prints configuration and writes nothing.
+Use `--name` to distinguish registrations for different repositories.
+Keep user configuration private because it contains the repository's local path.
+
+Codex requires `env_vars` to forward tracker identity and state selection into MCP.
+The generated configuration includes that field.
+Both client configurations forward the holder and optional state locations.
+The server and Git hooks must use the same state location to share the machine writer identity.
+The [Codex MCP guide](https://developers.openai.com/codex/mcp) describes the configuration.
+The [Claude MCP guide](https://code.claude.com/docs/en/mcp) describes its client configuration.
+
+Set `BASICLY_HOLDER` to the holder name you choose.
+The foreground launcher creates a unique tracker session for each new client process.
+The launcher and generated MCP configuration identify the client as a coding agent.
+The agent, its MCP children and its Git hooks must receive that same identity.
+
+```sh
+basicly-tracker agent -- codex --no-daemon
+basicly-tracker agent -- claude
+```
+
+Use Codex's `--no-daemon` option to isolate the new client's environment from an existing shared server.
+The launcher does not change an already-running desktop client or shared agent server.
+Those clients need their supported environment configuration for each separate agent session.
+Do not persist one shared `BASICLY_TRACKER_SESSION` value in client registration.
+A missing session causes the existing vault claim refusal.
+
+For an intentional resume, pass the previously recorded tracker session explicitly.
+Choose the corresponding client conversation when it resumes.
+Provider conversation ids and tracker session ids remain separate.
+
+```sh
+basicly-tracker agent --session EXISTING-SESSION -- codex --no-daemon resume
+```
+
+An agent discovers tools, finds work, creates or refines a record, reviews it and claims it.
+Only a settled successful claim authorizes work.
+Then the agent sets `status` to `in_progress` through `tracker_update`.
+Use `add_labels` and `remove_labels` to change labels without replacing unrelated labels.
+Only an agent can remove `refine`, after the record passes its readiness check.
+It confirms observed evidence before closing the record.
+Every tool result preserves the command's exit code and tracker report.
+Inspect `isError`, `exit_code` and pending status before continuing.
+
+The CLI remains available when an agent has no MCP client.
+
+```sh
+basicly-tracker ready .basicly/ledger
+basicly-tracker show .basicly/ledger RECORD-ID --view current
+basicly-tracker claim RECORD-ID
+basicly-tracker update .basicly/ledger RECORD-ID --status in_progress
+basicly-tracker comment RECORD-ID --text "What changed"
+basicly-tracker sync
+```
+
+These claim and comment forms use vault configuration from the repository root.
+The [command reference](../../.basicly/core/kit/tracker/REFERENCE.md) also covers local ledger forms.
+
+## Install per repository
+
+The optional sandbox mode bundles the same tracker and agent adapter in one Python archive.
+It writes repository skills and needs no user installation.
+
+```sh
+uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init --sandbox --with-instructions
+python3 .basicly/tracker.pyz mcp --repository "$PWD"
+```
+
+`--with-instructions` updates existing agent instruction files with a marked tracker block.
+When no instruction file exists, it prints the block for the file your agent reads.
+It preserves unrelated instructions.
+Print project registration with `--scope project`.
+Add `--sandbox` when registering the repository bundle.
+Use `--python` when the client needs a different interpreter command.
+Project configuration uses relative paths.
+Run its client from the repository root.
+The tracker never silently replaces existing client configuration.
+
+## Use with the basicly harness
+
+The basicly harness ships the same kit, adapter and its `work-tracker` skill.
+Use its installed tracker rather than creating another tracker or vendored copy.
+Launch the installed adapter from the repository root.
+
+```sh
+python3 .basicly/core/kit/tracker/mcp_server.py --repository "$PWD"
+```
+
+Print client registration directly from the installed kit when no standalone package is installed.
+
+```sh
+python3 .basicly/core/kit/tracker/mcp_config.py --client codex --repository "$PWD"
+```
+
+The existing `basicly tracker` commands remain available.
+The harness provides the same foreground launcher.
+
+```sh
+basicly tracker agent -- codex --no-daemon
+```
+
+Existing headless dispatch preserves its inherited owner context.
+Provider conversation ids do not automatically become tracker session ids.
+Installing the standalone tracker does not install the harness.
+
+## Human board and portable plugin
+
+The package includes the human board and HTTP API.
+
+```sh
+basicly-tracker serve .basicly/ledger
+basicly-tracker plugin --out ./tracker-plugin
+```
+
+The plugin exports agent guidance, the command reference and a bundled `scripts/tracker.pyz`.
+That archive includes the same MCP adapter.
+Export refuses an existing destination without changing its contents.
+The bundle requires Python but no installed tracker or basicly engine.
+
+The [command reference](../../.basicly/core/kit/tracker/REFERENCE.md) covers imports, process evidence and migration.
+The [format specification](../../.basicly/core/kit/tracker/SPEC.md) describes storage and ownership rules.

@@ -137,6 +137,13 @@ def _redactor(given: Redactor | None) -> Redactor:
     return redact.text if given is None else lambda value: redact.text(given(value))
 
 
+def effective_redactor(given: WriteContext | Redactor | None) -> Redactor | None:
+    redactor, _clock = parts(given)
+    if isinstance(given, WriteContext) and given.target is not None:
+        return _redactor(redactor)
+    return redactor
+
+
 def _refused(ledger: Path, drafts: Sequence[Any], actor: str) -> Sequence[Any]:
 
     template = templates.load(ledger)
@@ -301,7 +308,8 @@ def land(write: Write, drafts: Sequence[Any], *, repeat: bool = False) -> list:
     if target is not None:
         _vault_refused(target, ledger, drafts)
     drafts = _refused(ledger, drafts, actor)
-    redactor, clock = parts(given)
+    _redactor_given, clock = parts(given)
+    redactor = effective_redactor(given)
     if target is None:
         resolved = recurrence.at_the_generation_this_write_needs(
             events, ledger, drafts, repeat=repeat, redact=redactor
@@ -316,7 +324,7 @@ def land(write: Write, drafts: Sequence[Any], *, repeat: bool = False) -> list:
         drafts,
         repeat=repeat,
         actor=actor,
-        redact=_redactor(redactor),
+        redact=redactor,
         clock=clock,
     )
     if minted:

@@ -1,0 +1,5 @@
+[ratchet]
+base_commit = "39b110de988d72acf6db023852498900d1bc1328"
+
+[ratchet.noqa_debt.frozen]
+S603 = 1
