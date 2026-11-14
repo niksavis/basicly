@@ -69,7 +69,8 @@ USER_SKILL = modes.UserSkill(
         ("name: work-tracker", "name: basicly-tracker"),
         (
             "description: Use the append-only work tracker as this repository's issue tracker.",
-            "description: In a repository that holds .basicly/ledger/, use the append-only "
+            "description: In a repository that holds .basicly/ledger/ or .basicly-tracker.toml, "
+            "use the append-only "
             "work tracker as its issue tracker.",
         ),
         (
@@ -141,6 +142,39 @@ def _serve(args: list[str]) -> int:
     return int(server.main(args))
 
 
+def _mcp(args: list[str]) -> int:
+    server = KIT.directory / "mcp_server.py"
+    if not server.is_file():
+        raise SystemExit("mcp runs from the built tracker package, which carries its adapter")
+    adapter = installer.load_kit_module(KIT.directory, "mcp_server.py", "basicly_tracker_mcp")
+    return int(adapter.main(args))
+
+
+def _agent(args: list[str]) -> int:
+    launcher = _sibling(
+        "basicly_tracker_agent", "agent.py", "../src/basicly/tracker_agent.py", "agent launcher"
+    )
+    return int(launcher.main(args))
+
+
+def _mcp_config(args: list[str]) -> int:
+    args = list(args)
+    if "--sandbox" in args:
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument("--repository", type=Path, required=True)
+        selected, _ = parser.parse_known_args(args)
+        args.remove("--sandbox")
+        args.extend(["--bundle", str(selected.repository / modes.sandbox_file("tracker"))])
+    adapter = installer.load_kit_module(
+        KIT.directory, "mcp_config.py", "basicly_tracker_mcp_config"
+    )
+    defaults = ["--runner", "package"]
+    archive = Path(sys.argv[0])
+    if archive.suffix == ".pyz" and archive.is_file():
+        defaults = ["--runner", "kit", "--bundle", str(archive.resolve())]
+    return int(adapter.main([*defaults, *args]))
+
+
 FOLD_FLAG = "--fold-on-merge"
 END_MIRROR_FLAG = "--end-mirror"
 IMPORT_FLAG = "--import"
@@ -176,6 +210,8 @@ def _user(args: list) -> int:
 
 def _replacements(typed: str) -> tuple:
     return (
+        ("basicly-tracker mcp", f"{typed} mcp"),
+        ("basicly-tracker agent", f"{typed} agent"),
         ("python3 .basicly/kit/tracker/cli.py", typed),
         (
             "`.basicly/kit/tracker/REFERENCE.md` lists every command with one example.",
@@ -238,13 +274,21 @@ def main(argv=None) -> int:
         sys.stdout.write(
             "Package commands:\n"
             "  serve LEDGER [--port PORT]  run the human UI and HTTP API\n"
+            "  mcp --repository ROOT      serve agent tools over MCP stdio\n"
+            "  agent -- CLIENT [ARGS]     launch a client with its own tracker session\n"
+            "  mcp-config --client NAME --repository ROOT  print client registration\n"
             "  plugin --out DIRECTORY     export a portable agent plugin\n"
             "  bundle [--out FILE]         export the standalone Python archive\n\n"
         )
-    if args[:1] == ["bundle"]:
-        return _bundle(args[1:])
-    if args[:1] == ["plugin"]:
-        return _plugin(args[1:])
+    exports = {
+        "bundle": _bundle,
+        "plugin": _plugin,
+        "mcp": _mcp,
+        "agent": _agent,
+        "mcp-config": _mcp_config,
+    }
+    if args and args[0] in exports:
+        return exports[args[0]](args[1:])
     if args[:1] == ["serve"]:
         return _serve(args)
     if args == ["update"]:

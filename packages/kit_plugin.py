@@ -12,6 +12,8 @@ SCRIPT = 'python3 "<skill-directory>/scripts/tracker.pyz"'
 def guidance(source: str) -> str:
     body = source.replace("name: work-tracker", f"name: {NAME}")
     body = body.replace("python3 .basicly/kit/tracker/cli.py", SCRIPT)
+    body = body.replace("basicly-tracker mcp", f"{SCRIPT} mcp")
+    body = body.replace("basicly-tracker agent", f"{SCRIPT} agent")
     body = body.replace(
         "The optional board kit serves a live page and an HTTP API\n"
         "where a person reads, creates and edits records: see the `tracker-board` skill.",
@@ -24,7 +26,8 @@ def guidance(source: str) -> str:
     )
     location = (
         "\nResolve `<skill-directory>` to the absolute directory containing this SKILL.md. "
-        "Run commands from the repository root, with its `.basicly/ledger/`. "
+        "Run commands from the repository root. Its tracker may use `.basicly-tracker.toml` "
+        "and a frozen `.basicly/ledger` guard, or a local ledger directory. "
         "The bundled script needs Python 3.9 or later and no engine or third-party package.\n\n"
         "For a new repository, run the bundled script with "
         "`init --sandbox --with-instructions` to install "

@@ -4,6 +4,35 @@ Ledger-form commands take the ledger directory, `.basicly/ledger`, as their firs
 prints one JSON object with a `schema` field. `cli.py <command> --help` lists every flag.
 The examples use `acme` as the id prefix and `acme-a1b2` as a record id.
 
+## Coding agents
+
+The standalone package ships agent skills, a plugin exporter and an MCP stdio adapter.
+The basicly harness ships the same adapter with its tracker kit.
+Install the standalone tool and skills for the user by default.
+Use `init --sandbox` for the optional repository bundle.
+
+```sh
+basicly-tracker init --user
+basicly-tracker mcp --repository REPOSITORY-ROOT
+```
+
+The adapter binds its repository at startup.
+It advertises named tools and typed inputs through `tools/list`.
+Calls use the existing tracker admission and canonical ownership rules.
+Arguments cannot override the repository, vault, prefix or session identity.
+Reconnect after changing `.basicly-tracker.toml`.
+
+Set `BASICLY_TRACKER_SESSION` separately for each coding agent session.
+Its tools and Git hooks must inherit that same value.
+Choose the human-readable holder through `BASICLY_HOLDER` or `git config basicly.holder`.
+Never persist one shared session identity for concurrent agents.
+Only a settled successful claim authorizes work.
+Then update the record to `in_progress` through the tracker.
+Confirm observed evidence before closing.
+Inspect the command's exit code, pending state and refusal report after every tool call.
+
+The [standalone installation guide](https://github.com/niksavis/basicly/tree/main/packages/basicly-tracker) gives client registration commands.
+
 ## Configure
 
 ### config

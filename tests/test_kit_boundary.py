@@ -141,6 +141,15 @@ def test_reading_engine_config_or_state_fails(tmp_path: Path, expression: str) -
     assert _rules(tmp_path / "kit") == ["reads-engine-state"]
 
 
+@pytest.mark.parametrize("expression", ['Path(".basicly/ledger")', 'Path(".basicly") / "ledger"'])
+def test_the_standalone_tracker_can_name_its_own_ledger_directory(
+    tmp_path: Path, expression: str
+) -> None:
+    _seed(tmp_path / "kit", "tracker.py", f"from pathlib import Path\nLEDGER = {expression}\n")
+
+    assert _rules(tmp_path / "kit") == []
+
+
 def test_an_unparseable_module_is_a_finding_not_a_skip(tmp_path: Path) -> None:
     _seed(tmp_path / "kit", "broken.py", "def f(:\n")
     assert _rules(tmp_path / "kit") == ["unparseable"]

@@ -11,6 +11,43 @@ instructions: |
   The tracker is an append-only event log. Ledger mode writes `.basicly/ledger/`, committed with the code. With `.basicly-tracker.toml`, writes queue vault events beside the clone; own pending writes are visible and marked `pending` until shared.
   The kit is `python3 .basicly/core/kit/tracker/cli.py`, which needs nothing installed. The engine is `basicly tracker`, which works when `basicly` is on PATH.
 
+  ## Agent tools
+
+  The installed kit includes an MCP server. It needs no engine or third-party package.
+  Bind one process to one repository root.
+
+  ```sh
+  python3 .basicly/core/kit/tracker/mcp_server.py --repository REPOSITORY-ROOT
+  ```
+
+  Print client registration from the same installed kit.
+
+  ```sh
+  python3 .basicly/core/kit/tracker/mcp_config.py --client codex --repository REPOSITORY-ROOT
+  ```
+
+  The default scope is the user. Use `--scope project` for repository configuration.
+  Merge the returned server entry and preserve unrelated settings.
+  Codex requires its generated `env_vars` field to forward tracker identity into MCP.
+  The harness launcher gives each new foreground client a distinct tracker session.
+
+  ```sh
+  basicly tracker agent -- codex --no-daemon
+  ```
+
+  Use `--no-daemon` to isolate Codex from an existing shared server.
+  Desktop and already-running clients need their supported environment configuration.
+
+  Set `BASICLY_TRACKER_SESSION` to your unique agent session before launching tools and Git hooks.
+  Set `BASICLY_HOLDER` to your chosen holder name. Concurrent agents need different sessions.
+  Use `tracker_ready`, `tracker_show` and `tracker_create` to find and shape work.
+  Use `tracker_review` before claiming larger work.
+  Only a settled successful `tracker_claim` authorizes work.
+  In vault mode, then use `tracker_update` to set `status` to `in_progress`.
+  Use `tracker_confirm` with observed evidence before `tracker_close`.
+  Inspect `isError`, `exit_code` and the tracker report after every call.
+  Reconnect after changing `.basicly-tracker.toml`. Never replace the frozen ledger guard with a directory.
+
   ## Steps
 
   ```sh
@@ -39,7 +76,7 @@ instructions: |
   - **Never edit, delete or reorder a line in an event file.** Append the write that supersedes the wrong one.
   - **Probe against a scratch ledger directory, never the live one:** `python3 .basicly/core/kit/tracker/cli.py create "$(mktemp -d)" --prefix probe --title probe`. The log has no undo.
   - **Check the output shape before you parse it.** `show` on an absent record prints `{"found": false}`. The kit `create` prints JSON; read its `record` field. The engine `create` prints `created: RECORD-ID`, or JSON with `--json`.
-  - **Use one ledger per repository, never one per worktree.** The git-ignored `.basicly/ledger/redirect` points every worktree at the same log.
+  - **Use one tracker per repository, never one per worktree.** Ledger mode shares its log through `.basicly/ledger/redirect`. Vault mode uses the same vault and project prefix in every worktree. Keep the frozen guard and archive intact.
 
   ## Read when needed
 

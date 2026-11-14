@@ -42,7 +42,8 @@ def _where(skill: UserSkill) -> str:
     return "\n".join((
         "## Where this applies",
         "",
-        "Use this skill only in a repository that holds `.basicly/ledger/`. If the repository",
+        "Use this skill only in a repository with `.basicly/ledger` or `.basicly-tracker.toml`.",
+        "If the repository",
         f"also holds `.basicly/core/`, it runs the basicly engine: use {skill.engine_use} instead.",
         "",
         f"This skill writes the command as `{skill.command}`. Type the one the repository holds:",
@@ -51,8 +52,9 @@ def _where(skill: UserSkill) -> str:
         f"- else if `{vendored}` exists, type `python3 {vendored}`;",
         f"- else type `{skill.command}`.",
         "",
-        "Each command refuses to run when its version differs from the one the ledger pins in",
-        "`.basicly/ledger/.kit-version`, and it prints the install command for the pinned one.",
+        "In local ledger mode, commands check `.basicly/ledger/.kit-version` and print the",
+        "install command when versions differ. In vault mode, keep the frozen guard and archive",
+        "intact. Do not create local events beside a vault attachment.",
         "",
     ))
 

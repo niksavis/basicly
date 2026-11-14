@@ -1,0 +1,1 @@
+- Ship MCP tools, client registration and agent launchers in tracker 0.3.0 and the harness. Bind each server to a repository, preserve tracker checks, and install vault-aware skills for the user by default. Keep repository bundles available.
