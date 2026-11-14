@@ -95,17 +95,18 @@ def owed(states: Iterable[Any], repo_root: Path) -> dict[str, tuple[str, ...]]:
     declared = load_type_sections(repo_root)
     template = tracker.ledger_template(repo_root)
     found = tracker.ledger_events(repo_root)[0]
+    collected = list(states)
+    fields = {state.record: {**state.fields, "id": state.record} for state in collected}
+    readiness = tracker.readiness_many(repo_root, fields, template, found=found)
     return {
         state.record: _missing_for(
             {**state.fields, "id": state.record},
             str(state.fields.get("issue_type") or ""),
             declared,
             template,
-            tracker.readiness(
-                repo_root, {**state.fields, "id": state.record}, template, found=found
-            ),
+            readiness[state.record],
         )
-        for state in states
+        for state in collected
     }
 
 

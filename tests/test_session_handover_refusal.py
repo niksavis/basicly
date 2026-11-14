@@ -35,10 +35,13 @@ def test_session_start_names_the_kit_refusal_in_place_of_no_handover(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path)
+    module = repo / owned_store.KIT_TRACKER_DIR / "differential.py"
+    module.rename(module.with_suffix(".unavailable"))
     owned_store.set_kit_version_reader(lambda _root: "0.0.1")
     out = _start(repo, monkeypatch, capsys)
     assert "handover: unknown - the ledger was not read" in out
-    assert "was installed by basicly 0.0.1" in out
+    assert "has no differential.py" in out
+    assert "basicly install" in out
     assert "handover: none" not in out
 
 

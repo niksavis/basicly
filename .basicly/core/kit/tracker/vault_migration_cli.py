@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import re
 import sys
 from collections.abc import Callable
@@ -24,6 +25,7 @@ def _load(name: str) -> Any:
 
 migrate = _load("vault_migrate")
 config = _load("vault_config")
+ledger_freeze = _load("ledger_freeze")
 
 
 def add_parser(sub: Any) -> None:
@@ -47,6 +49,11 @@ def add_parser(sub: Any) -> None:
     form.add_argument("--vault", help="the vault URL or local repository")
     form.add_argument("--state", help="the private machine state folder")
     form.add_argument("--prefix", help="the prefix to export")
+    form.add_argument(
+        "--freeze",
+        action="store_true",
+        help="verify an imported local ledger, preserve its archive and switch to the vault",
+    )
     form.add_argument(
         "--redact-name",
         action="append",
@@ -113,6 +120,8 @@ def run(
     clock: Callable[[], float],
     state_root: Path | None,
 ) -> dict[str, object]:
+    if getattr(args, "freeze", False):
+        return _freeze(args, inherited, clock, state_root)
     if args.from_vault:
         if (
             args.source
@@ -164,3 +173,68 @@ def run(
         code=Path.cwd(),
     )
     return migrate.to_vault(found, plan, template=template)
+
+
+def _identity(event: Any) -> dict[str, object]:
+    row = json.loads(migrate.events.to_json(event))
+    return {key: row[key] for key in ("id", "record", "kind", "actor", "ts", "payload")}
+
+
+def _freeze(
+    args: argparse.Namespace,
+    inherited: Callable[[str], str] | None,
+    clock: Callable[[], float],
+    state_root: Path | None,
+) -> dict[str, object]:
+    if not args.to_vault or args.preview or args.source_format != "ledger" or args.source:
+        raise ValueError("--freeze needs migrate LEDGER --to-vault after importing that ledger")
+    if args.private_map or args.overwrite_private_map:
+        raise ValueError("--freeze creates no private mapping; run the import separately")
+    if not args.prefix:
+        raise ValueError("--freeze requires --prefix NAME for the project's imported records")
+    migrate.vault_view.ids.validate_prefix(args.prefix)
+    ledger = Path(args.directory).resolve()
+    archive = ledger.with_name(ledger_freeze.ARCHIVE)
+    source = (
+        ledger_freeze.check(ledger)
+        if ledger.is_file()
+        else archive
+        if not ledger.exists() and archive.exists()
+        else ledger
+    )
+    expected = ledger_freeze.fingerprint(source)
+    found = migrate.ledger_events(source)
+    template = migrate.templates.read(source)
+    if any(event.record.partition("-")[0] != args.prefix for event in found):
+        raise ValueError("--prefix must name every record in the source ledger before freezing")
+    if ledger_freeze.fingerprint(source) != expected:
+        raise ValueError(
+            "source history changed during freeze preflight; stop writers and try again"
+        )
+    prepared = migrate.prepare(found, template, _redactor(args, inherited), redact_holders=True)
+    clone = _clone(args, state_root)
+    migrate.vault_clone.fetch(clone, clock=clock)
+    valid = migrate.vault_clone.valid_events(clone)
+    if migrate.vault_template.carried(valid, args.prefix) != migrate.vault_template.carried(
+        prepared.lines, args.prefix
+    ):
+        raise ValueError(
+            "the source template differs from its vault import; "
+            "restore the verified source template before retrying --freeze"
+        )
+    want = migrate.vault_view.Want(args.prefix)
+    migrate.canonical.check(migrate.view_events(valid, want))
+    held = {event.id: _identity(event) for event in migrate.vault_view.carried(valid, want)}
+    if any(held.get(event.id) != _identity(event) for event in prepared.result.events):
+        raise ValueError(
+            "source events do not match the vault import; "
+            "run migrate --to-vault with the same redaction first"
+        )
+    existing = config.load(ledger.parent.parent)
+    vault = args.vault or (existing.vault if existing is not None else "")
+    if existing is not None:
+        if migrate.vault_clone.vault_source(existing.vault)[0] != clone.url:
+            raise ValueError("the repository already names a different vault; nothing was frozen")
+        vault = existing.vault
+    report = ledger_freeze.freeze(ledger, vault, args.prefix, expected)
+    return {**report, "records": len({event.record for event in found}), "events": len(found)}

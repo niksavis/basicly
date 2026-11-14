@@ -98,6 +98,10 @@ def environment(output: Path) -> dict[str, str]:
     return env
 
 
+def fixed_ids(events: Any) -> None:
+    events.ids._SYSTEM_RANDOM = random.Random(37)  # nosec B311 - repeatable proof ids only
+
+
 def invoker(
     repository: Path, real: bool, transcript: list[dict[str, Any]]
 ) -> Callable[..., dict[str, Any]]:
@@ -113,7 +117,7 @@ def invoker(
         spec.loader.exec_module(kit)
         if not hasattr(kit.events, "wall_clock") or not hasattr(kit.events.ids, "_SYSTEM_RANDOM"):
             raise ValueError("the kit lacks the wall_clock or id _SYSTEM_RANDOM seam")
-        kit.events.ids._SYSTEM_RANDOM = random.Random(37)  # nosec B311 - repeatable proof ids only
+        fixed_ids(kit.events)
 
     def invoke(*argv: str) -> dict[str, Any]:
         if real:
@@ -285,12 +289,14 @@ def compare(kit: Path, tag: str, output: Path) -> None:
     (output / "reports.json").write_text(json.dumps(reports, indent=2), encoding="utf-8")
     if differences:
         raise ValueError("candidate differs from released kit: " + ", ".join(differences))
+    engine = importlib.import_module("tracker_engine_compat").compare(tag, output / "engine")
     print(
         json.dumps({
             "result": "pass",
-            "comparison": "complete reports and ledger events match byte for byte",
+            "comparison": "standalone reports and ledger events match byte for byte",
             "baseline": tag,
             "real_cli": "lifecycle, fsck and normal Git claim hook passed",
+            "engine": engine,
             "output": str(output),
         })
     )

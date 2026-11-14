@@ -14,6 +14,7 @@ from basicly.tracker_import import _REFUSALS_SHOWN
 REPO = Path(__file__).parent.parent
 KIT = Path(".basicly") / "core" / "kit" / "tracker"
 
+
 _EXPORT = [
     {
         "id": "acme-99z",
