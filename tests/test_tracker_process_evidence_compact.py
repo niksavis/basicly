@@ -244,17 +244,22 @@ def test_engine_compact_review_uses_the_same_no_comment_completion_contract(
 
 
 @pytest.mark.parametrize(
-    "command",
+    "case",
     [
-        ["/".join(["", "home", "fixture", "python"]), "check.py"],
-        ["python3", "/".join(["", "tmp", "fixture", "check.py"])],
-        ["python3", "C:" + chr(92) + "fixture" + chr(92) + "check.py"],
+        (["/".join(["", "home", "fixture", "python"]), "check.py"], False, True),
+        (["python3", "/".join(["", "tmp", "fixture", "check.py"])], False, False),
+        (["python3", "/".join(["", "tmp", "fixture", "check.py"])], True, True),
+        (["python3", "C:" + chr(92) + "fixture" + chr(92) + "check.py"], False, True),
     ],
 )
 @pytest.mark.parametrize("operation", ["review", "confirm"])
 def test_process_evidence_refuses_commands_that_privacy_would_change_before_appending(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], command: list[str], operation: str
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    operation: str,
+    case: tuple[list[str], bool, bool],
 ) -> None:
+    command, redacted, refused = case
     ledger = tmp_path / "ledger"
     record = _card(ledger, capsys)
     code, report = _run(
@@ -275,7 +280,15 @@ def test_process_evidence_refuses_commands_that_privacy_would_change_before_appe
     if operation == "review":
         evidence["checks"][0].pop("exit_code")
         evidence["checks"][0]["expected"] = evidence["checks"][0].pop("result")
-    code, report = _run(capsys, operation, str(ledger), record, "--evidence", json.dumps(evidence))
-    assert code == cli.EXIT_REFUSED, report
-    assert "redact" in report["refused"] and "python3" in report["refused"]
-    assert cli.events.read_events(ledger)[0] == before
+    redactor = cli.commands.vault_write.redact.text if redacted else None
+    code = cli.main(
+        [operation, str(ledger), record, "--evidence", json.dumps(evidence)], redact=redactor
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert code == (cli.EXIT_REFUSED if refused else cli.EXIT_OK), report
+    after = cli.events.read_events(ledger)[0]
+    if refused:
+        assert "redact" in report["refused"] and "python3" in report["refused"]
+        assert after == before
+    else:
+        assert len(after) == len(before) + 1

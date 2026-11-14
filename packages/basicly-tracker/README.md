@@ -15,8 +15,12 @@ Install the standalone package with uv.
 
 ```sh
 uv tool install 'git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker'
-basicly-tracker init --user
+basicly-tracker init
 ```
+
+Plain `init` installs for the user. `--user` and `--scope user` select the same scope.
+Repository options such as `--into`, `--sandbox` and `--import` select project installation.
+An explicit user scope refuses repository options before writing files.
 
 The user installation writes tracker skills under `~/.claude/skills/` and `~/.agents/skills/`.
 It leaves repository files alone.
@@ -45,7 +49,7 @@ A repository can still use a local ledger.
 This command installs its Git claim gate and uses the user tool.
 
 ```sh
-basicly-tracker init
+basicly-tracker init --scope project
 ```
 
 ## Register agent tools

@@ -201,6 +201,26 @@ def _configure_flags(args: list) -> tuple:
 USER_FLAG = "--user"
 
 
+def _init_args(args: list[str]) -> list[str]:
+    parser = argparse.ArgumentParser(prog="basicly-tracker init", add_help=False)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--scope", choices=("user", "project"))
+    group.add_argument(USER_FLAG, dest="scope", action="store_const", const="user")
+    parsed, remaining = parser.parse_known_args(args[1:])
+    if any(flag in remaining for flag in ("-h", "--help")):
+        sys.stdout.write(
+            "init installs user skills by default. --user and --scope user select that scope.\n"
+            "Use --scope project for this repository. "
+            "Repository options also select project scope.\n"
+        )
+        return ["init", *remaining]
+    if parsed.scope == "user" and remaining:
+        parser.error("User scope accepts no repository options. Use init --scope project.")
+    if parsed.scope == "user" or (parsed.scope is None and not remaining):
+        return ["init", USER_FLAG]
+    return ["init", *remaining]
+
+
 def _user(args: list) -> int:
     home = modes.user_home()
     if args[0] == "uninstall":
@@ -273,6 +293,7 @@ def main(argv=None) -> int:
     if not args or args[:1] in (["--help"], ["-h"]):
         sys.stdout.write(
             "Package commands:\n"
+            "  init [--scope user|project] install user skills by default\n"
             "  serve LEDGER [--port PORT]  run the human UI and HTTP API\n"
             "  mcp --repository ROOT      serve agent tools over MCP stdio\n"
             "  agent -- CLIENT [ARGS]     launch a client with its own tracker session\n"
@@ -291,11 +312,14 @@ def main(argv=None) -> int:
         return exports[args[0]](args[1:])
     if args[:1] == ["serve"]:
         return _serve(args)
+    if args[:1] == ["init"]:
+        args = _init_args(args)
     if args == ["update"]:
         sys.stderr.write(
             "basicly-tracker: update needs a ledger and a record, so nothing ran. Update a "
             "record with `basicly-tracker update <ledger> <record> --field name=value`; "
-            "install or upgrade the kit in this repository with `basicly-tracker init`\n"
+            "install or upgrade the kit in this repository with "
+            "`basicly-tracker init --scope project`\n"
         )
         return 2
     if args[:1] in (["init"], ["update"], ["uninstall"]) and USER_FLAG in args:

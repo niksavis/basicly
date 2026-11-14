@@ -15,18 +15,27 @@ from tests.test_tracker_mcp import BOOT
 package = test_tracker_plugin.package
 
 
+@pytest.mark.parametrize("scope", [[], ["--user"], ["--scope", "user"]])
+@pytest.mark.parametrize("git_repository", [False, True])
 def test_user_install_ships_vault_and_mcp_guidance_without_repository_files(
-    package: Path, tmp_path: Path
+    package: Path, tmp_path: Path, scope: list[str], git_repository: bool
 ) -> None:
     home = tmp_path / "home"
+    work = tmp_path / "working"
+    work.mkdir()
+    if git_repository:
+        subprocess.run(["git", "init", "-q", str(work)], check=True)
+    before = {
+        path.relative_to(work): path.read_bytes() for path in work.rglob("*") if path.is_file()
+    }
     env = os.environ.copy()
     env.update(HOME=str(home), USERPROFILE=str(home))
     result = subprocess.run(
-        [sys.executable, "-I", "-S", "-c", BOOT, str(package / "__init__.py"), "init", "--user"],
+        [sys.executable, "-I", "-S", "-c", BOOT, str(package / "__init__.py"), "init", *scope],
         capture_output=True,
         text=True,
         env=env,
-        cwd=tmp_path,
+        cwd=work,
         check=False,
     )
     assert result.returncode == 0, result.stderr
@@ -38,11 +47,14 @@ def test_user_install_ships_vault_and_mcp_guidance_without_repository_files(
         assert "BASICLY_TRACKER_SESSION" in body
         assert "push the ledger at once" not in body
         assert "Only a settled" in body
-    assert not (tmp_path / ".basicly").exists()
+    assert {
+        path.relative_to(work): path.read_bytes() for path in work.rglob("*") if path.is_file()
+    } == before
 
 
+@pytest.mark.parametrize("scope", [[], ["--scope", "project"]])
 def test_repository_sandbox_ships_the_same_agent_adapter_and_guidance(
-    package: Path, tmp_path: Path
+    package: Path, tmp_path: Path, scope: list[str]
 ) -> None:
     root = tmp_path / "repo"
     root.mkdir()
@@ -64,6 +76,7 @@ def test_repository_sandbox_ships_the_same_agent_adapter_and_guidance(
             BOOT,
             str(package / "__init__.py"),
             "init",
+            *scope,
             "--sandbox",
             "--into",
             str(root),
@@ -228,3 +241,38 @@ def test_project_registration_has_no_machine_binding_and_kit_mode_needs_no_packa
     ]
     assert server["command"] == sys.executable
     assert server["args"][0] == str(package / "kit/mcp_server.py")
+
+
+@pytest.mark.parametrize("selector", [["--user"], ["--scope", "user"]])
+def test_user_install_refuses_repository_options_before_writing_any_scope(
+    package: Path, tmp_path: Path, selector: list[str]
+) -> None:
+    home, repository = tmp_path / "home", tmp_path / "repository"
+    repository.mkdir()
+    sentinel = repository / "keep.txt"
+    sentinel.write_text("Existing project content.")
+    env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            "-c",
+            BOOT,
+            str(package / "__init__.py"),
+            "init",
+            *selector,
+            "--into",
+            str(repository),
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2, (result.stdout, result.stderr)
+    assert "--scope project" in result.stderr
+    assert not home.exists()
+    assert list(repository.iterdir()) == [sentinel]
+    assert sentinel.read_text() == "Existing project content."

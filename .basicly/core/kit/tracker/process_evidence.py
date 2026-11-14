@@ -5,7 +5,7 @@ import importlib.util
 import json
 import os
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -32,7 +32,6 @@ labels = _load("labels")
 evidence_checks = _load("evidence_checks")
 small_task = _load("small_task")
 conversation = _load("conversation")
-redaction = _load("redact")
 small = small_task.small
 _text = evidence_checks.filled_text
 _command = evidence_checks.filled_command
@@ -275,8 +274,16 @@ def _draft(record: str, name: str, value: Mapping[str, object], writer: str) -> 
     )
 
 
-def _safe_commands(checks: Sequence[Mapping[str, Any]]) -> None:
-    if any(redaction.text(part) != part for check in checks for part in check["command"]):
+def _safe_commands(
+    checks: Sequence[Mapping[str, Any]], redactor: Callable[[str], str] | None = None
+) -> None:
+    rules = _load("beads").MACHINE_PATH_RULES
+    if any(
+        any(pattern.search(part) for _name, pattern in rules)
+        or (redactor is not None and redactor(part) != part)
+        for check in checks
+        for part in check["command"]
+    ):
         raise ProcessEvidenceError(
             "Evidence command holds a machine path or private value that redaction would change. "
             "Use python3 on PATH and paths relative to the repository."
@@ -436,4 +443,6 @@ def record_process(
             commands.writers.writer_class(os.environ),
             template=commands.templates.load(ledger),
         )
+        saved = json.loads(draft.payload["value"])
+        _safe_commands(saved["checks"], commands.vault_write.effective_redactor(redact))
         return commands._append(ledger, [draft], redact, lock)
