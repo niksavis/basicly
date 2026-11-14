@@ -13,6 +13,15 @@ from pathlib import Path
 from typing import Any
 
 
+def _harness(module: Any) -> Any:
+    factory = getattr(module, "harness", None)
+    if not callable(factory):
+        raise ImportError(
+            "the tracker kit lacks vault harness support; reinstall with `basicly install --force`"
+        )
+    return factory()
+
+
 def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603 B607
         ["git", *args], cwd=root, capture_output=True, text=True, encoding="utf-8", check=False
@@ -41,7 +50,7 @@ def main() -> int:
     module: Any = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
-        if module.harness().harness_ledger(root, time.time) is not None:
+        if _harness(module).harness_ledger(root, time.time) is not None:
             return 0
     except (ValueError, OSError, ImportError) as exc:
         print(f"tracker-fold: {exc}", file=sys.stderr)

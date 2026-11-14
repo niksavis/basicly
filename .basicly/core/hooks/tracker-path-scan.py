@@ -27,6 +27,15 @@ _CREATED_KIND = "created"
 _HOLDER_FIELD = "assignee"
 
 
+def _harness(module: Any) -> Any:
+    factory = getattr(module, "harness", None)
+    if not callable(factory):
+        raise ImportError(
+            "the tracker kit lacks vault harness support; reinstall with `basicly install --force`"
+        )
+    return factory()
+
+
 def vault_ledger() -> Path | None:
     root = Path.cwd()
     if not (
@@ -43,7 +52,7 @@ def vault_ledger() -> Path | None:
         raise ImportError("the tracker kit is missing; reinstall basicly")
     module: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.harness().harness_ledger(root, time.time)
+    return _harness(module).harness_ledger(root, time.time)
 
 
 def identity_pattern() -> re.Pattern[str] | None:
