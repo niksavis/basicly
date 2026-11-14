@@ -28,13 +28,22 @@ _HOLDER_FIELD = "assignee"
 
 
 def vault_ledger() -> Path | None:
+    root = Path.cwd()
+    if not (
+        (root / ".basicly-tracker.toml").exists()
+        or (root / ".basicly/ledger").is_file()
+        or (root / ".basicly/ledger-archive").exists()
+    ):
+        return None
     source = Path(__file__).resolve().parent.parent / "kit/tracker/locate.py"
+    if not source.is_file():
+        raise ImportError("the tracker kit is missing; reinstall with `basicly install --force`")
     spec = importlib.util.spec_from_file_location("basicly_tracker_kit_locate", source)
     if spec is None or spec.loader is None:
         raise ImportError("the tracker kit is missing; reinstall basicly")
     module: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.harness().harness_ledger(Path.cwd(), time.time)
+    return module.harness().harness_ledger(root, time.time)
 
 
 def identity_pattern() -> re.Pattern[str] | None:

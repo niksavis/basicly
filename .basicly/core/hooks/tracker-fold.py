@@ -21,14 +21,26 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def main() -> int:
     root = Path.cwd()
+    if not (
+        (root / ".basicly-tracker.toml").exists()
+        or (root / ".basicly/ledger").is_file()
+        or (root / ".basicly/ledger-archive").exists()
+    ):
+        return _legacy(root)
     source = Path(__file__).resolve().parent.parent / "kit/tracker/locate.py"
+    if not source.is_file():
+        print(
+            "tracker-fold: the tracker kit is missing; reinstall with `basicly install --force`",
+            file=sys.stderr,
+        )
+        return 1
     spec = importlib.util.spec_from_file_location("basicly_tracker_kit_locate", source)
     if spec is None or spec.loader is None:
         print("tracker-fold: the tracker kit is missing; reinstall basicly", file=sys.stderr)
         return 1
     module: Any = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     try:
+        spec.loader.exec_module(module)
         if module.harness().harness_ledger(root, time.time) is not None:
             return 0
     except (ValueError, OSError, ImportError) as exc:

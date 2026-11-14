@@ -307,3 +307,26 @@ def test_real_git_commit_uses_native_claims_once_and_preserves_history(
     assert advisory.returncode == 0, advisory.stdout + advisory.stderr
     assert advisory.stderr.count("this session does not hold") == 1
     assert _history(root) == before
+
+
+@pytest.mark.parametrize("name", ["tracker-path-scan.py", "tracker-fold.py"])
+@pytest.mark.parametrize("configured", [False, True])
+def test_hooks_without_a_vault_kit_keep_plain_behavior_or_name_reinstallation(
+    tmp_path: Path, name: str, configured: bool
+) -> None:
+    root = tmp_path / "plain"
+    hooks = root / ".basicly/core/hooks"
+    hooks.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    shutil.copyfile(HOOKS / name, hooks / name)
+    if configured:
+        (root / ".basicly-tracker.toml").write_text(
+            'vault = "vault.git"\nprefix = "acme"\n', encoding="utf-8"
+        )
+    result = subprocess.run(
+        [sys.executable, str(hooks / name)], cwd=root, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == (1 if configured else 0), result.stdout + result.stderr
+    assert "Traceback" not in result.stderr
+    if configured:
+        assert "reinstall" in result.stderr
