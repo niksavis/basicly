@@ -184,12 +184,15 @@ def test_simultaneous_lazy_imports_publish_one_complete_module(tmp_path: Path) -
     assert all(value is values[0] for value in values)
 
 
-@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="this filesystem probe needs POSIX FIFOs")
 def test_a_kit_cannot_supply_source_through_a_fifo(tmp_path: Path) -> None:
+    mkfifo = getattr(os, "mkfifo", None)
+    nonblock = getattr(os, "O_NONBLOCK", None)
+    if mkfifo is None or nonblock is None:
+        pytest.skip("this filesystem probe needs POSIX FIFOs")
     home = tmp_path / "kit"
     _source(home, "VALUE = 1\n")
     fifo = home / "unexpected.py"
-    os.mkfifo(fifo)
+    mkfifo(fifo)
     errors: list[OSError] = []
 
     def supply() -> None:
@@ -205,7 +208,7 @@ def test_a_kit_cannot_supply_source_through_a_fifo(tmp_path: Path) -> None:
         with pytest.raises(kit_namespace.KitImportError, match="regular files"):
             kit_namespace.snapshot(home)
     finally:
-        reader = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+        reader = os.open(fifo, os.O_RDONLY | nonblock)
         writer.join(timeout=10)
         os.close(reader)
         assert not writer.is_alive()
