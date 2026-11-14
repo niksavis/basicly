@@ -40,8 +40,17 @@ vault_config = _load("vault_config.py", "basicly_tracker_kit_vault_config")
 vault_init = _load("vault_init.py", "basicly_tracker_kit_vault_init")
 vault_view = _load("vault_view.py", "basicly_tracker_kit_vault_view")
 vault_write = _load("vault_write.py", "basicly_tracker_kit_vault_write")
+ledger_freeze = _load("ledger_freeze.py", "basicly_tracker_kit_ledger_freeze")
+
+
+def check_frozen() -> None:
+    config = vault_config.load(Path.cwd())
+    if config is not None:
+        ledger_freeze.check(config.path.parent / ledger_freeze.LEDGER)
+
 
 READS = frozenset({
+    "commit-check",
     "list",
     "ready",
     "show",
@@ -206,6 +215,7 @@ def presented(ledger: Path, clock: Clock, *, all_projects: bool, asked: str) -> 
     config = configured(ledger, asked)
     if config is None:
         return None
+    ledger_freeze.check(config.path.parent / ledger_freeze.LEDGER)
     clone = vault_clone.locate(_state_root(), config.vault)
     template = Path(ledger) if Path(ledger).is_dir() else None
     want = vault_view.Want(config.prefix, all_projects, template)

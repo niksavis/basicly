@@ -1,0 +1,1 @@
+- Keep legacy tracker kits usable without a vault, refuse missing vault capabilities before writes, and freeze migrated local history behind a tracked file with archive integrity checks and canonical commit ownership checks.

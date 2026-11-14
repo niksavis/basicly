@@ -186,6 +186,10 @@ def admission(
     directory: Path | str, given: WriteContext | Redactor | None, environ: Mapping[str, str]
 ) -> tuple[Path, WriteContext | Redactor | None]:
     ledger = Path(directory)
+    config = vault_config.load(ledger)
+    if config is not None:
+        frozen = _load("ledger_freeze.py", "basicly_tracker_kit_ledger_freeze")
+        frozen.check(config.path.parent / frozen.LEDGER)
     _redactor, clock = parts(given)
     if isinstance(given, WriteContext) and given.target is not None:
         return view_of(given.target, given.source or ledger), given

@@ -175,6 +175,8 @@ def _import_findings(rel: str, tree: ast.Module, allowed: frozenset[str]) -> lis
 
 
 def _path_rule(text: str) -> str | None:
+    if text == ".basicly/ledger":
+        return None
     if _ENGINE_SOURCE.search(text):
         return "reads-engine-source"
     outside_kit = (match := _DOT_BASICLY.search(text)) and match.group(1) not in _KIT_DATA_DIRS

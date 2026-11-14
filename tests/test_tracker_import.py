@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,24 @@ from basicly.tracker_import import _REFUSALS_SHOWN
 
 REPO = Path(__file__).parent.parent
 KIT = Path(".basicly") / "core" / "kit" / "tracker"
+
+
+@pytest.fixture(autouse=True)
+def _independent_kit_process(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setattr(owned_store, "_kit_modules", {})
+    monkeypatch.setattr(owned_store, "_kit_sources", {})
+    previous = {
+        name: module
+        for name, module in sys.modules.items()
+        if name.startswith("basicly_tracker_kit_")
+    }
+    for name in previous:
+        monkeypatch.delitem(sys.modules, name)
+    yield
+    for name in list(sys.modules):
+        if name.startswith("basicly_tracker_kit_"):
+            del sys.modules[name]
+
 
 _EXPORT = [
     {

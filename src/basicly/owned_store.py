@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
+import inspect
 import os
 import sys
 import time
@@ -59,6 +61,7 @@ class VaultViewError(TrackerDivergenceError):
 _mode_reader: list[Callable[[Path], str]] = []
 
 _kit_modules: dict[tuple[str, str], ModuleType] = {}
+_kit_sources: dict[ModuleType, bytes] = {}
 
 
 _prefix_reader: list[Callable[[Path], str | None]] = []
@@ -119,6 +122,10 @@ def _vault_reach(repo_root: Path) -> tuple[Any, Any, Any] | None:
         raise VaultViewError(str(exc)) from None
     if config is None:
         return None
+    try:
+        packaged_kit("ledger_freeze").check(config.path.parent / LEDGER_DIR)
+    except ValueError as exc:
+        raise VaultViewError(str(exc)) from exc
     view = packaged_kit(VAULT_VIEW_KIT_MODULE)
     try:
         state = view.vault_clone.state_root(os.environ, Path.home(), windows=os.name == "nt")
@@ -188,27 +195,88 @@ def packaged_kit(module_name: str = DEFAULT_KIT_MODULE) -> Any:
     return _load_kit(packaged_kit_dir(), module_name)
 
 
-def _refuse_a_kit_of_another_version(repo_root: Path, directory: Path) -> None:
+def _vault_kit_error(repo_root: Path) -> TrackerDivergenceError:
+    installed = _kit_version_reader[0](repo_root) if _kit_version_reader else None
+    label = f" installed by basicly {installed}" if installed is not None else ""
+    return TrackerDivergenceError(
+        f"the project tracker kit{label} is older than the vault-write capability "
+        f"required by basicly {__version__}; run `basicly install` to update the kit"
+    )
+
+
+def _refuse_a_kit_without_vault_admission(repo_root: Path, directory: Path) -> bool:
 
     resolved = str(directory.resolve())
-    if resolved in _agreed_kits or not _kit_version_reader:
-        return
-    installed = _kit_version_reader[0](repo_root)
-    if installed is not None and installed != __version__:
+    config = packaged_kit(VAULT_CONFIG_KIT_MODULE)
+    try:
+        configured = config.load(repo_root)
+    except ValueError as exc:
+        raise TrackerDivergenceError(str(exc)) from exc
+    if configured is None:
+        return False
+    try:
+        packaged_kit("ledger_freeze").check(configured.path.parent / LEDGER_DIR)
+    except ValueError as exc:
+        raise TrackerDivergenceError(str(exc)) from exc
+    if resolved in _agreed_kits:
+        return True
+    source = directory / "vault_write.py"
+    try:
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as exc:
         raise TrackerDivergenceError(
-            f"the tracker kit at {KIT_TRACKER_DIR.as_posix()} was installed by basicly "
-            f"{installed}, and this engine is basicly {__version__}; run `basicly install` "
-            "to update the kit"
-        )
+            "the project tracker kit cannot provide vault write admission; "
+            "run `basicly install` to update it"
+        ) from exc
+    declared = {node.name for node in tree.body if isinstance(node, ast.FunctionDef | ast.ClassDef)}
+    declared.update(
+        target.id
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    )
+    if not {"admission", "_vault_refused", "Write", "WriteContext", "land"} <= declared:
+        raise _vault_kit_error(repo_root)
     _agreed_kits.add(resolved)
+    return True
 
 
 def kit(repo_root: Path, module_name: str = DEFAULT_KIT_MODULE) -> Any:
 
     directory = Path(repo_root) / KIT_TRACKER_DIR
-    if directory.is_dir():
-        _refuse_a_kit_of_another_version(Path(repo_root), directory)
-    return _load_kit(directory, module_name)
+    vault = directory.is_dir() and _refuse_a_kit_without_vault_admission(Path(repo_root), directory)
+    module = _load_kit(directory, module_name)
+    if vault and module_name == "commands":
+        adapter = getattr(module, "vault_write", None)
+        calls = (
+            ("admission", (None, None, {}), {}),
+            ("_vault_refused", (None, None, []), {}),
+            ("WriteContext", (None, None), {}),
+            ("Write", (None, None, None, {}), {}),
+            ("land", (None, []), {"repeat": False}),
+        )
+        for name, args, kwargs in calls:
+            function = getattr(adapter, name, None)
+            if not callable(function):
+                raise _vault_kit_error(Path(repo_root))
+            try:
+                inspect.signature(function).bind(*args, **kwargs)
+            except (TypeError, ValueError) as exc:
+                raise _vault_kit_error(Path(repo_root)) from exc
+    return module
+
+
+def _remember_kit_sources() -> None:
+    for name, module in list(sys.modules.items()):
+        if not name.startswith(_KIT_MODULE_PREFIX) or module is None or module in _kit_sources:
+            continue
+        source = getattr(module, "__file__", None)
+        if source is not None:
+            try:
+                _kit_sources[module] = hashlib.sha256(Path(source).read_bytes()).digest()
+            except OSError:
+                continue
 
 
 def _load_kit(directory: Path, module_name: str) -> Any:
@@ -222,10 +290,20 @@ def _load_kit(directory: Path, module_name: str) -> Any:
             )
         raise TrackerDivergenceError(f"the tracker kit is not installed at {directory}")
     key = (str(directory.resolve()), module_name)
-    if (cached := _kit_modules.get(key)) is not None:
-        return cached
     loaded_as = _KIT_MODULE_PREFIX + module_name
-    module = sys.modules.get(loaded_as)
+    module = _kit_modules.get(key) or sys.modules.get(loaded_as)
+    if module is not None:
+        _remember_kit_sources()
+        try:
+            matches = _kit_sources.get(module) == hashlib.sha256(source.read_bytes()).digest()
+        except OSError:
+            matches = False
+        if not matches:
+            raise TrackerDivergenceError(
+                "another checkout's tracker kit is already loaded with different code; "
+                "start a fresh basicly process for this checkout "
+                "before reading or writing its tracker"
+            )
     if module is None:
         spec = importlib.util.spec_from_file_location(loaded_as, source)
         if spec is None or spec.loader is None:
@@ -239,5 +317,6 @@ def _load_kit(directory: Path, module_name: str) -> Any:
             raise TrackerDivergenceError(
                 f"the tracker kit at {directory} did not load: {exc}"
             ) from exc
+    _remember_kit_sources()
     _kit_modules[key] = module
     return module
