@@ -60,7 +60,7 @@ def _snapshot(gitdir: Path) -> Path:
         raise HookInstallError(
             "The guard snapshot is a symlink. Preserve it and inspect the clone."
         )
-    destination.mkdir(parents=True, exist_ok=True, mode=0o700)
+    destination.mkdir(parents=True, exist_ok=True, mode=0o777 if os.name == "nt" else 0o700)
     for name, content in contents.items():
         path = destination / name
         if path.is_symlink() or (path.exists() and path.read_bytes() != content):
