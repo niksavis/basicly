@@ -1,0 +1,1 @@
+- Install a shared native Git push guard in tracker-owned vault clones. Provide vault-protect for manual clones. Refuse unrelated files, invalid events, extra refs, deletion and rewritten history before publication. Keep existing hooks and ordinary code pushes intact. No extra hook dependency is required.

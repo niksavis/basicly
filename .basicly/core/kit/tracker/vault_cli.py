@@ -38,6 +38,7 @@ vault_claim = _load("vault_claim.py", "basicly_tracker_kit_vault_claim")
 vault_commit_hook = _load("vault_commit_hook.py", "basicly_tracker_kit_vault_commit_hook")
 vault_config = _load("vault_config.py", "basicly_tracker_kit_vault_config")
 vault_init = _load("vault_init.py", "basicly_tracker_kit_vault_init")
+vault_push_hooks = _load("vault_push_hooks.py", "basicly_tracker_kit_vault_push_hooks")
 vault_view = _load("vault_view.py", "basicly_tracker_kit_vault_view")
 vault_write = _load("vault_write.py", "basicly_tracker_kit_vault_write")
 ledger_freeze = _load("ledger_freeze.py", "basicly_tracker_kit_ledger_freeze")
@@ -292,6 +293,7 @@ def shown(ledger: Path, records: list, clock: Clock) -> list:
 
 HANDLERS: dict[str, Callable[[argparse.Namespace, Any], dict[str, object]]] = {
     "init-vault": _init_vault,
+    "protect-vault": lambda a, _c: vault_push_hooks.install(Path(a.repository)),
     "vault-check": lambda a, _c: vault_shapes.report(a.vault, a.ref),
     "vault-show": lambda a, _c: _vault_show(a),
     "fetch": _fetch_vault,

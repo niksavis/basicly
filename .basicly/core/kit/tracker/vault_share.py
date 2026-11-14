@@ -160,8 +160,8 @@ def _build(clone: Any, head: str, writer: str, batch: list, git: Runner) -> str:
 
 
 def _push(clone: Any, commit: str, runner: Runner, timeout: float) -> None:
-    hooks = clone.folder / "no-hooks"
-    hooks.mkdir(exist_ok=True)
+    vault_clone.protect(clone)
+    hooks = clone.bare / "hooks"
     pushed = [
         "-c",
         f"core.hooksPath={hooks}",

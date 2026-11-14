@@ -541,3 +541,34 @@ Confirmation uses the `confirm` command and the completion JSON shape in `GUIDAN
 `close <ledger> <id> --reason "<delivered outcome>"` defaults to completed and requires
 current review and confirmation. `--resolution cancelled` records reasoned abandonment,
 keeps history, and does not satisfy a blocking dependency. `stats` includes `by_resolution`.
+
+## Vault push protection
+
+The tracker installs a native Git pre-push guard in its private vault clones.
+Standalone and harness installations use the same guard without another hook dependency.
+The guard lives in Git metadata and adds no files to the vault history.
+It checks every outgoing commit and allows only the vault main branch.
+Unrelated files, invalid event envelopes, extra refs, deletion and history rewrites refuse before publication.
+Normal code repositories keep their existing push behavior.
+
+A manually cloned vault needs explicit protection.
+
+```sh
+basicly-tracker vault-protect --repository VAULT-CLONE
+```
+
+The harness ships the same command through its tracker kit.
+
+```sh
+python3 .basicly/core/kit/tracker/cli.py vault-protect --repository VAULT-CLONE
+```
+
+Installation preserves an unrelated hook and refuses rather than replacing it.
+Installing again refreshes tracker-owned protection.
+The guard keeps a private copy of its validator and still needs its selected Python runtime.
+Direct vault format edits require reviewed maintenance and are refused by the normal guard.
+
+This is local protection against mistakes.
+Git does not copy hooks into new clones automatically.
+A deliberately bypassed hook or an unprotected clone remains outside this protection.
+Remote protection against deletion and history rewrites remains a separate host setting.

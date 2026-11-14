@@ -176,6 +176,18 @@ def _provider_hits(paths: list[Path]) -> list[str]:
     ]
 
 
+def test_init_refuses_unrelated_generated_content_before_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare = _empty(tmp_path)
+    initializer = cli.vault_cli.vault_init
+    files = {**initializer.genesis_files(), "application.py": "print('unrelated')\n"}
+    monkeypatch.setattr(initializer, "genesis_files", lambda: files)
+    with pytest.raises(ValueError, match="commit"):
+        initializer.init(str(bare), confirmed=True)
+    assert _git("ls-remote", str(bare), cwd=tmp_path) == ""
+
+
 def test_no_vault_or_tracker_module_calls_gh_or_a_host_api(tmp_path: Path) -> None:
     control = tmp_path / "planted.py"
     control.write_text('runner(["gh", "api", "repos"])\nurl = "https://api.github.com/x"\n')

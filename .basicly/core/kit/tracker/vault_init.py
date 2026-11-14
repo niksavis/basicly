@@ -26,6 +26,7 @@ def _load(file_name: str, module_name: str) -> Any:
 
 git_runner = _load("git_runner.py", "basicly_tracker_kit_git_runner")
 vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
+vault_push_guard = _load("vault_push_guard.py", "basicly_tracker_kit_vault_push_guard")
 
 SUGGESTED_NAME = "backlog-vault"
 FIX = 1
@@ -147,6 +148,10 @@ def init(text: str, *, confirmed: bool, runner: Runner = git_runner.run) -> dict
         if not confirmed:
             return {**shown, "pushed": False, "next": f"vault-init --vault {url} --yes"}
         commit = _commit(work, runner)
+        vault_push_guard.check(
+            work / "genesis.git",
+            f"refs/heads/main {commit} refs/heads/main {'0' * len(commit)}\n",
+        )
         pushed = ["push", "--quiet", git_runner.END_OF_OPTIONS, url, f"{commit}:refs/heads/main"]
         runner(pushed, work / "genesis.git", allow_file=allow_file)
     return {**shown, "pushed": True, "genesis": commit}

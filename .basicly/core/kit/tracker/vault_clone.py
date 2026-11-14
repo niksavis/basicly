@@ -126,9 +126,15 @@ def private(path: Path) -> None:
     path.chmod(0o700)
 
 
+def protect(clone: Clone) -> None:
+    installer = _load("vault_push_hooks.py", "basicly_tracker_kit_vault_push_hooks")
+    installer.install(clone.bare, owned=True)
+
+
 def _ensure(clone: Clone, runner: Runner, timeout: float) -> None:
 
     if (clone.bare / "HEAD").is_file():
+        protect(clone)
         return
     partial = clone.folder / "clone.partial"
     if partial.exists():
@@ -137,6 +143,7 @@ def _ensure(clone: Clone, runner: Runner, timeout: float) -> None:
     runner(["config", "remote.origin.url", clone.url], partial, timeout=timeout)
     runner(["config", "remote.origin.fetch", FETCH_REFSPEC], partial, timeout=timeout)
     partial.rename(clone.bare)
+    protect(clone)
 
 
 def ref(clone: Clone, name: str, runner: Runner, timeout: float) -> str:

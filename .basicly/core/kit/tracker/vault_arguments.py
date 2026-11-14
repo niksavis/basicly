@@ -73,6 +73,17 @@ def status() -> argparse.ArgumentParser:
     return _form("status", "show the data age without a network call", "status-vault")
 
 
+def protect() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="cli.py vault-protect",
+        description="Install the vault push guard in an existing clone.",
+    )
+    parser.add_argument("verb", choices=["vault-protect"])
+    parser.add_argument("--repository", type=Path, required=True, help="the existing vault clone")
+    parser.set_defaults(command="protect-vault")
+    return parser
+
+
 def init() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cli.py vault-init", description="push the genesis into an empty vault repository"
@@ -98,8 +109,9 @@ FORMS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "unassign": unassign,
     "commit-msg": commit_msg,
     "vault-init": init,
+    "vault-protect": protect,
 }
-VAULT_ONLY = frozenset({"vault-init"})
+VAULT_ONLY = frozenset({"vault-init", "vault-protect"})
 LEDGER_FORMS = frozenset({"comment", "claim", "unassign", "sync", "fsck"})
 
 
@@ -111,4 +123,4 @@ def names_a_ledger(argv: Sequence[str]) -> bool:
 
 
 def routed_verbs(argv: Sequence[str]) -> frozenset:
-    return frozenset(FORMS) - ({argv[0]} if names_a_ledger(argv) else set())
+    return frozenset(FORMS) - {"vault-protect"} - ({argv[0]} if names_a_ledger(argv) else set())
