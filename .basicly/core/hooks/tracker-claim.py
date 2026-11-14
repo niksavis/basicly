@@ -13,6 +13,15 @@ PLACES = ((Path(".basicly") / "core" / "kit" / "tracker" / "cli.py").as_posix(),
 LOCATE = Path(__file__).resolve().parent.parent / "kit" / "tracker" / "locate.py"
 
 
+def _harness(module: Any) -> Any:
+    factory = getattr(module, "harness", None)
+    if not callable(factory):
+        raise ImportError(
+            "the tracker kit lacks vault harness support; reinstall with `basicly install --force`"
+        )
+    return factory()
+
+
 def _locate() -> Any:
     spec = importlib.util.spec_from_file_location("basicly_tracker_kit_locate", LOCATE)
     if spec is None or spec.loader is None:
@@ -135,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         or (root / ".basicly/ledger-archive").exists()
     ):
         try:
-            _locate().harness().harness_config(root)
+            _harness(_locate()).harness_config(root)
         except (ValueError, OSError, ImportError) as exc:
             sys.stderr.write(f"tracker-claim: {exc}\n")
             return 1

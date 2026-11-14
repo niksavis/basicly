@@ -330,3 +330,37 @@ def test_hooks_without_a_vault_kit_keep_plain_behavior_or_name_reinstallation(
     assert "Traceback" not in result.stderr
     if configured:
         assert "reinstall" in result.stderr
+
+
+@pytest.mark.parametrize("entry", ["claim", "fold", "path-scan"])
+@pytest.mark.parametrize("generation", ["matching", "released-locator"])
+def test_installed_hooks_name_the_missing_locator_capability_without_touching_frozen_data(
+    tmp_path: Path, bare: Path, entry: str, generation: str
+) -> None:
+    root = _frozen(tmp_path, bare)
+    installed = root / ".basicly/core/hooks"
+    installed.mkdir(parents=True)
+    script = installed / f"tracker-{entry}.py"
+    shutil.copy2(HOOKS / script.name, script)
+    if generation == "released-locator":
+        shutil.copy2(
+            ROOT / "tests/fixtures/tracker-locate-v0.45.0.py",
+            root / ".basicly/core/kit/tracker/locate.py",
+        )
+    before = _history(root)
+    config = root / ".basicly-tracker.toml"
+    original_config = config.read_bytes()
+    message = root / "MSG"
+    message.write_text("docs: fixture\n\nRecord: none\n", encoding="utf-8")
+    command = [sys.executable, str(script), *([str(message)] if entry == "claim" else [])]
+
+    result = subprocess.run(command, cwd=root, capture_output=True, text=True, check=False)
+
+    assert result.returncode == (1 if generation == "released-locator" else 0), (
+        result.stdout + result.stderr
+    )
+    if generation == "released-locator":
+        assert "basicly install --force" in result.stderr
+    assert "Traceback" not in result.stdout + result.stderr
+    assert _history(root) == before
+    assert config.read_bytes() == original_config
