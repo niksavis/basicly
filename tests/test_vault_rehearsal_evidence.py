@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+SOURCE = Path(__file__).resolve().parents[1] / ".scripts/vault_rehearsal_evidence.py"
+
 
 def test_changed_evidence_runner_invalidates_retained_pass(tmp_path: Path) -> None:
     source = Path(__file__).resolve().parents[1] / ".scripts/vault_rehearsal_evidence.py"
@@ -31,3 +33,40 @@ def test_changed_evidence_runner_invalidates_retained_pass(tmp_path: Path) -> No
     assert before["helper_sha256"] != after["helper_sha256"]
     with pytest.raises(ValueError, match="source changed"):
         module["require_source"](output, after)
+
+
+def test_a_freeze_success_report_requires_the_real_file_guard(tmp_path: Path) -> None:
+    module = runpy.run_path(str(SOURCE))
+    repository = tmp_path / "repository"
+    ledger = repository / ".basicly/ledger"
+    ledger.mkdir(parents=True)
+    original = ledger / "events-0001.jsonl"
+    original.write_text("original\n", encoding="utf-8")
+
+    def reported_success(_argv: list[str], _cwd: Path) -> str:
+        return json.dumps({"frozen": True})
+
+    with pytest.raises(ValueError, match="did not install its file guard and archive"):
+        module["freeze_consumer"](repository, "proof", tmp_path, tmp_path, reported_success)
+
+    assert original.read_text() == "original\n"
+
+
+def test_a_freeze_success_report_cannot_hide_changed_archive_bytes(tmp_path: Path) -> None:
+    module = runpy.run_path(str(SOURCE))
+    repository = tmp_path / "repository"
+    ledger = repository / ".basicly/ledger"
+    ledger.mkdir(parents=True)
+    (ledger / "events-0001.jsonl").write_text("original\n", encoding="utf-8")
+    archive = ledger.with_name("ledger-archive")
+
+    def corrupt_archive(_argv: list[str], _cwd: Path) -> str:
+        ledger.rename(archive)
+        ledger.write_text("guard\n", encoding="utf-8")
+        (archive / "events-0001.jsonl").write_text("changed\n", encoding="utf-8")
+        return json.dumps({"frozen": True})
+
+    with pytest.raises(ValueError, match="changed original ledger bytes"):
+        module["freeze_consumer"](repository, "proof", tmp_path, tmp_path, corrupt_archive)
+
+    assert (archive / "events-0001.jsonl").read_text() == "changed\n"

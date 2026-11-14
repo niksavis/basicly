@@ -311,39 +311,12 @@ def standalone(module: Any, source: Path, env: dict[str, str], out: Path) -> dic
     return compare(module, source, out / "standalone-export")
 
 
-def control(args: argparse.Namespace, module: Any) -> dict[str, Any]:
+def control(args: argparse.Namespace, module: Any, env: dict[str, str]) -> dict[str, Any]:
     out = args.out.resolve()
     require_source(out)
-    if args.control_repository is None:
-        raise ValueError("control needs --control-repository")
-    target = out / "control-repository"
-    shutil.copytree(
-        args.control_repository.resolve(), target, ignore=shutil.ignore_patterns(".env*")
-    )
-    marker = (target / ".tracker-consumer-proof.json").read_bytes()
-    before = {
-        p.name: p.read_bytes() for p in module.events.ledger_paths(target / ".basicly/ledger")
-    }
-    clone = module.vault_clone.locate(out / "control-state", str(out / "vault-0.git"))
-    imported = module.ledger_to_vault(
-        target / ".basicly/ledger", module.Import(clone, lambda: 1000.0, True)
-    )
-    after = {p.name: p.read_bytes() for p in module.events.ledger_paths(target / ".basicly/ledger")}
-    if before != after or marker != (target / ".tracker-consumer-proof.json").read_bytes():
-        raise ValueError("the prepared control source changed")
-    for repository, prefix in ((target, "proof"), (out / "workspace-consumer", "dev")):
-        (repository / ".basicly-tracker.toml").write_text(
-            f'vault = "{out / "vault-0.git"}"\nprefix = "{prefix}"\n'
-        )
-    source = module.ledger_events(target / ".basicly/ledger")
-    report = {
-        "result": "pass",
-        "provenance": provenance(),
-        "records": len({event.record for event in source}),
-        "source_events": len(source),
-        "imported_events": imported["events"],
-        "source_bytes_unchanged": True,
-    }
+    report = evidence.control(args, module, ROOT, env, run)
+    report["provenance"] = provenance()
+    require_source(out)
     (out / "control.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
 
@@ -376,7 +349,7 @@ def main() -> int:
         report = (
             complete(args, env)
             if args.part == "complete"
-            else (part1(args, load(), env) if args.part == "part1" else control(args, load()))
+            else (part1(args, load(), env) if args.part == "part1" else control(args, load(), env))
         )
     except (ValueError, OSError) as error:
         print(f"rehearsal stopped: {error}", file=sys.stderr)

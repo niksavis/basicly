@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
 KIT = Path(".basicly/core/kit")
+type Runner = Callable[[list[str], Path, dict[str, str], Path], str]
 
 
 def files_digest(root: Path, paths: Iterable[Path]) -> str:
@@ -115,4 +117,90 @@ def complete(
         "result": "pass",
         "provenance": source,
         "parts": ["part1", "control", "lifecycle", "ledger-compat"],
+    }
+
+
+def freeze_consumer(
+    repository: Path,
+    prefix: str,
+    out: Path,
+    root: Path,
+    run: Callable[[list[str], Path], str],
+) -> dict[str, object]:
+    ledger = repository / ".basicly/ledger"
+    original = [path.relative_to(ledger) for path in ledger.rglob("*") if path.is_file()]
+    if any(part.startswith(".env") for path in original for part in path.parts):
+        raise ValueError(
+            "the scratch ledger contains protected environment files; use a clean fixture"
+        )
+    before = files_digest(ledger, (ledger / path for path in original))
+    result = json.loads(
+        run(
+            [
+                sys.executable,
+                "-I",
+                str(root / KIT / "tracker/cli.py"),
+                "migrate",
+                ".basicly/ledger",
+                "--to-vault",
+                "--freeze",
+                "--prefix",
+                prefix,
+                "--vault",
+                str(out / "vault-0.git"),
+                "--state",
+                str(out / "freeze-state" / prefix),
+            ],
+            repository,
+        )
+    )
+    archive = ledger.with_name("ledger-archive")
+    if result.get("frozen") is not True or not ledger.is_file() or not archive.is_dir():
+        raise ValueError("the consumer freeze did not install its file guard and archive")
+    if before != files_digest(archive, (archive / path for path in original)):
+        raise ValueError("the consumer freeze changed original ledger bytes")
+    current = {path.relative_to(archive) for path in archive.rglob("*") if path.is_file()}
+    if current - set(original) - {Path(".events.lock")}:
+        raise ValueError("the consumer freeze added unexpected archive files")
+    return {"prefix": prefix, "frozen": True, "original_files_unchanged": True}
+
+
+def control(
+    args: argparse.Namespace, module: Any, root: Path, env: dict[str, str], run: Runner
+) -> dict[str, Any]:
+    out = args.out.resolve()
+    if args.control_repository is None:
+        raise ValueError("control needs --control-repository")
+    target = out / "control-repository"
+    shutil.copytree(
+        args.control_repository.resolve(), target, ignore=shutil.ignore_patterns(".env*")
+    )
+    marker = (target / ".tracker-consumer-proof.json").read_bytes()
+    before = {
+        p.name: p.read_bytes() for p in module.events.ledger_paths(target / ".basicly/ledger")
+    }
+    clone = module.vault_clone.locate(out / "control-state", str(out / "vault-0.git"))
+    imported = module.ledger_to_vault(
+        target / ".basicly/ledger", module.Import(clone, lambda: 1000.0, True)
+    )
+    after = {p.name: p.read_bytes() for p in module.events.ledger_paths(target / ".basicly/ledger")}
+    if before != after or marker != (target / ".tracker-consumer-proof.json").read_bytes():
+        raise ValueError("the prepared control source changed")
+    source = module.ledger_events(target / ".basicly/ledger")
+
+    def invoke(argv: list[str], cwd: Path) -> str:
+        return run(argv, cwd, env, out)
+
+    frozen = []
+    for repository, prefix in ((target, "proof"), (out / "workspace-consumer", "dev")):
+        frozen.append(freeze_consumer(repository, prefix, out, root, invoke))
+    if marker != (target / ".tracker-consumer-proof.json").read_bytes():
+        raise ValueError("the prepared control marker changed during freezing")
+    return {
+        "result": "pass",
+        "records": len({event.record for event in source}),
+        "source_events": len(source),
+        "imported_events": imported["events"],
+        "source_bytes_unchanged": True,
+        "frozen_consumers": frozen,
     }
