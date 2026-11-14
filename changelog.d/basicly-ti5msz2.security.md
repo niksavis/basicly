@@ -1,1 +1,1 @@
-- Restrict Windows tracker state to the current user before fetching private vault data. Protect inherited access, verify the access list, and refuse files, junctions or permission failures before Git runs.
+- Create Windows tracker state with current-user ownership and protected access. Check existing descendants before fetching. Refuse broad access, foreign owners, hardlinks and reparse points while preserving existing state and queued events.

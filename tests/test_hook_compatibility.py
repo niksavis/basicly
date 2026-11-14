@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
     os.name != "nt", reason="This hook consumer checks native Windows access lists."
 )
 def test_vault_state_stays_private_when_the_commit_hook_fetches(tmp_path: Path) -> None:
-    report = fetch_private_state(tmp_path, hook=True)
+    report = fetch_private_state(tmp_path, scenario="hook")
     assert report["only_current_user"]
     assert report["hook_refused_missing_id"]
 

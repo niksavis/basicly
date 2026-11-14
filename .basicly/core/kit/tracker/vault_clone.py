@@ -108,8 +108,10 @@ def private(path: Path) -> None:
             _load("windows_permissions.py", "basicly_tracker_kit_windows_permissions").private(path)
         except OSError as error:
             raise CloneError(
-                "could not restrict Windows vault state to the current user; "
-                "set BASICLY_TRACKER_STATE to a private NTFS directory and retry"
+                "Windows vault state is not private; "
+                "preserve the existing folder and queued events; "
+                "correct its ownership and access lists or set BASICLY_TRACKER_STATE to an empty "
+                "NTFS directory, then retry"
             ) from error
         return
     path.mkdir(parents=True, exist_ok=True)

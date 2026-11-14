@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ctypes
+from collections.abc import Iterator
+from contextlib import contextmanager
 from ctypes import wintypes
 from functools import lru_cache
 from pathlib import Path
@@ -10,6 +12,7 @@ POINTER = ctypes.c_void_p
 POINTER_OUT = ctypes.POINTER(POINTER)
 DWORD_OUT = ctypes.POINTER(wintypes.DWORD)
 DACL_INFORMATION = 4
+OWNER_INFORMATION = 1
 PROTECTED_DACL_INFORMATION = 0x80000000
 FILE_ALL_ACCESS = 0x1F01FF
 
@@ -24,6 +27,16 @@ class SecurityAttributes(ctypes.Structure):
 
 class FileAttributes(ctypes.Structure):
     _fields_ = [("attributes", wintypes.DWORD), ("tag", wintypes.DWORD)]
+
+
+class FileStandard(ctypes.Structure):
+    _fields_ = [
+        ("allocated", ctypes.c_longlong),
+        ("size", ctypes.c_longlong),
+        ("links", wintypes.DWORD),
+        ("pending", ctypes.c_ubyte),
+        ("directory", ctypes.c_ubyte),
+    ]
 
 
 class AclSize(ctypes.Structure):
@@ -90,6 +103,10 @@ def _api() -> tuple[Any, Any]:
             wintypes.BOOL,
             [POINTER, ctypes.POINTER(wintypes.BOOL), POINTER_OUT, ctypes.POINTER(wintypes.BOOL)],
         ),
+        "GetSecurityDescriptorControl": (
+            wintypes.BOOL,
+            [POINTER, ctypes.POINTER(wintypes.WORD), DWORD_OUT],
+        ),
         "SetSecurityInfo": (
             wintypes.DWORD,
             [wintypes.HANDLE, ctypes.c_int, wintypes.DWORD, POINTER, POINTER, POINTER, POINTER],
@@ -150,7 +167,7 @@ def _descriptor(kernel: Any, security: Any, sid: int) -> Any:
     try:
         _check(
             security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                f"D:P(A;OICI;FA;;;{name.value})", 1, ctypes.byref(descriptor), None
+                f"O:{name.value}D:P(A;OICI;FA;;;{name.value})", 1, ctypes.byref(descriptor), None
             )
         )
         return descriptor
@@ -158,14 +175,23 @@ def _descriptor(kernel: Any, security: Any, sid: int) -> Any:
         kernel.LocalFree(name)
 
 
-def _verify(kernel: Any, security: Any, handle: Any, sid: int) -> None:
-    acl, descriptor = POINTER(), POINTER()
+def _verify(kernel: Any, security: Any, handle: Any, sid: int, *, directory: bool) -> bool:
+    owner, acl, descriptor = POINTER(), POINTER(), POINTER()
     code = security.GetSecurityInfo(
-        handle, 1, DACL_INFORMATION, None, None, ctypes.byref(acl), None, ctypes.byref(descriptor)
+        handle,
+        1,
+        OWNER_INFORMATION | DACL_INFORMATION,
+        ctypes.byref(owner),
+        None,
+        ctypes.byref(acl),
+        None,
+        ctypes.byref(descriptor),
     )
     if code:
         raise _error(code)
     try:
+        if not owner.value or not security.EqualSid(owner, sid):
+            raise OSError("The vault state is owned by another principal.")
         if not acl.value:
             raise OSError("The vault state has no restrictive access list.")
         size, pointer = AclSize(), POINTER()
@@ -178,13 +204,78 @@ def _verify(kernel: Any, security: Any, handle: Any, sid: int) -> None:
         ace = ctypes.cast(pointer, ctypes.POINTER(AllowedAce)).contents
         if (
             ace.kind != 0
-            or ace.flags != 3
+            or ace.flags & ~0x10 != (3 if directory else 0)
             or ace.mask != FILE_ALL_ACCESS
             or not security.EqualSid(pointer.value + AllowedAce.sid.offset, sid)
         ):
             raise OSError("The vault state is not private to the current user.")
+        control, revision = wintypes.WORD(), wintypes.DWORD()
+        _check(
+            security.GetSecurityDescriptorControl(
+                descriptor, ctypes.byref(control), ctypes.byref(revision)
+            )
+        )
+        return bool(control.value & 0x1000)
     finally:
         kernel.LocalFree(descriptor)
+
+
+@contextmanager
+def _opened(kernel: Any, path: Path, *, root: bool) -> Iterator[tuple[Any, bool]]:
+    handle = kernel.CreateFileW(str(path), 0x60080, 3 if root else 7, None, 3, 0x2200000, None)
+    if handle == POINTER(-1).value:
+        raise _error()
+    try:
+        actual = FileAttributes()
+        _check(
+            kernel.GetFileInformationByHandleEx(
+                handle, 9, ctypes.byref(actual), ctypes.sizeof(actual)
+            )
+        )
+        directory = bool(actual.attributes & 0x10)
+        if actual.attributes & 0x400 or (root and not directory):
+            raise OSError("The vault state must be a directory without a reparse point.")
+        if not directory:
+            standard = FileStandard()
+            _check(
+                kernel.GetFileInformationByHandleEx(
+                    handle, 1, ctypes.byref(standard), ctypes.sizeof(standard)
+                )
+            )
+            if standard.links != 1:
+                raise OSError("The vault state contains a hardlinked file.")
+        yield handle, directory
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _tree(kernel: Any, security: Any, path: Path, sid: int) -> None:
+    pending = list(path.iterdir())
+    while pending:
+        child = pending.pop()
+        try:
+            with _opened(kernel, child, root=False) as (handle, directory):
+                _verify(kernel, security, handle, sid, directory=directory)
+                if directory:
+                    pending.extend(child.iterdir())
+        except FileNotFoundError:
+            continue
+
+
+def _protect(security: Any, handle: Any, descriptor: Any) -> None:
+    present, defaulted, acl = wintypes.BOOL(), wintypes.BOOL(), POINTER()
+    _check(
+        security.GetSecurityDescriptorDacl(
+            descriptor, ctypes.byref(present), ctypes.byref(acl), ctypes.byref(defaulted)
+        )
+    )
+    if not present or not acl.value:
+        raise OSError("The private vault access list could not be constructed.")
+    code = security.SetSecurityInfo(
+        handle, 1, DACL_INFORMATION | PROTECTED_DACL_INFORMATION, None, None, acl, None
+    )
+    if code:
+        raise _error(code)
 
 
 def private(path: Path) -> None:
@@ -202,33 +293,13 @@ def private(path: Path) -> None:
             error = _error()
             if getattr(error, "winerror", None) != 183:
                 raise error
-        handle = kernel.CreateFileW(str(path), 0x60080, 3, None, 3, 0x2200000, None)
-        if handle == POINTER(-1).value:
-            raise _error()
-        try:
-            actual = FileAttributes()
-            _check(
-                kernel.GetFileInformationByHandleEx(
-                    handle, 9, ctypes.byref(actual), ctypes.sizeof(actual)
-                )
-            )
-            if not actual.attributes & 0x10 or actual.attributes & 0x400:
-                raise OSError("The vault state must be a directory without a reparse point.")
-            present, defaulted, acl = wintypes.BOOL(), wintypes.BOOL(), POINTER()
-            _check(
-                security.GetSecurityDescriptorDacl(
-                    descriptor, ctypes.byref(present), ctypes.byref(acl), ctypes.byref(defaulted)
-                )
-            )
-            if not present or not acl.value:
-                raise OSError("The private vault access list could not be constructed.")
-            code = security.SetSecurityInfo(
-                handle, 1, DACL_INFORMATION | PROTECTED_DACL_INFORMATION, None, None, acl, None
-            )
-            if code:
-                raise _error(code)
-            _verify(kernel, security, handle, sid)
-        finally:
-            kernel.CloseHandle(handle)
+        with _opened(kernel, path, root=True) as (handle, directory):
+            protected = _verify(kernel, security, handle, sid, directory=directory)
+            _tree(kernel, security, path, sid)
+            if not protected:
+                _protect(security, handle, descriptor)
+                _tree(kernel, security, path, sid)
+            if not _verify(kernel, security, handle, sid, directory=directory):
+                raise OSError("The private vault access list still permits inheritance.")
     finally:
         kernel.LocalFree(descriptor)
