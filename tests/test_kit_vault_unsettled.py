@@ -392,3 +392,22 @@ def test_cancel_preserves_a_malformed_release_intent_instead_of_publishing_it(
     assert "fsck --repair" in result.stdout
     assert path.read_bytes() == original
     assert clone_api.valid_ids(clone) == before
+
+
+def test_unassign_retries_the_existing_pending_claim_before_checking_its_holder(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "one")
+    clone_api.fetch(clone, clock=time.time)
+    attempt = _claim(clone, state)
+    (clone.folder / vault_claim.vault_share.SHARED_AT).write_text(str(time.time()))
+
+    result = _cli(tmp_path, state, bare, "unassign", ID)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    clone_api.fetch(clone, clock=time.time)
+    assert attempt["id"] in clone_api.valid_ids(clone)
+    shared = _cli(tmp_path, state, bare, "sync", "--urgent")
+    assert shared.returncode == 0, shared.stdout + shared.stderr
+    clone_api.fetch(clone, clock=time.time)
+    assert vault_claim.holder(clone, ID) is None

@@ -69,13 +69,17 @@ def _queued(clone: Any) -> list[dict]:
 _KEPT = (ValueError, OSError, events.LedgerError, git_runner.GitRunnerError)
 
 
-def due_share(clone: Any, state: Path, clock: Clock, *, now: bool = False) -> dict | None:
+def due_share(
+    clone: Any, state: Path, clock: Clock, *, now: bool = False, claims_only: bool = False
+) -> dict | None:
 
     pending = _queued(clone)
     if not pending:
         return None
     settlement = _load("vault_unsettled.py", "basicly_tracker_kit_vault_unsettled")
     unsettled = settlement.has_pending(clone)
+    if claims_only and not unsettled:
+        return None
     if not (unsettled or now or slot_due(clone, clock)):
         return None
     plan = vault_share.Plan(
