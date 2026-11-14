@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from basicly import __version__, owned_store, redact, ui
+from basicly import __version__, owned_store, redact, tracker_board_json, ui
 
 QUERIES_KIT_MODULE = "queries"
 BOARD_KIT = "board"
@@ -164,6 +164,16 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 def cmd_list(args: argparse.Namespace) -> int:
     try:
+        if getattr(args, "json", False) and getattr(args, "all_projects", False):
+            _report(
+                tracker_board_json.report(
+                    Path.cwd(),
+                    status=getattr(args, "status", None),
+                    limit=getattr(args, "limit", None),
+                    query=getattr(args, "query", ""),
+                )
+            )
+            return 0
         ledger = _vault_ledger(Path.cwd(), getattr(args, "all_projects", False))
     except ValueError as error:
         ui.fail(str(error))
@@ -294,6 +304,9 @@ def add_parsers(tracker_sub: Any) -> None:
     owned_store.packaged_kit("arguments").record_view_arguments(show)
 
     listing = tracker_sub.add_parser("list", help="Print the records the ledger holds")
+    listing.add_argument(
+        "--json", action="store_true", help="Print the board JSON contract with --all-projects"
+    )
     listing.add_argument(
         "--status", action="append", default=None, help="Only records at this status; repeat it"
     )

@@ -356,12 +356,20 @@ python3 .basicly/kit/tracker/cli.py stats .basicly/ledger
 
 ### commit-check
 
-The check the `commit-msg` hook runs; you do not run it yourself. It reads the commit
+The check the `commit-msg` hook runs; you do not run it yourself. In local ledger mode it reads the commit
 message file and the staged paths, and refuses a commit that changes files outside the
 ledger unless the committer (`git config user.name`) holds a record the message names in
 progress or closed. A ledger with no record yet passes, and the files a kit install manages
 (`.basicly/kit/`, the tracker and board skills, `.gitignore`, `.gitattributes`) do not count,
 so the install commit works.
+
+With `.basicly-tracker.toml`, installed standalone and harness claim hooks use the native
+vault protocol below. The bundled tracker kit supplies this capability without an engine.
+The hooks verify the frozen `.basicly/ledger` file and its complete archive before checking claims.
+The harness path scan and ledger fsck read the canonical project view, including local queued writes.
+The fold hook preserves the frozen files. Harness landing refuses a lane that changes frozen
+history or its vault binding. Preserve that lane and inspect its late events with
+`migrate LEDGER --to-vault --preview` before importing them and rebasing onto the frozen destination.
 
 With `--vault`, `commit-msg` checks the message file against the vault claims of this session
 (`--session`, else `BASICLY_TRACKER_SESSION`). It exits 1 when the message names no record id
@@ -396,6 +404,21 @@ Every record, filtered by `--status` and cut by `--limit`.
 ```sh
 python3 .basicly/kit/tracker/cli.py list .basicly/ledger --status open --limit 20
 ```
+
+With the basicly engine installed, a board can read every project in the configured vault:
+
+```sh
+basicly tracker list --json --all-projects
+```
+
+The response has `read_at` (UTC), `vault_head` (the captured published commit) and
+`records`. Each record has `id`, `title`, `status`, `holder`, `priority`, `project` and
+`ready`. A holder is `{ "writer": "...", "session": "..." }` or `null`; it comes from
+the canonical claim, rather than a historical assignee field. Readiness uses each
+project's template and the shared dependency graph. Own unshared records and changes
+are included with `sharing: pending`; `vault_head` still names the published baseline.
+The existing `--status`, `--query` and `--limit` filters also apply. A repository without
+vault configuration refuses `--all-projects` and names `.basicly-tracker.toml`.
 
 ## Shape
 

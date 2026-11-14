@@ -146,6 +146,10 @@ def present_ledger(repo_root: Path, *, all_projects: bool = False) -> Path:
     return ledger
 
 
+def vault_context(repo_root: Path) -> tuple[Any, Any, Any] | None:
+    return _vault_reach(repo_root)
+
+
 def readable_ledger(repo_root: Path) -> Path:
 
     try:
