@@ -18,4 +18,5 @@ def test_actual_engine_write_reports_and_events_match_the_released_engine(
     report = proof.compare("v0.45.0", tmp_path / "engine-proof")
 
     assert report["result"] == "pass"
-    assert report["forms"] == 6
+    assert report["forms"] == 9
+    assert report["reads"] == 5

@@ -6,6 +6,7 @@ import importlib
 import io
 import json
 import os
+import shlex
 import shutil
 import subprocess  # nosec B404 - the proof reads a local released source archive
 import sys
@@ -56,6 +57,38 @@ def _engine(tag: str, target: Path) -> None:
             path.write_bytes(stream.read())
 
 
+def _hook_checks(repository: Path, record: str, paths: list[Path]) -> dict[str, object]:
+    catalog = importlib.import_module("basicly.catalog")
+    source = catalog.bundled_catalog_root() / "hooks/tracker-claim.py"
+    hook = repository / ".git/hooks/commit-msg"
+    hook.write_text(
+        "#!/bin/sh\nexec " + shlex.join([sys.executable, str(source)]) + ' "$@"\n',
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+    (repository / "change.txt").write_text("A checked engine consumer change\n", encoding="utf-8")
+    env = dict(os.environ)
+    checked(
+        ["git", "add", "--", "change.txt", *(str(path.relative_to(repository)) for path in paths)],
+        repository,
+        env,
+    )
+    missing = run(["git", "commit", "-q", "-m", "fix: no record"], repository, env)
+    if missing.returncode != 1 or "record" not in missing.stderr:
+        raise ValueError("the actual engine claim hook accepted a commit without a record")
+    held = run(
+        ["git", "commit", "-q", "-m", f"fix: retain engine behavior ({record})"], repository, env
+    )
+    if held.returncode:
+        raise ValueError("the actual engine claim hook refused the held record: " + held.stderr)
+    return {
+        "missing_exit": missing.returncode,
+        "missing_stderr": missing.stderr,
+        "held_exit": held.returncode,
+        "held_stderr": held.stderr,
+    }
+
+
 def worker(repository: Path) -> dict[str, Any]:
     cli = importlib.import_module("basicly.cli")
     owned_store = importlib.import_module("basicly.owned_store")
@@ -68,20 +101,31 @@ def worker(repository: Path) -> dict[str, Any]:
     (ledger / "template.json").write_text(json.dumps({"prefix": "proof"}), encoding="utf-8")
     commands = owned_store.kit(repository, "commands")
     fixed_ids(commands.events)
-    calls: list[dict[str, object]] = []
+    checked(
+        ["git", "add", KIT.as_posix(), str(Path(LEDGER) / "template.json")],
+        repository,
+        dict(os.environ),
+    )
+    checked(
+        ["git", "commit", "-q", "-m", "chore: install the consumer kit"],
+        repository,
+        dict(os.environ),
+    )
+    calls: list[dict[str, Any]] = []
 
-    def invoke(*argv: str) -> None:
+    def invoke(*argv: str, read: bool = False) -> None:
         commands.events.wall_clock = lambda clock=None: (
             clock or (lambda: 1767225600.0 + len(calls) * 60)
         )
         output, errors = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            code = cli.main(["tracker", "write", "--", *argv])
+            code = cli.main(["tracker", *([] if read else ["write", "--"]), *argv])
         calls.append({
             "argv": argv,
             "exit": code,
             "stdout": output.getvalue(),
             "stderr": errors.getvalue(),
+            "read": read,
         })
         if code:
             raise ValueError(f"engine {argv[0]} failed: {output.getvalue()}{errors.getvalue()}")
@@ -97,6 +141,20 @@ def worker(repository: Path) -> dict[str, Any]:
         CRITERION,
     )
     record = next(iter(commands.events.fold(commands.events.read_events(ledger)[0]).records))
+    invoke("create", "Dependency control", "--type", "task")
+    other = next(
+        name
+        for name in commands.events.fold(commands.events.read_events(ledger)[0]).records
+        if name != record
+    )
+    invoke("dep", "add", record, other, "--type", "blocks")
+    invoke("dep", "remove", record, other, "--type", "blocks")
+    observed = run(COMMAND, repository, dict(os.environ))
+    if observed.returncode or observed.stdout.strip() != "saved":
+        raise ValueError("the actual engine gate command failed")
+    invoke(
+        "gate", "report", record, "--gate", "verify", "--provider", "consumer", "--status", "pass"
+    )
     invoke("comments", "add", record, "The engine keeps old kit behavior.")
     invoke("update", record, "--priority", "1")
     invoke(
@@ -105,6 +163,7 @@ def worker(repository: Path) -> dict[str, Any]:
         "--evidence",
         json.dumps({"checks": [{"criterion": CRITERION, "command": COMMAND, "expected": "saved"}]}),
     )
+    invoke("update", record, "--assignee", "consumer", "--status", "in_progress")
     observed = run(COMMAND, repository, dict(os.environ))
     if observed.returncode or observed.stdout.strip() != "saved":
         raise ValueError("the engine confirmation command failed")
@@ -124,11 +183,27 @@ def worker(repository: Path) -> dict[str, Any]:
         }),
     )
     invoke("close", record, "--reason", "The real command printed saved")
+    for argv in (
+        ("list",),
+        ("show", record),
+        ("ready", "--json"),
+        ("blocked", "--json"),
+        ("stats", "--json"),
+    ):
+        invoke(*argv, read=True)
     found, unreadable = commands.events.read_events(ledger)
     if unreadable:
         raise ValueError("the engine produced unreadable history")
+    mirror = importlib.import_module("basicly.mirror")
+    usage = importlib.import_module("basicly.tracker_usage")
+    offered = set(mirror._MIRRORED_WRITES) | {"review", "confirm"}
+    exercised = {usage.split_invocation(list(row["argv"]))[0] for row in calls if not row["read"]}
+    if exercised != offered or not {"create", "comments add"} <= offered:
+        raise ValueError("the engine proof does not cover every offered write form")
     return {
         "calls": calls,
+        "forms": sorted(offered),
+        "hook": _hook_checks(repository, record, commands.events.ledger_paths(ledger)),
         "events": [json.loads(commands.events.to_json(event)) for event in found],
     }
 
@@ -160,7 +235,9 @@ def compare(tag: str, output: Path) -> dict[str, object]:
         )
     return {
         "result": "pass",
-        "forms": len(reports["candidate"]["calls"]),
+        "forms": len(reports["candidate"]["forms"]),
+        "reads": sum(bool(row["read"]) for row in reports["candidate"]["calls"]),
+        "hook": "actual uncited refusal and held-record Git commit passed",
         "comparison": "engine-driven reports and events match exactly",
         "baseline": tag,
     }

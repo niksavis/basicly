@@ -469,7 +469,7 @@ snapshot of the present cannot give that.
 ### 4.7 Vault attachment and frozen local history
 
 The standalone kit includes `ledger_freeze.py`. It protects the local ledger when a
-project switches to a vault. The engine uses the same checks. A project after attachment
+project switches to a vault. Engine tracker reads and writes use the same checks. A project after attachment
 keeps a tracked file at `.basicly/ledger` and its original directory at
 `.basicly/ledger-archive/`. The file blocks old tools from creating local event shards.
 The marker binds the archive fingerprint to the configured vault and prefix.
@@ -496,6 +496,10 @@ An existing source directory must move while its legacy writer lock stays held.
 Native Windows refuses this directory rename in the measured compatibility controls.
 Finish such a migration on a source host that supports the locked move. Native Windows
 consumers can use a verified frozen checkout without changing its marker or configuration.
+
+The engine isolates kit modules by directory and source snapshot. Sibling modules
+share their types inside that namespace. Older kits keep their original source and
+observable ledger behavior. A source or policy change gets a new namespace.
 
 ## 5. Import and coexistence with a tracker being replaced
 

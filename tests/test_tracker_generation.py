@@ -80,8 +80,9 @@ def _logs(repo: Path) -> dict[str, bytes]:
 
 
 @pytest.mark.parametrize("same_generation", [False, True])
-def test_a_warm_process_reuses_only_identical_project_module_code(
-    tmp_path: Path, same_generation: bool
+@pytest.mark.parametrize("reverse", [False, True])
+def test_a_warm_process_keeps_each_project_and_generation_separate(
+    tmp_path: Path, same_generation: bool, reverse: bool
 ) -> None:
     old_parent, new_parent = tmp_path / "old", tmp_path / "new"
     old_parent.mkdir()
@@ -91,17 +92,27 @@ def test_a_warm_process_reuses_only_identical_project_module_code(
     before = (_logs(old), _logs(new))
     driver = (
         "from pathlib import Path; from basicly import owned_store; import sys; "
-        "owned_store.kit(Path.cwd(), 'commands'); "
-        "owned_store.kit(Path(sys.argv[1]), 'commands')"
+        "roots=[(Path.cwd(),False),(Path(sys.argv[1]),sys.argv[2]=='new')]; "
+        "roots=roots[::-1] if sys.argv[3]=='reverse' else roots; "
+        "modules=[owned_store.kit(root,'commands') for root,_ in roots]; "
+        "assert all(Path(module.__file__).resolve()=="
+        "root/owned_store.KIT_TRACKER_DIR/'commands.py' "
+        "for module,(root,_) in zip(modules,roots)); "
+        "assert all(callable(getattr(module.vault_write,'admission',None))==want "
+        "for module,(_,want) in zip(modules,roots)); "
+        "assert modules[0].events is not modules[1].events"
     )
 
-    done = _run(old, "-c", driver, str(new))
+    done = _run(
+        old,
+        "-c",
+        driver,
+        str(new),
+        "old" if same_generation else "new",
+        "reverse" if reverse else "forward",
+    )
 
-    if same_generation:
-        assert done.returncode == 0, done.stdout + done.stderr
-    else:
-        assert done.returncode != 0
-        assert "fresh basicly process" in done.stderr
+    assert done.returncode == 0, done.stdout + done.stderr
     assert (_logs(old), _logs(new)) == before
 
 
