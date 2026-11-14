@@ -70,8 +70,10 @@ The command prints configuration and writes nothing.
 Use `--name` to distinguish registrations for different repositories.
 Keep user configuration private because it contains the repository's local path.
 
-Codex requires `env_vars` to forward the tracker session into MCP.
+Codex requires `env_vars` to forward tracker identity and state selection into MCP.
 The generated configuration includes that field.
+Both client configurations forward the holder and optional state locations.
+The server and Git hooks must use the same state location to share the machine writer identity.
 The [Codex MCP guide](https://developers.openai.com/codex/mcp) describes the configuration.
 The [Claude MCP guide](https://code.claude.com/docs/en/mcp) describes its client configuration.
 

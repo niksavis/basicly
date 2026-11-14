@@ -36,7 +36,8 @@ basicly-tracker mcp-config --client codex --repository REPOSITORY-ROOT
 ```
 
 Merge its server entry into the named destination and preserve unrelated settings.
-Codex needs the generated `env_vars` field to forward tracker identity into MCP.
+Codex needs the generated `env_vars` field to forward tracker identity and state selection into MCP.
+Use the same state location for the server and Git hooks.
 The foreground launcher gives each new client a distinct tracker session.
 
 ```sh

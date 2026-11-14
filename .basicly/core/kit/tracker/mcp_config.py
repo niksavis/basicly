@@ -61,7 +61,8 @@ def configuration(args: argparse.Namespace) -> dict[str, Any]:
             f"[mcp_servers.{args.name}]",
             f"command = {json.dumps(command, ensure_ascii=False)}",
             f"args = {json.dumps(argv, ensure_ascii=False)}",
-            'env_vars = ["BASICLY_TRACKER_SESSION", "BASICLY_HOLDER"]',
+            'env_vars = ["BASICLY_TRACKER_SESSION", "BASICLY_HOLDER", '
+            '"BASICLY_TRACKER_STATE", "XDG_STATE_HOME", "LOCALAPPDATA"]',
             f"[mcp_servers.{args.name}.env]",
             'AI_AGENT = "codex"',
         ]
@@ -77,6 +78,10 @@ def configuration(args: argparse.Namespace) -> dict[str, Any]:
                             **server,
                             "env": {
                                 "BASICLY_TRACKER_SESSION": "${BASICLY_TRACKER_SESSION}",
+                                "BASICLY_HOLDER": "${BASICLY_HOLDER:-}",
+                                "BASICLY_TRACKER_STATE": "${BASICLY_TRACKER_STATE:-}",
+                                "XDG_STATE_HOME": "${XDG_STATE_HOME:-}",
+                                "LOCALAPPDATA": "${LOCALAPPDATA:-}",
                                 "AI_AGENT": "claude",
                             },
                         }
