@@ -17,6 +17,9 @@ def _capture(repo_root: Path) -> tuple[Any, Any, Path, list[dict], list[dict], s
     view, clone, config = context
     ledger = owned_store.ledger_dir(repo_root)
     want = view.Want(config.prefix, True, ledger if ledger.is_dir() else None)
+    retry = getattr(owned_store.packaged_kit("vault_hooks"), "retry_claims", None)
+    if retry is not None:
+        retry(clone, clone.folder.parent.parent, time.time)
     view.present(clone, want, clock=time.time)
     queue = owned_store.packaged_kit("vault_queue")
     try:

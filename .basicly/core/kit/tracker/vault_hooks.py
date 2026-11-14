@@ -98,6 +98,10 @@ def _fetch_if_stale(clone: Any, clock: Clock) -> dict | None:
     return vault_clone.fetch(clone, timeout=HOOK_DEADLINE, lock_wait=HOOK_DEADLINE, clock=clock)
 
 
+def retry_claims(clone: Any, state: Path, clock: Clock) -> dict | None:
+    return due_share(clone, state, clock, claims_only=True)
+
+
 def hook(event: str, clone: Any, state: Path, *, clock: Clock) -> dict[str, object]:
 
     if event not in EVENTS:

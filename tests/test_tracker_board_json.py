@@ -309,3 +309,55 @@ def test_a_reviewed_task_keeps_its_cross_project_dependency_context(
     ledger = owned_store.present_ledger(repo, all_projects=True)
     found = events.read_events(ledger)[0]
     assert process.confirmation_report(found, OTHER)["review_current"] is current_review
+
+
+def test_the_board_retries_a_pending_claim_before_capturing_its_canonical_holder(
+    tmp_path: Path,
+    bare: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, repo = _vault_repo(tmp_path, bare)
+    context = owned_store.vault_context(repo)
+    assert context is not None
+    view, clone, _ = context
+    view.present(clone, view.Want("acme"), clock=time.time)
+    queue = owned_store.packaged_kit("vault_queue")
+    hooks = owned_store.packaged_kit("vault_hooks")
+    state = tmp_path / "state"
+    attempt = queue.write(
+        clone,
+        [{"kind": "claim", "record": FIRST}],
+        state=state,
+        origin=queue.Origin("s1", False, time.time),
+    )["events"][0]
+    (clone.folder / hooks.vault_share.SHARED_AT).write_text(str(time.time()), encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["tracker", "list", "--json", "--all-projects"]) == 0
+
+    report = json.loads(capsys.readouterr().out)
+    row = next(row for row in report["records"] if row["id"] == FIRST)
+    assert row["holder"] == {"writer": queue.writer_of(state), "session": "s1"}
+    assert attempt in view.vault_clone.valid_ids(clone)
+    assert (
+        report["vault_head"]
+        == vault_view.git_runner.run(["rev-parse", "refs/heads/main"], bare).strip()
+    )
+
+
+def test_the_board_reads_with_a_kit_that_predates_the_optional_claim_retry(
+    tmp_path: Path,
+    bare: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, repo = _vault_repo(tmp_path, bare)
+    hooks = owned_store.packaged_kit("vault_hooks")
+    monkeypatch.delattr(hooks, "retry_claims")
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["tracker", "list", "--json", "--all-projects"]) == 0
+
+    report = json.loads(capsys.readouterr().out)
+    assert {row["id"] for row in report["records"]} == {FIRST, SECOND}
