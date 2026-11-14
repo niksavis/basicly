@@ -163,6 +163,45 @@ def test_a_foreign_owner_readback_refuses_before_protecting_the_directory(
     assert access(state) == before
 
 
+@pytest.mark.skipif(
+    os.name != "nt", reason="This consumer checks native Windows default ownership."
+)
+def test_default_file_owner_is_checked_before_creating_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    permissions = load("windows_permissions")
+    kernel, security = permissions._api()
+    convert = security.ConvertStringSidToSidW
+    convert.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_void_p)]
+    convert.restype = ctypes.c_int
+    foreign = ctypes.c_void_p()
+    assert convert("S-1-1-0", ctypes.byref(foreign))
+    observed: list[bool] = []
+
+    class ForeignDefaultOwner:
+        def __getattr__(self, name: str) -> Any:
+            if name == "GetTokenInformation":
+                return self.get_token_information
+            return getattr(security, name)
+
+        def get_token_information(self, *args: Any) -> int:
+            result = int(security.GetTokenInformation(*args))
+            if result and args[1] == 4:
+                ctypes.cast(args[2], ctypes.POINTER(ctypes.c_void_p))[0] = foreign.value
+                observed.append(True)
+            return result
+
+    monkeypatch.setattr(permissions, "_api", lambda: (kernel, ForeignDefaultOwner()))
+    state = tmp_path / "uncreated"
+    try:
+        with pytest.raises(OSError, match="default owner"):
+            permissions.private(state)
+    finally:
+        kernel.LocalFree(foreign)
+    assert observed
+    assert not state.exists()
+
+
 @pytest.mark.skipif(os.name != "nt", reason="This consumer checks native Windows inheritance.")
 def test_an_owned_private_directory_gets_protection_without_losing_data(tmp_path: Path) -> None:
     permissions = load("windows_permissions")
@@ -189,22 +228,33 @@ def test_concurrent_state_hardening_keeps_the_current_users_access(tmp_path: Pat
     assert access(state)["only_current_user"]
 
 
+@pytest.mark.parametrize("default_owner", [False, True])
 def test_permission_failure_refuses_fetch_before_git_runs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, default_owner: bool
 ) -> None:
     clone_module = load("vault_clone")
 
+    class DefaultOwnerError(OSError):
+        pass
+
     def refuse(_path: Path) -> None:
+        if default_owner:
+            raise DefaultOwnerError("The default owner is not the current user.")
         raise OSError("The security API refused.")
 
     def unexpected_git(*_args: Any, **_kwargs: Any) -> str:
         pytest.fail("Fetch started Git before securing the state directory.")
 
     monkeypatch.setattr(clone_module, "os", SimpleNamespace(name="nt"))
-    monkeypatch.setattr(clone_module, "_load", lambda *_args: SimpleNamespace(private=refuse))
+    monkeypatch.setattr(
+        clone_module,
+        "_load",
+        lambda *_args: SimpleNamespace(private=refuse, DefaultOwnerError=DefaultOwnerError),
+    )
     clone = clone_module.Clone(
         "https://example.invalid/vault.git", tmp_path / "state/vaults/one", False
     )
-    with pytest.raises(clone_module.CloneError, match="BASICLY_TRACKER_STATE"):
+    expected = "default owner" if default_owner else "BASICLY_TRACKER_STATE"
+    with pytest.raises(clone_module.CloneError, match=expected):
         clone_module.fetch(clone, runner=unexpected_git, clock=time.time)
     assert not (tmp_path / "state").exists()

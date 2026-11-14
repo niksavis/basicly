@@ -17,6 +17,10 @@ PROTECTED_DACL_INFORMATION = 0x80000000
 FILE_ALL_ACCESS = 0x1F01FF
 
 
+class DefaultOwnerError(OSError):
+    pass
+
+
 class SecurityAttributes(ctypes.Structure):
     _fields_ = [
         ("length", wintypes.DWORD),
@@ -147,16 +151,26 @@ def _check(success: Any) -> None:
         raise _error()
 
 
+def _token_data(security: Any, token: Any, kind: int) -> Any:
+    size = wintypes.DWORD()
+    security.GetTokenInformation(token, kind, None, 0, ctypes.byref(size))
+    if not size.value:
+        raise _error()
+    buffer = ctypes.create_string_buffer(size.value)
+    _check(security.GetTokenInformation(token, kind, buffer, size.value, ctypes.byref(size)))
+    return buffer
+
+
 def _user(kernel: Any, security: Any) -> Any:
-    token, size = POINTER(), wintypes.DWORD()
+    token = POINTER()
     _check(security.OpenProcessToken(kernel.GetCurrentProcess(), 8, ctypes.byref(token)))
     try:
-        security.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
-        if not size.value:
-            raise _error()
-        buffer = ctypes.create_string_buffer(size.value)
-        _check(security.GetTokenInformation(token, 1, buffer, size.value, ctypes.byref(size)))
-        return buffer
+        user, owner = _token_data(security, token, 1), _token_data(security, token, 4)
+        user_sid = ctypes.cast(user, ctypes.POINTER(POINTER))[0]
+        owner_sid = ctypes.cast(owner, ctypes.POINTER(POINTER))[0]
+        if not user_sid or not owner_sid or not security.EqualSid(user_sid, owner_sid):
+            raise DefaultOwnerError("The Windows default owner differs from the current user.")
+        return user
     finally:
         kernel.CloseHandle(token)
 

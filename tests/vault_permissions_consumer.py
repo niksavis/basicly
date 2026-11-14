@@ -109,7 +109,7 @@ def _refuse_unchanged(
     before_bytes = _snapshot(state)
     refused = json.loads(run(fetch, expected=1).stdout)
     assert "BASICLY_TRACKER_STATE" in refused["refused"], refused
-    assert "preserve" in refused["refused"], refused
+    assert "Preserve" in refused["refused"], refused
     assert access(state) == before_acl
     assert access(original) == before_file
     assert _snapshot(state) == before_bytes
@@ -140,11 +140,17 @@ def fetch_private_state(root: Path, *, scenario: str = "fresh") -> dict:
     if scenario not in {"fresh", "hook", "existing", "explicit-child", "broad-root"}:
         raise ValueError("Unknown Windows state consumer scenario.")
     env = os.environ.copy()
-    for name in ("CI", "BR_AGENT_NAME", "AI_AGENT", "CLAUDECODE"):
+    for name in [key for key in env if key.startswith("GIT_")] + [
+        "CI",
+        "BR_AGENT_NAME",
+        "AI_AGENT",
+        "CLAUDECODE",
+    ]:
         env.pop(name, None)
     env.update(
         BASICLY_TRACKER_EPHEMERAL="1",
         BASICLY_TRACKER_SESSION="acl-consumer",
+        BASICLY_TRACKER_STATE=str(root / "initial-state"),
         BASICLY_HOLDER="acl-consumer",
         HOME=str(root / "home"),
         USERPROFILE=str(root / "home"),
