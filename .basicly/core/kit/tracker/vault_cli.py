@@ -68,6 +68,15 @@ READS = frozenset({
 
 
 def route_ledger_alias(args: argparse.Namespace) -> None:
+    if args.command == "commit-check":
+        config = vault_write.config_of(args.directory)
+        if config is not None:
+            harness_config(config.path.parent)
+            args.command = "commit-msg-vault"
+            args.vault = config.vault
+            args.state = None
+            args.session = None
+        return
     if args.command not in {"claim", "unassign"}:
         return
     config = vault_write.config_of(args.directory)
@@ -260,6 +269,30 @@ def configured(start: Path, asked: str) -> Any:
             f"one here; run it without {asked}"
         )
     return config
+
+
+def harness_config(root: Path) -> Any:
+    config = vault_config.load(Path(root).resolve())
+    base = config.path.parent if config is not None else Path(root)
+    archive = ledger_freeze.check_source(base / ledger_freeze.LEDGER)
+    if config is not None and archive is None:
+        raise vault_config.ConfigError(
+            f"the configured vault lacks its frozen {ledger_freeze.LEDGER.as_posix()} file "
+            "and preserved archive; "
+            f"finish `migrate {ledger_freeze.LEDGER.as_posix()} --to-vault --freeze "
+            "--prefix NAME --vault ADDRESS` "
+            "before using harness hooks"
+        )
+    return config
+
+
+def harness_ledger(root: Path, clock: Clock) -> Path | None:
+    config = harness_config(root)
+    if config is None:
+        return None
+    return presented(
+        config.path.parent / ledger_freeze.LEDGER, clock, all_projects=False, asked=""
+    )[0]
 
 
 def presented(ledger: Path, clock: Clock, *, all_projects: bool, asked: str) -> Any:

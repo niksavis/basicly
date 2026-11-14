@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
-from . import checkout, pytest_inputs, tracker, tracker_paths
+from . import checkout, owned_store, pytest_inputs, tracker, tracker_paths
 from .config import VerifyConfig, load_verify_config
 from .verify_artifact import CheckResult, VerifyReport, write_run_artifact
 from .verify_receipt import changed_components, components
@@ -70,6 +70,8 @@ def capture(root: Path, session: LandingSession, mode: str, *, record: str = "")
 def _capture(root: Path, session: LandingSession, mode: str, record: str) -> LandingSubject:
     destination = _head(root, f"refs/heads/{session.base}")
     candidate = _head(root, f"refs/heads/{session.branch}")
+    if reason := frozen_tracker_change(root, destination, candidate):
+        raise ValueError(reason)
     if _head(session.path, "HEAD") != candidate:
         raise ValueError("Candidate checkout differs from its branch; retry landing")
     inputs = _inputs(session.path, mode, candidate)
@@ -87,6 +89,32 @@ def _capture(root: Path, session: LandingSession, mode: str, record: str) -> Lan
     )
 
 
+def frozen_tracker_change(root: Path, destination: str, candidate: str) -> str:
+    if owned_store.packaged_kit("vault_cli").harness_config(root) is None:
+        return ""
+    changed = checkout.git(
+        [
+            "diff",
+            "--name-only",
+            "-z",
+            destination,
+            candidate,
+            "--",
+            ".basicly/ledger",
+            ".basicly/ledger-archive",
+            ".basicly-tracker.toml",
+        ],
+        cwd=root,
+    ).stdout
+    if changed:
+        return (
+            "The candidate changes frozen tracker data or its vault binding; "
+            "preserve the lane, inspect late events with `migrate LEDGER --to-vault --preview`, "
+            "then import and rebase onto the frozen destination before landing"
+        )
+    return ""
+
+
 def _changed(root: Path, subject: LandingSubject) -> str:
     if _head(root, f"refs/heads/{subject.base}") != subject.destination:
         return "destination reference changed; retry landing"
@@ -100,7 +128,7 @@ def _changed(root: Path, subject: LandingSubject) -> str:
     current = _inputs(workspace, subject.mode, subject.candidate)
     if current != subject.inputs:
         return changed_components(current, subject.components) or "landing inputs changed"
-    return ""
+    return frozen_tracker_change(root, subject.destination, subject.candidate)
 
 
 def changed(root: Path, subject: LandingSubject) -> str:
@@ -283,7 +311,10 @@ def guarded_merge(
         if checkout.git(["write-tree"], cwd=root).stdout.strip() != subject.tree:
             raise ValueError("Destination index differs from published tree")
         changed_paths = checkout.git(["diff", "--name-only", "-z"], cwd=root).stdout.split("\0")
-        if any(path and not tracker_paths.is_ledger_path(path) for path in changed_paths):
+        vault = owned_store.packaged_kit("vault_cli").harness_config(root) is not None
+        if any(
+            path and (vault or not tracker_paths.is_ledger_path(path)) for path in changed_paths
+        ):
             raise ValueError("Destination checkout changed during publication; preserve user work")
     return result
 

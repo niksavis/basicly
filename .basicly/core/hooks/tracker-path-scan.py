@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import getpass
+import importlib.util
 import json
 import re
 import subprocess  # nosec B404
 import sys
+import time
+from pathlib import Path
+from typing import Any
 
 _TRACKER_GLOB = re.compile(r"^\.basicly/ledger/events-.*\.jsonl$")
 
@@ -21,6 +25,16 @@ _MIN_IDENTITY_LENGTH = 4
 _FIELD_KIND = "field"
 _CREATED_KIND = "created"
 _HOLDER_FIELD = "assignee"
+
+
+def vault_ledger() -> Path | None:
+    source = Path(__file__).resolve().parent.parent / "kit/tracker/locate.py"
+    spec = importlib.util.spec_from_file_location("basicly_tracker_kit_locate", source)
+    if spec is None or spec.loader is None:
+        raise ImportError("the tracker kit is missing; reinstall basicly")
+    module: Any = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.harness().harness_ledger(Path.cwd(), time.time)
 
 
 def identity_pattern() -> re.Pattern[str] | None:
@@ -110,11 +124,24 @@ def findings(path: str, content: str) -> list[tuple[str, int, str]]:
 
 
 def main() -> int:
-    hits = [
-        finding
-        for path in staged_tracker_files()
-        for finding in findings(path, staged_content(path))
-    ]
+    try:
+        vault = vault_ledger()
+    except (ValueError, OSError, ImportError) as exc:
+        print(f"tracker-path-scan: {exc}", file=sys.stderr)
+        return 1
+    hits = (
+        [
+            finding
+            for path in sorted(vault.glob("*.jsonl"))
+            for finding in findings(f"vault/{path.name}", path.read_text(encoding="utf-8"))
+        ]
+        if vault is not None
+        else [
+            finding
+            for path in staged_tracker_files()
+            for finding in findings(path, staged_content(path))
+        ]
+    )
     if not hits:
         return 0
     print(
@@ -126,6 +153,12 @@ def main() -> int:
         print(f"  {path}:{lineno}: {rule}", file=sys.stderr)
     if len(hits) > 20:
         print(f"  … and {len(hits) - 20} more", file=sys.stderr)
+    if vault is not None:
+        print(
+            "Repair the vault input through the tracker; preserve the frozen ledger and archive.",
+            file=sys.stderr,
+        )
+        return 1
     print(
         "The log is committed and cloned by every consumer, so an absolute path or "
         "username in it is published.\n"

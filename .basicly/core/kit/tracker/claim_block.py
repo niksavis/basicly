@@ -54,8 +54,9 @@ def claim_body(ledger: str, places: Sequence[str], managed: Sequence[str]) -> st
     )
     return "\n".join((
         CLAIM_BEGIN,
-        f'if {{ [ -e "{ledger}" ] || [ -f .basicly-tracker.toml ]; }} && '
-        "! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then",
+        "if [ -f .basicly-tracker.toml ] || "
+        f'{{ [ -e "{ledger}" ] && '
+        "! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; }; then",
         '  tracker_message="$1"',
         "  tracker_check() (",
         '    tracker_index="$(mktemp -d)" || exit 1',
@@ -92,10 +93,12 @@ def claim_body(ledger: str, places: Sequence[str], managed: Sequence[str]) -> st
         '    tracker_typed="$tracker_python $tracker_file"',
         '    tracker_out=$(tracker_check "$tracker_python" "$tracker_file") ||',
         '      { echo "$tracker_out" >&2; exit 1; }',
+        "    [ ! -f .basicly-tracker.toml ] || printf '%s\\n' \"$tracker_out\" >&2",
         f'  elif [ -z "$tracker_file" ] && command -v {locate.COMMAND} >/dev/null 2>&1; then',
         f'    tracker_typed="{locate.COMMAND}"',
         f"    tracker_out=$(tracker_check {locate.COMMAND}) ||",
         '      { echo "$tracker_out" >&2; exit 1; }',
+        "    [ ! -f .basicly-tracker.toml ] || printf '%s\\n' \"$tracker_out\" >&2",
         "  else",
         '    echo "$tracker_missing" >&2',
         "    exit 1",
