@@ -32,6 +32,7 @@ labels = _load("labels")
 evidence_checks = _load("evidence_checks")
 small_task = _load("small_task")
 conversation = _load("conversation")
+redaction = _load("redact")
 small = small_task.small
 _text = evidence_checks.filled_text
 _command = evidence_checks.filled_command
@@ -274,13 +275,12 @@ def _draft(record: str, name: str, value: Mapping[str, object], writer: str) -> 
     )
 
 
-def _machine_path(checks: Sequence[Mapping[str, Any]]) -> str | None:
-
-    rules = _load("beads").MACHINE_PATH_RULES
-    for check in checks:
-        if any(pattern.search(part) for part in check["command"] for _, pattern in rules):
-            return str(check["criterion"])
-    return None
+def _safe_commands(checks: Sequence[Mapping[str, Any]]) -> None:
+    if any(redaction.text(part) != part for check in checks for part in check["command"]):
+        raise ProcessEvidenceError(
+            "Evidence command holds a machine path or private value that redaction would change. "
+            "Use python3 on PATH and paths relative to the repository."
+        )
 
 
 def review_draft(
@@ -301,12 +301,7 @@ def review_draft(
         _full_review(found, record, payload)
     if fault := _check_fault(state.fields, payload["checks"]):
         raise ProcessEvidenceError(f"Confirmation Plan refused: {fault}")
-    if (criterion := _machine_path(payload["checks"])) is not None:
-        raise ProcessEvidenceError(
-            f"Confirmation Plan command for {criterion!r} holds a machine path that the ledger "
-            "redacts, which would void the review; name the program on PATH, such as python3 "
-            "or uv run, or a path relative to the repository"
-        )
+    _safe_commands(payload["checks"])
     value = {
         **payload,
         "revision": revision(found, record, template=template),
@@ -368,6 +363,7 @@ def confirmation_draft(
         )
     if fault := _check_fault(state.fields, payload["checks"], completed=True):
         raise ProcessEvidenceError(f"Completion Confirmation refused: {fault}")
+    _safe_commands(payload["checks"])
     review = report["review"]
     if not isinstance(review, Mapping):
         raise ProcessEvidenceError("confirm requires a recorded review")
