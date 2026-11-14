@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import importlib.util
-import json
 import math
 import re
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 _HERE = Path(__file__).resolve().parent
 
@@ -28,7 +27,6 @@ def _load(name: str) -> Any:
 
 
 git_runner = _load("git_runner")
-shapes = _load("vault_shapes")
 MAIN = "refs/heads/main"
 MAX_INPUT = 1 << 20
 _EVENT_ID = re.compile(r"(?:[0-9a-f]{32}|[0-9a-f]{64})")
@@ -53,8 +51,7 @@ class PushRefusedError(ValueError):
     pass
 
 
-@dataclass(frozen=True)
-class Update:
+class Update(NamedTuple):
     new: str
     old: str
 
@@ -92,7 +89,7 @@ def _git(repository: Path, *args: str) -> str:
 
 
 def _path(path: str) -> bool:
-    if path in shapes.GENESIS_FILES or _SEGMENT.fullmatch(path):
+    if path in _load("vault_shapes").GENESIS_FILES or _SEGMENT.fullmatch(path):
         return True
     parts = path.split("/")
     return (
@@ -122,6 +119,7 @@ def _ledger(body: object, record: str) -> None:
             "A vault ledger event lacks its record data. Preserve the queue and inspect it."
         )
     codec = _load("events")
+    json = importlib.import_module("json")
     try:
         carried = codec.from_json(json.dumps(body))
         codec.accumulate(codec.Totals(), carried.kind, carried.payload)
@@ -170,7 +168,6 @@ def _event(event: Mapping[str, Any]) -> None:
 
 
 def _commits(repository: Path, update: Update) -> list[str]:
-    _git(repository, "cat-file", "-e", update.new + "^{commit}")
     first = set(update.old) == {"0"}
     if not first:
         try:
@@ -179,6 +176,7 @@ def _commits(repository: Path, update: Update) -> list[str]:
             raise PushRefusedError(
                 "Vault history rewrite is refused. Fetch the vault before retrying."
             ) from exc
+    _git(repository, "cat-file", "-e", update.new + "^{commit}")
     selected = update.new if first else update.old + ".." + update.new
     return _git(repository, "rev-list", "--reverse", selected).splitlines()
 
@@ -188,6 +186,7 @@ def check(repository: Path, text: str) -> dict[str, int]:
     count = 0
     for update in proposed:
         for commit in _commits(repository, update):
+            shapes = _load("vault_shapes")
             verdict = shapes.classify(repository, commit)
             if not verdict.valid:
                 raise PushRefusedError(

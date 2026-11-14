@@ -41,6 +41,7 @@ SEEN_REF = "refs/basicly/seen"
 RETRACTED_PREFIX = "refs/basicly/retracted/"
 REPAIRED_NAME = "repaired"
 FETCHED_NAME = "fetched"
+FETCH_GENERATION_NAME = "fetch.generation"
 VALID_NAME = "valid.ids"
 EVENTS_NAME = "valid.jsonl"
 COVERS_NAME = "valid.at"
@@ -301,6 +302,15 @@ def settle(
     return {**shown, "fetch_lock_wait_s": waited}
 
 
+@dataclass(frozen=True)
+class Fetch:
+    clock: Callable[[], float]
+    runner: Runner = git_runner.run
+    timeout: float = git_runner.DEFAULT_TIMEOUT
+    lock_wait: float = LOCK_WAIT
+    coalesce: bool = False
+
+
 def fetch(
     clone: Clone,
     *,
@@ -309,21 +319,52 @@ def fetch(
     lock_wait: float = LOCK_WAIT,
     clock: Callable[[], float],
 ) -> dict[str, object]:
+    return fetch_with(clone, Fetch(clock, runner, timeout, lock_wait))
+
+
+def fetch_with(clone: Clone, request: Fetch) -> dict[str, object]:
+
+    runner, timeout, lock_wait, clock, coalesce = (
+        request.runner,
+        request.timeout,
+        request.lock_wait,
+        request.clock,
+        request.coalesce,
+    )
 
     private(clone.folder.parent.parent)
     private(clone.folder)
     stamp = clone.folder / FETCHED_NAME
+    generation = clone.folder / FETCH_GENERATION_NAME
+    before = _read(generation) if coalesce else ""
     asked = time.monotonic()
     with events.LedgerLock(clone.folder / "fetch", timeout_s=lock_wait):
         waited = round(time.monotonic() - asked, 3)
         _ensure(clone, runner, timeout)
-        fetched = _fetch_twice(clone, runner, timeout)
+        latest = _read(generation) if coalesce else ""
+        joined = bool(latest and latest != before)
+        if joined:
+            try:
+                git_runner.writer_id(latest.strip())
+            except git_runner.GitValueError:
+                joined = False
+        if joined:
+            head = ref(clone, HEAD_REF, runner, timeout)
+            joined = bool(
+                head
+                and _read(clone.folder / COVERS_NAME).strip() == head
+                and ref(clone, SEEN_REF, runner, timeout) == head
+            )
+        fetched = joined or _fetch_twice(clone, runner, timeout)
         head = ref(clone, HEAD_REF, runner, timeout)
         if not head:
             raise CloneError(f"could not fetch {clone.url} and no earlier fetch exists; retry")
-        if fetched:
+        if joined:
+            seen = {"seen": head, "moved": False}
+        elif fetched:
             stamp.write_text(f"{clock()}\n", encoding="utf-8")
             seen = _advance(clone, head, runner, timeout)
+            durable(generation, git_runner.new_writer_id() + "\n")
         else:
             seen = {"seen": ref(clone, SEEN_REF, runner, timeout), "moved": False}
     stamped = _read(stamp).strip()
@@ -334,5 +375,6 @@ def fetch(
         "fetched": fetched,
         "age_s": age,
         "fetch_lock_wait_s": waited,
+        **({"coalesced": True} if joined else {}),
         **seen,
     }

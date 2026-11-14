@@ -150,12 +150,15 @@ def _check(ask: Ask, budget: _Budget, writer: str) -> dict[str, object] | None:
     vault_clone.private(clone.folder)
     check = f"git fetch {clone.url} refs/heads/main"
     try:
-        fetched = vault_clone.fetch(
+        fetched = vault_clone.fetch_with(
             clone,
-            clock=ask.clock,
-            runner=ask.runner,
-            timeout=budget.left(PROBE),
-            lock_wait=budget.left(),
+            vault_clone.Fetch(
+                clock=ask.clock,
+                runner=ask.runner,
+                timeout=budget.left(PROBE),
+                lock_wait=budget.left(),
+                coalesce=True,
+            ),
         )
     except vault_clone.CloneError:
         fetched = {"fetched": False}
@@ -172,7 +175,21 @@ def _check(ask: Ask, budget: _Budget, writer: str) -> dict[str, object] | None:
 def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
 
     joined_at = None
+    writer = vault_queue.writer_of(ask.state)
+
+    def decided() -> bool:
+        try:
+            with events.LedgerLock(ask.clone.folder / "fetch", timeout_s=0):
+                if made in vault_clone.valid_ids(ask.clone):
+                    return True
+                held = holder(ask.clone, ask.record)
+        except events.LockUnavailableError:
+            return False
+        return held is not None and held != (writer, ask.session)
+
     while True:
+        if decided():
+            return joined_at is not None
         stalled = joined_at is not None and joined_at - budget.left() >= min(STALL, joined_at / 2)
         plan = vault_share.Plan(
             ask.clock,
@@ -182,6 +199,7 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
             lock_wait=min(JOIN_WAIT, budget.left()),
             keep_going=False,
             unlocked=stalled,
+            stop_when=decided,
         )
         asked = budget.now()
         try:

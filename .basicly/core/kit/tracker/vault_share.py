@@ -63,6 +63,7 @@ class Plan:
     fresh: bool = False
     keep_going: bool = True
     unlocked: bool = False
+    stop_when: Callable[[], bool] | None = None
 
 
 def _text(lines: Sequence[Mapping[str, object]]) -> str:
@@ -243,21 +244,25 @@ def share(
             if stop is not None:
                 return _stopped(head, stop, clone)
             batch = [line for line in prune(clone) if line.get("writer") == writer]
-            if not batch:
+            if not batch or (plan.stop_when is not None and plan.stop_when()):
                 return {
                     "shared": total,
                     "head": head,
-                    "pending": 0,
+                    "pending": len(vault_queue.pending(clone.folder / vault_queue.QUEUE_NAME)),
                     "lock_wait_s": waited,
                     "fetch_lock_wait_s": round(fetch_waits, 3),
                 }
 
-            def git(args: list[str], budget: float = budget, **options: Any) -> str:
-                return runner(args, clone.bare, timeout=budget, **options)
+            def git(args: list[str], **options: Any) -> str:
+                return runner(args, clone.bare, timeout=_budget(plan, started, clock), **options)
 
             commit = _build(clone, head, writer, batch, git)
+            arrived = [line for line in prune(clone) if line.get("writer") == writer]
+            if arrived and arrived != batch:
+                batch = arrived
+                commit = _build(clone, head, writer, batch, git)
             try:
-                _push(clone, commit, runner, budget)
+                _push(clone, commit, runner, _budget(plan, started, clock))
             except git_runner.GitRunnerError as exc:
                 if "signature" in str(getattr(exc, "stderr", "")).lower():
                     raise ShareError(SIGNED_ONLY) from None
@@ -268,6 +273,7 @@ def share(
                     f"{len(batch)} events stay queued; run sync again"
                 ) from None
             vault_clone.durable(clone.folder / SHARED_AT, f"{plan.wall()}\n")
+            budget = _budget(plan, started, clock)
             settled = vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
             fetch_waits += float(settled.get("fetch_lock_wait_s") or 0.0)
             total += len(batch)
