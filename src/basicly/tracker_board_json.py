@@ -38,16 +38,18 @@ def _capture(repo_root: Path) -> tuple[Any, Any, Path, list[dict], list[dict], s
 
 def _ready(view: Any, found: list, published: list[dict], ledger: Path, prefix: str) -> set[str]:
     scheduler = owned_store.packaged_kit("scheduler")
-    projects: dict[str, list] = {}
-    for event in found:
-        projects.setdefault(event.record.partition("-")[0], []).append(event)
+    projects = {event.record.partition("-")[0] for event in found}
     candidates = {}
-    for project, project_events in sorted(projects.items()):
+    for project in sorted(projects):
         template = view.vault_template.carried(published, project)
         if template is None:
             template = view.templates.read(ledger) if project == prefix and ledger.is_dir() else {}
         parsed = view.templates.parse(template, ledger / view.templates.TEMPLATE_FILE)
-        candidates.update(scheduler.candidates_from_events(project_events, parsed))
+        candidates.update({
+            record: candidate
+            for record, candidate in scheduler.candidates_from_events(found, parsed).items()
+            if record.partition("-")[0] == project
+        })
     return {row.record for row in scheduler.rank(candidates).records}
 
 

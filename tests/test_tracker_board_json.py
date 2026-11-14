@@ -249,3 +249,63 @@ def test_project_readiness_uses_its_template_and_cross_project_dependencies(
     rows = {row["id"]: row for row in json.loads(capsys.readouterr().out)["records"]}
     assert rows[OTHER]["ready"] is False
     assert rows[FIRST]["ready"] is True
+
+
+@pytest.mark.parametrize("scenario", [(False, False), (False, True), (True, False), (True, True)])
+def test_a_reviewed_task_keeps_its_cross_project_dependency_context(
+    tmp_path: Path,
+    bare: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    scenario: tuple[bool, bool],
+) -> None:
+    dependency_closed, current_review = scenario
+    _, repo = _vault_repo(tmp_path, bare)
+    dependency = "acme-z9"
+    criterion = "When the dependency is complete, this work shall be offered."
+    raw = [
+        *_record(
+            OTHER,
+            description="## Context\nCross-project work needs a reviewed plan.",
+            acceptance_criteria=criterion,
+        ),
+        *_record(
+            dependency,
+            description="## Context\nThe prerequisite is delivered.",
+            acceptance_criteria="When delivered, the dependency shall close.",
+            size="small",
+        ),
+        _ev(OTHER, "edge", {"from": OTHER, "to": dependency, "type": "blocks"}, 3),
+    ]
+    if dependency_closed:
+        raw.extend([
+            _ev(dependency, "status", {"status": "closed"}, 3),
+            _ev(dependency, "field", {"name": "close_resolution", "value": "completed"}, 4),
+        ])
+    events = owned_store.packaged_kit("events")
+    process = owned_store.packaged_kit("process_evidence")
+    evidence = {
+        "checks": [
+            {
+                "criterion": criterion,
+                "command": ["python3", "check.py"],
+                "expected": "The prerequisite is closed.",
+            }
+        ]
+    }
+    review = process.review_draft(
+        [events.from_json(json.dumps(line)) for line in raw], OTHER, evidence, "t"
+    )
+    raw.append(_ev(OTHER, "field", review.payload, 4))
+    if not current_review:
+        raw.append(_ev(OTHER, "field", {"name": "title", "value": "Changed after review"}, 5))
+    _push(tmp_path, bare, "reviewed-project", _carry(raw))
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["tracker", "list", "--json", "--all-projects"]) == 0
+
+    rows = {row["id"]: row for row in json.loads(capsys.readouterr().out)["records"]}
+    assert rows[OTHER]["ready"] is (dependency_closed and current_review)
+    ledger = owned_store.present_ledger(repo, all_projects=True)
+    found = events.read_events(ledger)[0]
+    assert process.confirmation_report(found, OTHER)["review_current"] is current_review
