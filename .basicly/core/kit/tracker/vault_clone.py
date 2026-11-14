@@ -103,9 +103,27 @@ def locate(state: Path, vault: str) -> Clone:
 
 
 def private(path: Path) -> None:
+    if os.name == "nt":
+        permissions = _load("windows_permissions.py", "basicly_tracker_kit_windows_permissions")
+        try:
+            permissions.private(path)
+        except permissions.DefaultOwnerError as error:
+            raise CloneError(
+                "Windows uses a default owner other than the current user. "
+                "Run this tracker command under an account "
+                "whose default owner is its current user. "
+                "Preserve existing state and queued events."
+            ) from error
+        except OSError as error:
+            raise CloneError(
+                "Windows vault state is not private. "
+                "Preserve its existing folder and queued events. "
+                "Check the folder selected by --state or BASICLY_TRACKER_STATE. "
+                "Correct its ownership and access lists before retrying."
+            ) from error
+        return
     path.mkdir(parents=True, exist_ok=True)
-    if os.name != "nt":
-        path.chmod(0o700)
+    path.chmod(0o700)
 
 
 def _ensure(clone: Clone, runner: Runner, timeout: float) -> None:

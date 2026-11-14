@@ -1,0 +1,1 @@
+- Create Windows tracker state with current-user ownership and protected access. Check default file ownership and existing descendants before fetching. Refuse unsafe state while preserving its existing folder and queued events.
