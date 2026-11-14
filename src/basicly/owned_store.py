@@ -120,12 +120,13 @@ def _vault_reach(repo_root: Path) -> tuple[Any, Any, Any] | None:
         config = config_kit.load(Path(repo_root))
     except config_kit.ConfigError as exc:
         raise VaultViewError(str(exc)) from None
-    if config is None:
-        return None
     try:
-        packaged_kit("ledger_freeze").check(config.path.parent / LEDGER_DIR)
+        base = config.path.parent if config is not None else Path(repo_root)
+        packaged_kit("ledger_freeze").check_source(base / LEDGER_DIR)
     except ValueError as exc:
         raise VaultViewError(str(exc)) from exc
+    if config is None:
+        return None
     view = packaged_kit(VAULT_VIEW_KIT_MODULE)
     try:
         state = view.vault_clone.state_root(os.environ, Path.home(), windows=os.name == "nt")
@@ -212,12 +213,13 @@ def _refuse_a_kit_without_vault_admission(repo_root: Path, directory: Path) -> b
         configured = config.load(repo_root)
     except ValueError as exc:
         raise TrackerDivergenceError(str(exc)) from exc
-    if configured is None:
-        return False
     try:
-        packaged_kit("ledger_freeze").check(configured.path.parent / LEDGER_DIR)
+        base = configured.path.parent if configured is not None else Path(repo_root)
+        packaged_kit("ledger_freeze").check_source(base / LEDGER_DIR)
     except ValueError as exc:
         raise TrackerDivergenceError(str(exc)) from exc
+    if configured is None:
+        return False
     if resolved in _agreed_kits:
         return True
     source = directory / "vault_write.py"

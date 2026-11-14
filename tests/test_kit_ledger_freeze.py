@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -12,6 +13,8 @@ import pytest
 from tests.test_kit_vault_migrate import vault_migrate
 from tests.test_kit_vault_share import bare
 from tests.test_kit_vault_view import cli
+from tests.test_tracker_generation import KIT as LEGACY_KIT_RELATIVE
+from tests.test_tracker_generation import _legacy_kit
 
 __all__ = ["bare"]
 
@@ -256,6 +259,62 @@ def test_an_interrupted_file_creation_preserves_archive_and_can_resume(
     assert freeze.fingerprint(ledger.with_name("ledger-archive")) == expected
     freeze.freeze(ledger, "local-vault.git", "demo", expected)
     assert freeze.check(ledger) == ledger.with_name("ledger-archive")
+
+
+@pytest.mark.parametrize("operation", ["read", "append"])
+def test_an_old_writer_after_interruption_cannot_make_new_tools_ignore_the_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    operation: str,
+) -> None:
+    ledger = _ledger(tmp_path / "project")
+    expected = freeze.fingerprint(ledger)
+    original = Path.open
+
+    def fail_marker(path: Path, *args: Any, **kwargs: Any) -> Any:
+        if path == ledger and args and args[0] == "x":
+            raise OSError("simulated interrupted marker creation")
+        return original(path, *args, **kwargs)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(Path, "open", fail_marker)
+        with pytest.raises(freeze.FreezeError, match="interrupted"):
+            freeze.freeze(ledger, "local-vault.git", "demo", expected)
+    old = tmp_path / "old-tool"
+    _legacy_kit(old)
+    done = subprocess.run(
+        [
+            sys.executable,
+            str(old / LEGACY_KIT_RELATIVE / "cli.py"),
+            "create",
+            str(ledger),
+            "--prefix",
+            "demo",
+            "--title",
+            "Old tool after interruption",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    before = freeze.fingerprint(ledger)
+    monkeypatch.chdir(ledger.parent.parent)
+
+    if operation == "read":
+        code = cli.main(["list", str(ledger)])
+        report = json.loads(capsys.readouterr().out)
+        assert code == 2, report
+        assert "archive" in report["refused"]
+    else:
+        with pytest.raises(events.LedgerError, match="archive"):
+            events.append(
+                ledger, [events.Draft("demo-a1b2", events.KIND_NOTE, {"text": "Refused"})]
+            )
+    assert freeze.fingerprint(ledger) == before
+    assert freeze.fingerprint(ledger.with_name("ledger-archive")) == expected
 
 
 def _migration(tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:

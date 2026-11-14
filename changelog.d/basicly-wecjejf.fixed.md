@@ -1,1 +1,1 @@
-- Keep legacy tracker kits usable without a vault, refuse missing vault capabilities before writes, and freeze migrated local history behind a tracked file with archive integrity checks and canonical commit ownership checks.
+- Preserve plain-ledger compatibility, refuse missing vault APIs and mixed loaded kit code before writes, and guard migrated or newly configured projects with a tracked ledger file and verified archive. Commit hooks use canonical ownership and a working Python interpreter.

@@ -105,6 +105,40 @@ def test_a_warm_process_reuses_only_identical_project_module_code(
     assert (_logs(old), _logs(new)) == before
 
 
+@pytest.mark.parametrize("operation", ["read", "write"])
+def test_the_engine_refuses_an_orphan_archive_even_without_vault_configuration(
+    tmp_path: Path, operation: str
+) -> None:
+    repo, record = _repository(tmp_path, __version__, legacy=False)
+    ledger = repo / LEDGER
+    archive = ledger.with_name("ledger-archive")
+    ledger.rename(archive)
+    old = tmp_path / "old-tool"
+    _legacy_kit(old)
+    made = _run(
+        repo,
+        str(old / KIT / "cli.py"),
+        "create",
+        LEDGER,
+        "--prefix",
+        "consumer",
+        "--title",
+        "Old writer after interruption",
+    )
+    assert made.returncode == 0, made.stdout + made.stderr
+    before = _logs(repo)
+    argv = (
+        ("list",) if operation == "read" else ("write", "--", "comments", "add", record, "Refused")
+    )
+
+    done = _run(repo, "-m", "basicly.cli", "tracker", *argv)
+
+    assert done.returncode == 1
+    assert "archive" in done.stderr
+    assert "Traceback" not in done.stderr
+    assert _logs(repo) == before
+
+
 @pytest.mark.parametrize("version", [__version__, "0.1.0", "99.0.0"])
 def test_a_supported_legacy_kit_preserves_plain_ledger_writes(tmp_path: Path, version: str) -> None:
     repo, record = _repository(tmp_path, version)

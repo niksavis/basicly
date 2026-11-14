@@ -141,11 +141,15 @@ def _transition(directory: Path) -> Iterator[None]:
 
 
 @contextmanager
-def _source_lock(directory: Path) -> Iterator[None]:
+def _source_lock(directory: Path) -> Iterator[bool]:
     source = directory if directory.is_dir() else directory.with_name(ARCHIVE)
     if not source.exists():
-        source = directory
-        source.mkdir(parents=True, exist_ok=True)
+        if directory.exists():
+            raise FreezeError(
+                "the moved ledger archive is missing; preserve the marker and restore it"
+            )
+        yield False
+        return
     backend = _load("locking")
     lock = source / backend.LEDGER_LOCK_NAME
     if lock.is_symlink():
@@ -167,9 +171,23 @@ def _source_lock(directory: Path) -> Iterator[None]:
             raise FreezeError(
                 "another writer holds the source ledger; finish its write before freezing"
             )
-        yield
+        yield True
     finally:
         os.close(handle)
+
+
+def source_path(directory: Path) -> None:
+    if (
+        directory.name != "ledger"
+        or directory.parent.name != ".basicly"
+        or directory.is_symlink()
+        or directory.parent.is_symlink()
+    ):
+        raise FreezeError(f"freeze the base checkout's ledger; {directory} is redirected or custom")
+    if (directory / "redirect").is_file():
+        raise FreezeError(
+            "freeze the base checkout; a worktree ledger redirect must not be archived"
+        )
 
 
 def freeze(
@@ -178,14 +196,9 @@ def freeze(
     config_module = _load("vault_config")
     vault = config_module.address(vault)
     text = config_module.text(vault, prefix)
-    if directory.name != "ledger" or directory.parent.name != ".basicly" or directory.is_symlink():
-        raise FreezeError(f"freeze the base checkout's ledger; {directory} is redirected or custom")
-    if (directory / "redirect").is_file():
-        raise FreezeError(
-            "freeze the base checkout; a worktree ledger redirect must not be archived"
-        )
+    source_path(directory)
     directory.parent.mkdir(parents=True, exist_ok=True)
-    with _transition(directory), _source_lock(directory):
+    with _transition(directory), _source_lock(directory) as locked:
         existing = config_module.load(directory.parent.parent)
         if existing is not None and (existing.vault != vault or existing.prefix != prefix):
             raise FreezeError(
@@ -222,10 +235,14 @@ def freeze(
             ),
         }
         try:
-            if source == directory and directory.exists():
+            if locked and source == directory and directory.exists():
                 directory.rename(archive)
             with directory.open("x", encoding="utf-8") as target:
                 target.write(json.dumps(marker, indent=2, sort_keys=True) + "\n")
+            if not locked:
+                archive.mkdir()
+            if not expected and not (archive / ".keep").exists():
+                (archive / ".keep").touch(exist_ok=False)
             if existing is None:
                 with (directory.parent.parent / config_module.CONFIG_PATH).open(
                     "x", encoding="utf-8"
@@ -239,7 +256,15 @@ def freeze(
     return {"frozen": True, "archive": str(LEDGER.with_name(ARCHIVE)), "files": len(expected)}
 
 
+def check_source(directory: Path) -> Path | None:
+    local = directory.with_name(LEDGER.name) if directory.name == ARCHIVE else directory
+    if local.name == LEDGER.name and local.parent.name == LEDGER.parent.name:
+        return check(local)
+    return None
+
+
 def refuse_append(directory: Path) -> None:
+    check_source(directory)
     if directory.is_file():
         check(directory)
         raise FreezeError(

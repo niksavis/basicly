@@ -47,6 +47,9 @@ def check_frozen() -> None:
     config = vault_config.load(Path.cwd())
     if config is not None:
         ledger_freeze.check(config.path.parent / ledger_freeze.LEDGER)
+    else:
+        root = _repository_root(Path.cwd()) or Path.cwd()
+        ledger_freeze.check_source(root / ledger_freeze.LEDGER)
 
 
 READS = frozenset({
@@ -157,6 +160,47 @@ def _repository_root(start: Path) -> Path | None:
     return next((p for p in (start, *start.parents) if (p / ".git").exists()), None)
 
 
+def _attach_source(args: argparse.Namespace, url: str) -> Path | None:
+    if not args.prefix:
+        return None
+    root = _repository_root(Path.cwd())
+    if args.prefix:
+        vault_config.text(url, args.prefix)
+        if root is None:
+            raise ValueError(
+                "vault-init --prefix needs a Git checkout; run it from the base project"
+            )
+        layout = _load("git_layout.py", "basicly_tracker_kit_git_layout")
+        metadata = layout.git_dir(root)
+        if metadata is None or not (metadata / "HEAD").is_file():
+            raise ValueError("vault-init --prefix needs a valid Git checkout")
+        if (metadata / "commondir").is_file():
+            raise ValueError("vault-init --prefix must run from the base checkout, not a worktree")
+        try:
+            actual = vault_clone.git_runner.run(["rev-parse", "--show-toplevel"], root).strip()
+        except vault_clone.git_runner.GitRunnerError:
+            raise ValueError("vault-init --prefix needs a valid Git checkout") from None
+        if Path(actual).resolve() != root.resolve():
+            raise ValueError("vault-init --prefix must run in its own base Git checkout")
+    ledger = root / ledger_freeze.LEDGER if root is not None and args.prefix else None
+    if ledger is not None:
+        ledger_freeze.source_path(ledger)
+        if vault_config.load(root) is not None:
+            raise ValueError(
+                "the project already names a vault; use status instead of vault-init --prefix"
+            )
+        if ledger.with_name(ledger_freeze.ARCHIVE).exists():
+            raise ValueError(
+                "a ledger archive already exists; finish its interrupted migration first"
+            )
+    if ledger is not None and ledger_freeze.fingerprint(ledger):
+        raise ValueError(
+            "the local ledger holds history or a template; initialize the vault without "
+            "--prefix, then use migrate --to-vault and migrate --to-vault --freeze"
+        )
+    return ledger
+
+
 def _init_vault(args: argparse.Namespace, _clock: Clock) -> dict[str, object]:
     url = _asked(args)
     if not url:
@@ -165,11 +209,18 @@ def _init_vault(args: argparse.Namespace, _clock: Clock) -> dict[str, object]:
             "fix": "name the empty repository: vault-init --vault GIT-ADDRESS",
             "suggested_name": vault_init.SUGGESTED_NAME,
         }
+    ledger = _attach_source(args, url)
     shown = vault_init.init(url, confirmed=args.yes)
-    root = _repository_root(Path.cwd())
-    if shown.get("pushed") and args.prefix and root is not None:
-        target = root / vault_config.CONFIG_PATH
-        target.write_text(vault_config.text(url, args.prefix), encoding="utf-8")
+    if shown.get("pushed") and ledger is not None:
+        try:
+            ledger_freeze.freeze(ledger, url, args.prefix, {})
+        except ledger_freeze.FreezeError as exc:
+            return {
+                **shown,
+                "exit": 2,
+                "refused": str(exc),
+                "fix": "the vault genesis was pushed; preserve the ledger and finish its migration",
+            }
         shown["config"] = str(vault_config.CONFIG_PATH)
     return shown
 
