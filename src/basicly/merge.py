@@ -352,6 +352,8 @@ def commit_tracker_state(
 def _commit_tracker_state(
     repo_root: Path, bead: str, *, action: str, on_retry: Callable[[str], None] | None = None
 ) -> bool:
+    if owned_store.packaged_kit("vault_cli").harness_config(repo_root) is not None:
+        return False
     paths = _dirty_paths(repo_root)
     if not all(is_engine_tracker_path(path) for path in paths):
         return False
@@ -389,7 +391,8 @@ def _commit_staged_tracker_state(
 
 def known_bead_ids(repo_root: Path) -> set[str] | None:
 
-    ledger = tracker_paths.ledger_dir(repo_root)
+    vault = owned_store.packaged_kit("vault_cli").harness_config(repo_root) is not None
+    ledger = owned_store.present_ledger(repo_root) if vault else tracker_paths.ledger_dir(repo_root)
     ids: set[str] = set()
     for log in sorted(found for glob in LEDGER_GLOBS for found in ledger.glob(glob)):
         for raw_line in log.read_text(encoding="utf-8").splitlines():
@@ -402,7 +405,7 @@ def known_bead_ids(repo_root: Path) -> set[str] | None:
                 continue
             if isinstance(event, dict) and isinstance(event.get("record"), str):
                 ids.add(event["record"])
-    return ids or None
+    return ids if vault else ids or None
 
 
 def _merge_message(
@@ -423,6 +426,8 @@ def _pre_merge_state(
 ) -> MergeResult | None:
 
     name, branch = session.name, session.branch
+    if reason := landing_guard.frozen_tracker_change(repo_root, session.base, branch):
+        return MergeResult(name, "not-ready", reason)
     forced = _worktree_land_readiness(repo_root, session)
     if forced is not None:
         return forced
@@ -616,8 +621,8 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     known = known_bead_ids(repo_root)
     if known is not None and bead not in known:
         raise SystemExit(
-            f"unknown bead id {bead!r}: the committed ledger does not hold it — the commit-msg "
-            "hook would reject the merge commit and strand the base mid-merge"
+            f"unknown bead id {bead!r}: the tracker view does not hold it; "
+            "file the record before landing"
         )
 
     session = load_session(name, repo_root)

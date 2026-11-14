@@ -112,6 +112,7 @@ def test_the_store_is_reached_only_from_its_own_seam_modules() -> None:
         "gate_source.py",
         "label_source.py",
         "owned_write.py",
+        "tracker_board_json.py",
         "tracker_import.py",
         "tracker_query.py",
     ]

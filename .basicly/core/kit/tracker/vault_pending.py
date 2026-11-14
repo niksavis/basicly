@@ -32,10 +32,7 @@ PENDING_NAME = "pending-records.json"
 LEGACY_RECORD = "basicly-pvdo68d"
 
 
-def present(clone: Any, want: Any, *, clock: Callable[[], float]) -> Path:
-    base = vault_view.present(clone, want, clock=clock)
-    published = vault_view.vault_clone.valid_events(clone)
-    pending = vault_queue.pending(clone.folder / vault_queue.QUEUE_NAME)
+def projection(published: Any, pending: Any, want: Any) -> tuple:
     legacy = {
         str(line.get("id") or f"unidentified-{index}")
         for index, line in enumerate([*published, *pending])
@@ -75,6 +72,14 @@ def present(clone: Any, want: Any, *, clock: Callable[[], float]) -> Path:
         for record, state in vault_view.vault_fold.fold(combined).records.items()
         if state.holder is not None
     }
+    return combined, held, unshared
+
+
+def present(clone: Any, want: Any, *, clock: Callable[[], float]) -> Path:
+    base = vault_view.present(clone, want, clock=clock)
+    published = vault_view.vault_clone.valid_events(clone)
+    pending = vault_queue.pending(clone.folder / vault_queue.QUEUE_NAME)
+    combined, held, unshared = projection(published, pending, want)
     template = vault_view.templates.read(base)
     payload = json.dumps([published, pending, template], sort_keys=True, ensure_ascii=False)
     key = hashlib.sha256(payload.encode("utf-8")).hexdigest()

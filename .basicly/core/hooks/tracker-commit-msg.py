@@ -190,6 +190,8 @@ def main() -> int:
         return 1
 
     commit_msg_file = Path(sys.argv[1])
+    if (_project_root() / ".basicly-tracker.toml").is_file():
+        return 0
     message = commit_msg_file.read_text(encoding="utf-8").strip()
 
     found = _known_ids_with_source()

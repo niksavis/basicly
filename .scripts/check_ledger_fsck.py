@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import sys
+import time
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -137,8 +138,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         kit = load_kit(args.repo / KIT_DIR)
         frozen = load_frozen(args.repo)
-        counted = measure(kit, args.repo / args.ledger)
-    except LedgerFsckError as exc:
+        canonical = None
+        if (
+            (args.repo / ".basicly-tracker.toml").exists()
+            or (args.repo / LEDGER_DIR).is_file()
+            or (args.repo / ".basicly/ledger-archive").exists()
+        ):
+            vault = kit._load("vault_cli.py", "basicly_tracker_kit_vault_cli")
+            canonical = vault.harness_ledger(args.repo, time.time)
+        counted = measure(kit, canonical if canonical is not None else args.repo / args.ledger)
+    except (LedgerFsckError, ValueError, OSError, ImportError) as exc:
         print(f"{_LABEL}: {exc}", file=sys.stderr)
         return 1
 
