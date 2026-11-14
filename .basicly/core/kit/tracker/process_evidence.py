@@ -277,17 +277,8 @@ def _draft(record: str, name: str, value: Mapping[str, object], writer: str) -> 
 def _safe_commands(
     checks: Sequence[Mapping[str, Any]], redactor: Callable[[str], str] | None = None
 ) -> None:
-    rules = _load("beads").MACHINE_PATH_RULES
-    if any(
-        any(pattern.search(part) for _name, pattern in rules)
-        or (redactor is not None and redactor(part) != part)
-        for check in checks
-        for part in check["command"]
-    ):
-        raise ProcessEvidenceError(
-            "Evidence command holds a machine path or private value that redaction would change. "
-            "Use python3 on PATH and paths relative to the repository."
-        )
+    if fault := evidence_checks.command_privacy_fault(checks, redactor):
+        raise ProcessEvidenceError(fault)
 
 
 def review_draft(
@@ -443,6 +434,7 @@ def record_process(
             commands.writers.writer_class(os.environ),
             template=commands.templates.load(ledger),
         )
-        saved = json.loads(draft.payload["value"])
-        _safe_commands(saved["checks"], commands.vault_write.effective_redactor(redact))
+        if isinstance(redact, commands.vault_write.WriteContext) and redact.target is not None:
+            saved = json.loads(draft.payload["value"])
+            _safe_commands(saved["checks"], commands.vault_write.effective_redactor(redact))
         return commands._append(ledger, [draft], redact, lock)
