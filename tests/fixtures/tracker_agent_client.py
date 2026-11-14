@@ -114,18 +114,17 @@ try:
     )["record"]
     (root / "work.txt").write_text("Tracked consumer work.\n")
     run(["git", "add", "work.txt"])
-    commit = ["git", "commit", "-q", "-m", f"feat: deliver agent work ({record})"]
-    unclaimed = run(commit, success=False)
-    if unclaimed.returncode == 0:
-        raise ValueError("The real Git hook accepted unclaimed work.")
+    missing_id = run(["git", "commit", "-q", "-m", "feat: deliver agent work"], success=False)
+    if missing_id.returncode == 0:
+        raise ValueError("The real Git hook accepted a missing record ID without a claim.")
     tool("claim", record=record)
     tool("update", record=record, status="in_progress")
     tool("sync")
-    run(commit)
+    run(["git", "commit", "-q", "-m", f"feat: deliver agent work ({record})"])
     print(
         json.dumps({
             "session": session,
-            "unclaimed_commit_exit": unclaimed.returncode,
+            "missing_id_commit_exit": missing_id.returncode,
             "claimed_commit_exit": 0,
             "guard_preserved": (root / ".basicly/ledger").is_file(),
         })

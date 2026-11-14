@@ -4,6 +4,7 @@ import importlib.util
 import json
 import re
 import shlex
+import shutil
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
@@ -24,7 +25,7 @@ DOCUMENTS = (
     PACKAGE / "README.md",
 )
 ENTRY = "python3 .basicly/kit/tracker/cli.py "
-FIRST = frozenset({"<id>", "<parent-id>", "acme-a1b2"})
+FIRST = frozenset({"<id>", "<parent-id>", "acme-a1b2", "RECORD-ID"})
 SECOND = frozenset({"<the-id-it-waits-on>", "acme-c3d4"})
 REFUSING = frozenset({"dor"})
 REFUSED_ON_A_FRESH_LEDGER = {
@@ -77,11 +78,23 @@ DOCUMENTED = [
 ]
 
 
-def _consumer(tmp_path: Path) -> Path:
+def _consumer(tmp_path: Path, *, vault: bool = False) -> Path:
+    tmp_path.mkdir(exist_ok=True)
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # nosec B603 B607
     subprocess.run(  # nosec B603 B607
         ["git", "-C", str(tmp_path), "config", "user.name", "Docs Reader"], check=True
     )
+    if vault:
+        shutil.copytree(KIT_DIR, tmp_path / ".basicly/kit/tracker")
+        bare = tmp_path.parent / "vault.git"
+        subprocess.run(  # nosec B603 B607
+            ["git", "init", "--bare", "-q", "-b", "main", str(bare)], check=True
+        )
+        initialized = _run(
+            tmp_path, ["vault-init", "--vault", str(bare), "--prefix", "acme", "--yes"]
+        )
+        assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+        return tmp_path
     kit = installer.Kit(
         command="basicly-tracker",
         name="tracker",
@@ -218,8 +231,17 @@ def test_the_documents_name_commands_at_all() -> None:
 
 
 @pytest.mark.parametrize("command", DOCUMENTED)
-def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path: Path) -> None:
-    repo = _consumer(tmp_path)
+def test_every_documented_command_runs_on_a_fresh_install(
+    command: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tokens = shlex.split(command, comments=True)
+    vault = "RECORD-ID" in tokens or tokens in (["sync"], ["fsck"])
+    if vault:
+        monkeypatch.setenv("BASICLY_TRACKER_STATE", str(tmp_path / "state"))
+        monkeypatch.setenv("BASICLY_TRACKER_SESSION", "docs-consumer")
+        monkeypatch.setenv("BASICLY_HOLDER", "docs-reader")
+        monkeypatch.setenv("BASICLY_TRACKER_EPHEMERAL", "1")
+    repo = _consumer(tmp_path / "code" if vault else tmp_path, vault=vault)
     first, second = _record(repo), _record(repo)
     names = {**dict.fromkeys(FIRST, first), **dict.fromkeys(SECOND, second), "<p>": "acme"}
     shown = json.loads(_run(repo, ["show", ".basicly/ledger", first]).stdout)
@@ -228,19 +250,26 @@ def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path
     confirmation = {"checks": shown["process"]["confirmation"]["checks"]}
     names.update({
         "<review JSON>": json.dumps(review),
-        "<snapshot_identity>": cli.record_view.read_view(
-            repo / ".basicly/ledger", first, view="current"
+        "<snapshot_identity>": json.loads(
+            _run(repo, ["show", ".basicly/ledger", first, "--view", "current"]).stdout
         )["snapshot_identity"],
         "<confirmation JSON>": json.dumps(confirmation),
         "<what shipped, and the evidence>": "The seeded result is confirmed by its fixture check.",
     })
     argv = [names.get(token, token) for token in shlex.split(command, comments=True)]
+    if vault and argv[0] == "update":
+        claimed = _run(repo, ["claim", first])
+        assert claimed.returncode == 0, claimed.stdout + claimed.stderr
     loss = _seed_documented_loss(repo, argv) if argv[0] == "acknowledge-loss" else None
 
     done = _run(repo, argv)
 
     report = json.loads(done.stdout)
-    expected = REFUSED_ON_A_FRESH_LEDGER.get(argv[0] + (" --vault" if "--vault" in argv else ""))
+    expected = (
+        None
+        if vault
+        else REFUSED_ON_A_FRESH_LEDGER.get(argv[0] + (" --vault" if "--vault" in argv else ""))
+    )
     if expected is not None:
         assert expected in str(report.get("refused")), report
         return
@@ -265,7 +294,9 @@ def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path
         assert [(one["kind"], one["severity"]) for one in findings] == [
             ("acknowledged-sequence-loss", "warning")
         ]
-    assert {path.name for path in repo.iterdir()} <= LEFT_BEHIND
+    assert {path.name for path in repo.iterdir()} <= LEFT_BEHIND | (
+        {".basicly-tracker.toml"} if vault else set()
+    )
 
 
 def test_the_reference_names_every_command_the_parser_defines() -> None:

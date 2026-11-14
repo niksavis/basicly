@@ -17,7 +17,7 @@ def environment(base: Mapping[str, str], session: str | None = None) -> dict[str
     chosen = f"agent-{uuid.uuid4().hex}" if session is None else session
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", chosen):
         raise ValueError("--session must use letters, digits, dots, underscores or hyphens.")
-    return {**base, SESSION: chosen}
+    return {**base, SESSION: chosen, "AI_AGENT": base.get("AI_AGENT") or "basicly-tracker"}
 
 
 def _executable(command: str, env: Mapping[str, str]) -> str:

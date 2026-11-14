@@ -123,6 +123,40 @@ def test_launcher_preserves_the_clients_failure_exit_code(package: Path) -> None
     assert done.returncode == 7
 
 
+def test_launched_coding_agent_can_complete_refinement_without_inherited_agent_markers(
+    package: Path, tmp_path: Path
+) -> None:
+    env = os.environ.copy()
+    for marker in ("AI_AGENT", "BR_AGENT_NAME", "CLAUDECODE"):
+        env.pop(marker, None)
+    script = Path(__file__).parent / "fixtures/tracker_agent_refine.py"
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            "-c",
+            BOOT,
+            str(package / "__init__.py"),
+            "agent",
+            "--",
+            sys.executable,
+            "-I",
+            "-S",
+            str(script),
+            str(package),
+            str(tmp_path / "repo"),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    assert json.loads(done.stdout)["refinement_completed"]
+
+
 @pytest.mark.parametrize("interface", ["package", "harness"])
 def test_foreground_agent_shares_its_session_with_mcp_and_real_git_hooks(
     package: Path, tmp_path: Path, interface: str
@@ -170,6 +204,6 @@ def test_foreground_agent_shares_its_session_with_mcp_and_real_git_hooks(
     assert done.returncode == 0, (done.stdout, done.stderr)
     report = json.loads(done.stdout)
     assert report["session"] != "shared-parent"
-    assert report["unclaimed_commit_exit"] != 0
+    assert report["missing_id_commit_exit"] != 0
     assert report["claimed_commit_exit"] == 0
     assert report["guard_preserved"]

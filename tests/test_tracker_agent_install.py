@@ -152,10 +152,11 @@ def test_registration_defaults_to_user_scope_and_forwards_a_dynamic_session(
     if client == "codex":
         server = tomllib.loads(report["configuration"])["mcp_servers"]["basicly-tracker"]
         assert server["env_vars"] == ["BASICLY_TRACKER_SESSION", "BASICLY_HOLDER"]
-        assert "env" not in server
+        assert server["env"] == {"AI_AGENT": "codex"}
     else:
         server = json.loads(report["configuration"])["mcpServers"]["basicly-tracker"]
         assert server["env"]["BASICLY_TRACKER_SESSION"] == "${BASICLY_TRACKER_SESSION}"
+        assert server["env"]["AI_AGENT"] == "claude"
     assert server["command"] == "basicly-tracker"
     assert server["args"] == ["mcp", "--repository", str(root)]
     assert {

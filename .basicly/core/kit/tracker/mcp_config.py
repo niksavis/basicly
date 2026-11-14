@@ -62,6 +62,8 @@ def configuration(args: argparse.Namespace) -> dict[str, Any]:
             f"command = {json.dumps(command, ensure_ascii=False)}",
             f"args = {json.dumps(argv, ensure_ascii=False)}",
             'env_vars = ["BASICLY_TRACKER_SESSION", "BASICLY_HOLDER"]',
+            f"[mcp_servers.{args.name}.env]",
+            'AI_AGENT = "codex"',
         ]
         document = "\n".join(lines) + "\n"
         path = "~/.codex/config.toml" if args.scope == "user" else ".codex/config.toml"
@@ -73,7 +75,10 @@ def configuration(args: argparse.Namespace) -> dict[str, Any]:
                         args.name: {
                             "type": "stdio",
                             **server,
-                            "env": {"BASICLY_TRACKER_SESSION": "${BASICLY_TRACKER_SESSION}"},
+                            "env": {
+                                "BASICLY_TRACKER_SESSION": "${BASICLY_TRACKER_SESSION}",
+                                "AI_AGENT": "claude",
+                            },
                         }
                     }
                 },

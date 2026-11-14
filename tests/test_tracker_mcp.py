@@ -212,6 +212,14 @@ def test_agent_cannot_override_repository_identity_or_inject_options(tmp_path: P
             assert client.tool("create", **args)["isError"]
         assert client.tool("show", record="--help")["isError"]
         assert client.tool("delete", record="demo-a1")["isError"]
+        for args in (
+            {"add_labels": "refine"},
+            {"remove_labels": [None]},
+            {"remove_labels": ["\0"]},
+            {"remove_labels": [""]},
+            {"fields": {"labels": []}},
+        ):
+            assert client.tool("update", record="demo-a1", **args)["isError"]
         assert not client.tool("list", query="--vault=elsewhere")["isError"]
         assert client.tool("list")["structuredContent"]["report"]["count"] == 1
         (root / ".basicly-tracker.toml").write_text('vault = "elsewhere"\nprefix = "other"\n')
@@ -308,3 +316,32 @@ def test_transport_refuses_invalid_json_and_continues_with_valid_requests(tmp_pa
     assert [reply["error"]["code"] for reply in replies[:2]] == [-32700, -32700]
     assert replies[2]["id"] == 1
     assert replies[3]["id"] == 2 and replies[3]["result"]["tools"]
+
+
+def test_coding_agent_refines_work_without_replacing_other_labels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = repository(tmp_path)
+    monkeypatch.setenv("AI_AGENT", "codex")
+    client = Client(command(root), root)
+    try:
+        client.start()
+        created = client.tool(
+            "create",
+            title="Refine shared work",
+            description="## Context\n\nAn agent needs to refine a person's task.",
+            acceptance="When refined, the task shall retain its other labels.",
+            fields={"issue_type": "task", "size": "small", "labels": ["refine", "keep"]},
+        )
+        assert not created["isError"], created
+        record = created["structuredContent"]["report"]["record"]
+        refined = client.tool(
+            "update", record=record, remove_labels=["refine"], add_labels=["shared"]
+        )
+        assert not refined["isError"], refined
+        shown = client.tool("show", record=record)["structuredContent"]["report"]
+        labels = shown["fields"]["labels"]
+        labels = json.loads(labels) if isinstance(labels, str) else labels
+        assert set(labels) == {"keep", "shared"}
+    finally:
+        client.close()

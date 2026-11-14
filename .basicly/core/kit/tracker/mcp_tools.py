@@ -52,7 +52,13 @@ TOOLS = {
     ),
     "update": (
         "Update fields or status through tracker admission.",
-        {"record": RECORD, "status": _string("The requested status."), **SHAPE},
+        {
+            "record": RECORD,
+            "status": _string("The requested status."),
+            "add_labels": {"type": "array", "items": {"type": "string"}},
+            "remove_labels": {"type": "array", "items": {"type": "string"}},
+            **SHAPE,
+        },
         ("record",),
         False,
     ),
@@ -141,8 +147,13 @@ def catalog() -> list[dict[str, Any]]:
 def _validate(values: dict[str, Any], properties: dict[str, Any], prefix: str) -> None:
     for key, value in values.items():
         kind = properties[key]["type"]
-        if not isinstance(value, str if kind == "string" else dict):
+        expected = {"string": str, "object": dict, "array": list}[kind]
+        if not isinstance(value, expected):
             raise ValueError(f"Argument {key} must be a {kind}.")
+        if kind == "array" and any(
+            not isinstance(label, str) or not label.strip() or "\0" in label for label in value
+        ):
+            raise ValueError(f"Argument {key} must contain nonempty label strings without NUL.")
         if isinstance(value, str) and "\0" in value:
             raise ValueError(f"Argument {key} must not contain NUL.")
         if "enum" in properties[key] and value not in properties[key]["enum"]:
@@ -168,6 +179,8 @@ def arguments(name: str, values: Any, *, vault: bool, prefix: str) -> list[str]:
     ):
         raise ValueError("Tool arguments do not match its inputSchema.")
     _validate(values, properties, prefix)
+    if verb == "update" and "labels" in values.get("fields", {}):
+        raise ValueError("Use add_labels and remove_labels to update labels.")
     if verb == "show":
         values = {"view": "current", **values}
     routed = vault and verb in {"claim", "unassign", "comment", "sync", "fsck"}
@@ -176,7 +189,10 @@ def arguments(name: str, values: Any, *, vault: bool, prefix: str) -> list[str]:
     for key, value in values.items():
         if key in {"record", "target", "parent"}:
             continue
-        if key == "fields":
+        if key in {"add_labels", "remove_labels"}:
+            flag = "--add-label" if key == "add_labels" else "--remove-label"
+            argv.extend(f"{flag}={label}" for label in value)
+        elif key == "fields":
             for field, content in value.items():
                 if not re.fullmatch(r"[a-z][a-z0-9_]*", field):
                     raise ValueError("Field names must be lowercase tracker names.")

@@ -77,6 +77,7 @@ The [Claude MCP guide](https://code.claude.com/docs/en/mcp) describes its client
 
 Set `BASICLY_HOLDER` to the holder name you choose.
 The foreground launcher creates a unique tracker session for each new client process.
+The launcher and generated MCP configuration identify the client as a coding agent.
 The agent, its MCP children and its Git hooks must receive that same identity.
 
 ```sh
@@ -101,6 +102,8 @@ basicly-tracker agent --session EXISTING-SESSION -- codex --no-daemon resume
 An agent discovers tools, finds work, creates or refines a record, reviews it and claims it.
 Only a settled successful claim authorizes work.
 Then the agent sets `status` to `in_progress` through `tracker_update`.
+Use `add_labels` and `remove_labels` to change labels without replacing unrelated labels.
+Only an agent can remove `refine`, after the record passes its readiness check.
 It confirms observed evidence before closing the record.
 Every tool result preserves the command's exit code and tracker report.
 Inspect `isError`, `exit_code` and pending status before continuing.
