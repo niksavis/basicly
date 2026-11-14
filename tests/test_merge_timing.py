@@ -189,3 +189,30 @@ def test_an_unreadable_log_costs_the_measurement_and_never_the_landing(tmp_path:
 
     assert result.status == "merged"
     assert [entry["status"] for entry in _recorded(tmp_path)] == ["merged"]
+
+
+@pytest.mark.parametrize(
+    "ticks",
+    [
+        (0.0, 0.0006, 0.0012, 0.0018, 0.0019),
+        (1000.0, 1000.0006, 1000.0012, 1000.0018, 1000.0019),
+        (0.0, 0.0014, 0.0028, 0.0042, 0.0043),
+    ],
+)
+def test_submillisecond_stage_rounding_preserves_the_measured_time_budget(
+    tmp_path: Path, ticks: tuple[float, ...]
+) -> None:
+    landing = merge._Landing(tmp_path, _BEAD, clock=_ticker(*ticks))
+    for stage in ("preflight", "rebase", "verify"):
+        landing.mark(stage)
+
+    landing.close(merge.MergeResult("fixture", "merged", "fixture"))
+
+    (entry,) = _recorded(tmp_path)
+    assert entry["attributed_s"] == round(ticks[-2] - ticks[0], 3)
+    assert entry["total_s"] == round(ticks[-1] - ticks[0], 3)
+    assert entry["attributed_s"] <= entry["total_s"]
+    assert entry["unattributed_s"] >= 0
+    assert sum(seconds for _, seconds in entry["stages"]) == pytest.approx(entry["attributed_s"])
+    assert all(seconds >= 0 for _, seconds in entry["stages"])
+    assert entry["attributed_s"] + entry["unattributed_s"] == pytest.approx(entry["total_s"])
