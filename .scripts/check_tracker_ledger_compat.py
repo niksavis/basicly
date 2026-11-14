@@ -293,7 +293,7 @@ def compare(kit: Path, tag: str, output: Path) -> None:
     print(
         json.dumps({
             "result": "pass",
-            "comparison": "complete reports and ledger events match byte for byte",
+            "comparison": "standalone reports and ledger events match byte for byte",
             "baseline": tag,
             "real_cli": "lifecycle, fsck and normal Git claim hook passed",
             "engine": engine,

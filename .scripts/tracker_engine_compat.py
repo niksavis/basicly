@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import importlib
 import io
 import json
@@ -212,6 +213,7 @@ def worker(repository: Path) -> dict[str, Any]:
     if unreadable:
         raise ValueError("the engine produced unreadable history")
     return {
+        "engine_version": importlib.import_module("basicly").__version__,
         "calls": calls,
         "forms": _offered_forms(calls),
         "hook": _hook_checks(repository, record, commands.events.ledger_paths(ledger)),
@@ -219,12 +221,33 @@ def worker(repository: Path) -> dict[str, Any]:
     }
 
 
-def compare(tag: str, output: Path) -> dict[str, object]:
+def _observations(report: dict[str, Any]) -> dict[str, Any]:
+    observed = copy.deepcopy(report)
+    actual = observed.pop("engine_version")
+    seen = 0
+    for row in observed["calls"]:
+        if row["read"] and list(row["argv"]) == ["describe", "--json"]:
+            if json.loads(row["stdout"]).get("version") != actual:
+                raise ValueError("describe must report its actual engine version")
+            needle = '"version":' + json.dumps(actual)
+            if row["stdout"].count(needle) != 1:
+                raise ValueError("describe must carry exactly one engine version diagnostic")
+            row["stdout"] = row["stdout"].replace(needle, '"version":"<engine-version>"', 1)
+            seen += 1
+    if seen != 1:
+        raise ValueError("the proof must check exactly one describe version diagnostic")
+    return observed
+
+
+def compare(tag: str, output: Path, *, candidate_source: Path | None = None) -> dict[str, object]:
     output.mkdir(parents=True, exist_ok=False)
     _engine(tag, output / "baseline-engine")
     env = environment(output)
     reports = {}
-    for name, source in (("released", output / "baseline-engine/src"), ("candidate", ROOT / "src")):
+    for name, source in (
+        ("released", output / "baseline-engine/src"),
+        ("candidate", candidate_source or ROOT / "src"),
+    ):
         repository = output / (name + "-repository")
         repository.mkdir()
         checked(["git", "init", "-q", "-b", "main"], repository, env)
@@ -240,7 +263,7 @@ def compare(tag: str, output: Path) -> dict[str, object]:
             raise ValueError(f"{name} engine proof failed: {done.stdout}{done.stderr}")
         reports[name] = json.loads(done.stdout)
     (output / "reports.json").write_text(json.dumps(reports, indent=2), encoding="utf-8")
-    if reports["released"] != reports["candidate"]:
+    if _observations(reports["released"]) != _observations(reports["candidate"]):
         raise ValueError(
             "engine-driven reports or events differ from the released engine with its old kit"
         )
@@ -249,7 +272,7 @@ def compare(tag: str, output: Path) -> dict[str, object]:
         "forms": len(reports["candidate"]["forms"]),
         "reads": sum(bool(row["read"]) for row in reports["candidate"]["calls"]),
         "hook": "actual uncited refusal and held-record Git commit passed",
-        "comparison": "engine-driven reports and events match exactly",
+        "comparison": "reports and events match exactly except checked engine version diagnostics",
         "baseline": tag,
     }
 
