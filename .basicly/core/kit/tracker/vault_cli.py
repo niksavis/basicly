@@ -243,6 +243,10 @@ def _claim_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
         clock,
         name=vault_write.holders.chosen_holder(Path.cwd(), os.environ),
     )
+    if getattr(args, "cancel", False) or getattr(args, "wait", False):
+        unsettled = _load("vault_unsettled.py", "basicly_tracker_kit_vault_unsettled")
+        action = unsettled.cancel if args.cancel else unsettled.wait
+        return action(ask, deadline=args.deadline)
     shown = vault_claim.claim(ask, deadline=args.deadline)
     if shown.get("exit") == vault_claim.UNREACHABLE and vault_init.no_genesis(args.vault):
         return {

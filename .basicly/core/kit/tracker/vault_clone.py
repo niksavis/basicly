@@ -294,6 +294,16 @@ def settle(
     return {**shown, "fetch_lock_wait_s": waited}
 
 
+@dataclass(frozen=True)
+class Fetch:
+    clock: Callable[[], float]
+    runner: Runner = git_runner.run
+    timeout: float = git_runner.DEFAULT_TIMEOUT
+    lock_wait: float = LOCK_WAIT
+    sharing: bool = False
+    remaining: Callable[[], float] | None = None
+
+
 def fetch(
     clone: Clone,
     *,
@@ -302,7 +312,18 @@ def fetch(
     lock_wait: float = LOCK_WAIT,
     clock: Callable[[], float],
 ) -> dict[str, object]:
+    return fetch_with(clone, Fetch(clock, runner, timeout, lock_wait))
 
+
+def fetch_with(clone: Clone, request: Fetch) -> dict[str, object]:
+
+    runner, timeout, lock_wait, clock = (
+        request.runner,
+        request.timeout,
+        request.lock_wait,
+        request.clock,
+    )
+    started = time.monotonic()
     private(clone.folder.parent.parent)
     private(clone.folder)
     stamp = clone.folder / FETCHED_NAME
@@ -321,7 +342,7 @@ def fetch(
             seen = {"seen": ref(clone, SEEN_REF, runner, timeout), "moved": False}
     stamped = _read(stamp).strip()
     age = round(max(0.0, clock() - float(stamped)), 1) if stamped else None
-    return {
+    shown = {
         "clone": str(clone.bare),
         "head": head,
         "fetched": fetched,
@@ -329,3 +350,10 @@ def fetch(
         "fetch_lock_wait_s": waited,
         **seen,
     }
+    if fetched:
+        budget = request.remaining or (lambda: max(0.01, timeout - (time.monotonic() - started)))
+        expiry = _load("vault_expiry.py", "basicly_tracker_kit_vault_expiry")
+        expired = expiry.after_fetch(clone, clock, runner, budget, sharing=request.sharing)
+        if expired:
+            shown.update(expired=expired, head=_read(clone.folder / COVERS_NAME).strip())
+    return shown

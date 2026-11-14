@@ -204,9 +204,11 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
 def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[str, object]:
 
     clone, record = ask.clone, ask.record
-    origin = vault_queue.Origin(ask.session, False, ask.clock)
-    draft = {"kind": "claim", "record": record, "payload": {vault_fold.HOLDER_NAME: ask.name}}
-    made = vault_queue.write(clone, [draft], state=ask.state, origin=origin)["events"][0]
+    unsettled = _load("vault_unsettled.py", "basicly_tracker_kit_vault_unsettled")
+    prepared = unsettled.prepare(ask, budget.left)
+    if "exit" in prepared:
+        return prepared
+    made = prepared["claim"]
     fresh = fetched_left - budget.left() < FRESH
     try:
         joined = _share_or_join(ask, budget, made, fresh)

@@ -191,6 +191,10 @@ def test_an_unsettled_claim_is_accepted_with_a_warning_and_the_claim_command(
     origin = vault_queue.Origin("s1", False, time.time)
     vault_queue.write(clone, [{"kind": "claim", "record": ID}], state=state, origin=origin)
 
+    vault_clone.fetch(clone, clock=time.time)
+    bare.rename(tmp_path / "unreachable.git")
+    bare.mkdir()
+
     shown = _check(clone, state, _message(tmp_path, MESSAGES["id"]))
 
     assert shown["exit"] == hook.ACCEPTED

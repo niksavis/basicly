@@ -51,6 +51,11 @@ def claim() -> argparse.ArgumentParser:
     parser.add_argument("record", help="the record id")
     parser.add_argument("--session", help="the session (default: BASICLY_TRACKER_SESSION)")
     parser.add_argument("--deadline", type=float, default=30.0, help="seconds for the whole claim")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--wait", action="store_true", help="wait until an existing claim settles")
+    mode.add_argument(
+        "--cancel", action="store_true", help="cancel this session's pending or held claim"
+    )
     return parser
 
 
@@ -70,7 +75,7 @@ def commit_msg() -> argparse.ArgumentParser:
 
 
 def status() -> argparse.ArgumentParser:
-    return _form("status", "show the data age without a network call", "status-vault")
+    return _form("status", "retry unsettled claims and show the data age", "status-vault")
 
 
 def init() -> argparse.ArgumentParser:

@@ -71,7 +71,12 @@ _KEPT = (ValueError, OSError, events.LedgerError, git_runner.GitRunnerError)
 
 def due_share(clone: Any, state: Path, clock: Clock, *, now: bool = False) -> dict | None:
 
-    if not _queued(clone) or not (now or slot_due(clone, clock)):
+    pending = _queued(clone)
+    if not pending:
+        return None
+    settlement = _load("vault_unsettled.py", "basicly_tracker_kit_vault_unsettled")
+    unsettled = settlement.has_pending(clone)
+    if not (unsettled or now or slot_due(clone, clock)):
         return None
     plan = vault_share.Plan(
         clock, urgent=not now, deadline_s=HOOK_DEADLINE, lock_wait=WRITE_LOCK_WAIT
@@ -111,6 +116,9 @@ def hook(event: str, clone: Any, state: Path, *, clock: Clock) -> dict[str, obje
 
 def status(clone: Any, *, clock: Clock) -> dict[str, object]:
 
+    settlement = _load("vault_unsettled.py", "basicly_tracker_kit_vault_unsettled")
+    if settlement.has_pending(clone):
+        due_share(clone, clone.folder.parent.parent, clock)
     queued = _queued(clone)
     times = [at for line in queued if isinstance(at := line.get("at"), (int, float))]
     seen = {

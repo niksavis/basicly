@@ -7,7 +7,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -219,6 +219,9 @@ def share(
     lock = events.LedgerLock(clone.folder / SHARE_LOCK, timeout_s=wait)
     with contextlib.nullcontext() if plan.unlocked else lock:
         waited = round(time.monotonic() - asked, 3)
+        expiry = _load("vault_expiry.py", "basicly_tracker_kit_vault_expiry")
+        if expiry.before_share(clone, plan.wall, runner, lambda: _budget(plan, started, clock)):
+            plan = replace(plan, urgent=True, fresh=True)
         if not prune(clone):
             return {"shared": 0, "pending": 0, "lock_wait_s": waited}
         attempt = total = 0
@@ -229,8 +232,16 @@ def share(
             if attempt == 1 and plan.fresh:
                 fetched = {"head": vault_clone.ref(clone, vault_clone.HEAD_REF, runner, budget)}
             else:
-                fetched = vault_clone.fetch(
-                    clone, clock=plan.wall, runner=runner, timeout=budget, lock_wait=budget
+                fetched = vault_clone.fetch_with(
+                    clone,
+                    vault_clone.Fetch(
+                        clock=plan.wall,
+                        runner=runner,
+                        timeout=budget,
+                        lock_wait=budget,
+                        sharing=True,
+                        remaining=lambda: _budget(plan, started, clock),
+                    ),
                 )
             head = str(fetched["head"])
             fetch_waits += float(fetched.get("fetch_lock_wait_s") or 0.0)

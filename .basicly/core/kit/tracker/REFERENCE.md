@@ -176,6 +176,17 @@ command is printed; 4 the deadline passed and the claim is unsettled, with `--wa
 `--cancel` named; 5 the fetch gave no answer within 5 s, nothing is queued and the fetch command
 is printed; 6 an internal error, with the log path and `sync`; 7 this session already holds it.
 
+An unsettled claim grants no ownership. The next tracker read, status command or agent hook
+retries its share without waiting for the bulk slot. Repeating `claim` reuses the queued
+attempt. `claim RECORD-ID --wait` keeps retrying until this session holds the record (0),
+another session wins (3), or its attempt has been cancelled or expired (3).
+`claim RECORD-ID --cancel` takes the share lock and fetches before changing the queue. It
+drops only this session's pending attempt and publishes an unassign if that attempt already
+landed. An unanswered fetch preserves the queue and returns 5. An unfinished cancellation
+returns 4 and retains its release intent for retry. Every successful fetch expires pending
+claims at least 600 seconds old through the same cancellation path; younger attempts and
+unrelated queued events remain.
+
 ```sh
 python3 .basicly/kit/tracker/cli.py claim acme-a1b2 --vault path/to/vault.git --session s1
 ```
@@ -240,10 +251,12 @@ python3 .basicly/kit/tracker/cli.py fetch --vault path/to/vault.git
 ```
 
 `hook EVENT --vault` runs from an agent hook and never fails the agent. `session-start` and
-`prompt` fetch with a 3 s deadline at most every 20 s, then share only when this clone's bulk
-slot is due (180 s after its last share). `stop` and `session-end` share the whole queue. A
+`prompt` fetch with a 3 s deadline at most every 20 s, then share when this clone's bulk
+slot is due (180 s after its last share) or a claim or cancellation is pending.
+`stop` and `session-end` share the whole queue. A
 person's write shares at once when the slot is due; otherwise a later `fetch` or write shares
-it. `status --vault` makes no network call: it prints the fetch age, the last shared event and
+it. `status --vault` retries pending claims and cancellations; otherwise it uses cached data.
+It prints the fetch age, the last shared event and
 its age per writer, the queued count and the oldest queued age, and any unrepaired retraction.
 
 ```sh

@@ -100,6 +100,9 @@ def test_a_pending_claim_never_grants_canonical_ownership(tmp_path: Path, bare: 
         origin=vault_queue.Origin("s1", False, cli.events.wall_clock()),
     )
 
+    bare.rename(tmp_path / "unreachable.git")
+    bare.mkdir()
+
     shown = _run(root, "show", LEDGER, record)
 
     assert shown["holder"] is None

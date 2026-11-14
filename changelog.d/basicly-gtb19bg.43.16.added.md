@@ -1,0 +1,1 @@
+- Retry unsettled vault claims on reads and hooks, wait for a terminal claim result, cancel queued or landed attempts safely, and expire pending attempts after ten minutes without granting pending ownership.

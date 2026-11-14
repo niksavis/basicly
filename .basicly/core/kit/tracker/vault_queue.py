@@ -172,6 +172,7 @@ def write(
     *,
     state: Path,
     origin: Origin,
+    lock_wait: float = events.DEFAULT_LOCK_TIMEOUT_S,
 ) -> dict[str, object]:
 
     writer = writer_of(state)
@@ -189,7 +190,7 @@ def write(
     ]
     queue = clone.folder / QUEUE_NAME
     asked = time.monotonic()
-    with events.LedgerLock(clone.folder):
+    with events.LedgerLock(clone.folder, timeout_s=lock_wait):
         waited = time.monotonic() - asked
         torn = _cut_torn(queue)
         _append(queue, lines)
