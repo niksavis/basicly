@@ -66,6 +66,7 @@ def after_fetch(
     *,
     sharing: bool,
 ) -> list[str]:
+    settlement.validate_pending(clone, remaining)
     if not due(clone, clock, remaining):
         return []
     if sharing:
@@ -99,6 +100,7 @@ def after_fetch(
 
 
 def before_share(clone: Any, clock: Clock, runner: Any, remaining: Clock) -> bool:
+    settlement.validate_pending(clone, remaining)
     if not due(clone, clock, remaining):
         return False
     fetched = clone_api.fetch_with(

@@ -382,7 +382,7 @@ def release(target: Target, record: str, *, take: bool) -> dict[str, object]:
             "check": f"git fetch {clone.url} refs/heads/main",
         }
     mine = (vault_queue.writer_of(target.state), target.session)
-    vault_hooks.due_share(clone, target.state, target.clock, claims_only=True)
+    vault_hooks.retry_claims(clone, target.state, target.clock)
     held = vault_claim.holder(clone, record)
     if held is None:
         return {"exit": vault_claim.FIX, "record": record, "fix": f"{record} has no holder"}

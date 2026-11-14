@@ -78,7 +78,7 @@ def projection(published: Any, pending: Any, want: Any) -> tuple:
 def present(clone: Any, want: Any, *, clock: Callable[[], float]) -> Path:
     settlement = _load("vault_unsettled")
     if settlement.has_pending(clone):
-        _load("vault_hooks").due_share(clone, clone.folder.parent.parent, clock)
+        _load("vault_hooks").retry_claims(clone, clone.folder.parent.parent, clock)
     base = vault_view.present(clone, want, clock=clock)
     published = vault_view.vault_clone.valid_events(clone)
     pending = vault_queue.pending(clone.folder / vault_queue.QUEUE_NAME)

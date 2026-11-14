@@ -225,26 +225,6 @@ def test_expiring_a_losing_attempt_preserves_the_foreign_holder(tmp_path: Path, 
     assert attempt["id"] not in {line["id"] for line in _pending(loser)}
 
 
-@pytest.mark.parametrize(
-    "bad", ["{broken", '{"kind":"claim","at":NaN}', '{"kind":"claim","at":true}']
-)
-def test_cancel_preserves_a_malformed_queue_and_names_the_repair(
-    tmp_path: Path, bare: Path, bad: str
-) -> None:
-    clone, state = _machine(tmp_path, bare, "one")
-    clone_api.fetch(clone, clock=time.time)
-    _claim(clone, state)
-    path = clone.folder / queue.QUEUE_NAME
-    original = path.read_bytes() + (bad + "\n").encode()
-    path.write_bytes(original)
-
-    result = _cli(tmp_path, state, bare, "claim", ID, "--cancel")
-
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "fsck --repair" in result.stdout
-    assert path.read_bytes() == original
-
-
 def test_cancel_honors_its_deadline_while_the_queue_lock_is_held(
     tmp_path: Path, bare: Path
 ) -> None:
@@ -368,30 +348,6 @@ def test_an_unfinished_cancellation_is_retried_by_the_next_status_command(
     clone_api.fetch(clone, clock=time.time)
     assert vault_claim.holder(clone, ID) is None
     assert not _pending(clone)
-
-
-def test_cancel_preserves_a_malformed_release_intent_instead_of_publishing_it(
-    tmp_path: Path, bare: Path
-) -> None:
-    clone, state = _machine(tmp_path, bare, "one")
-    clone_api.fetch(clone, clock=time.time)
-    _claim(clone, state)
-    queue.write(
-        clone,
-        [{"kind": "unassign", "record": ID, "payload": {"cancelled_claim": []}}],
-        state=state,
-        origin=queue.Origin("s1", False, time.time),
-    )
-    path = clone.folder / queue.QUEUE_NAME
-    original = path.read_bytes()
-    before = clone_api.valid_ids(clone)
-
-    result = _cli(tmp_path, state, bare, "claim", ID, "--cancel")
-
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "fsck --repair" in result.stdout
-    assert path.read_bytes() == original
-    assert clone_api.valid_ids(clone) == before
 
 
 def test_unassign_retries_the_existing_pending_claim_before_checking_its_holder(

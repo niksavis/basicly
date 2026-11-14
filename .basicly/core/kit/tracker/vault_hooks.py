@@ -99,6 +99,8 @@ def _fetch_if_stale(clone: Any, clock: Clock) -> dict | None:
 
 
 def retry_claims(clone: Any, state: Path, clock: Clock) -> dict | None:
+    settlement = _load("vault_unsettled.py", "basicly_tracker_kit_vault_unsettled")
+    settlement.validate_pending(clone, lambda: WRITE_LOCK_WAIT)
     return due_share(clone, state, clock, claims_only=True)
 
 
@@ -126,7 +128,7 @@ def status(clone: Any, *, clock: Clock) -> dict[str, object]:
 
     settlement = _load("vault_unsettled.py", "basicly_tracker_kit_vault_unsettled")
     if settlement.has_pending(clone):
-        due_share(clone, clone.folder.parent.parent, clock)
+        retry_claims(clone, clone.folder.parent.parent, clock)
     queued = _queued(clone)
     times = [at for line in queued if isinstance(at := line.get("at"), (int, float))]
     seen = {

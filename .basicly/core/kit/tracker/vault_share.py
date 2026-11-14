@@ -254,6 +254,7 @@ def share(
             if stop is not None:
                 return _stopped(head, stop, clone)
             batch = [line for line in prune(clone) if line.get("writer") == writer]
+            expiry.settlement.validate_lines(batch)
             if not batch:
                 return {
                     "shared": total,

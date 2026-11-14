@@ -205,7 +205,7 @@ def check(commit: Commit) -> dict[str, object]:
     text = commit.message.read_bytes().decode("utf-8")
     settlement = _load("vault_unsettled.py", "basicly_tracker_kit_vault_unsettled")
     if settlement.has_pending(commit.clone):
-        vault_hooks.due_share(commit.clone, commit.state, commit.clock)
+        vault_hooks.retry_claims(commit.clone, commit.state, commit.clock)
     subject = _subject(text)
     echoed = _echoed(subject)
     if _GIT_MERGE.match(subject) or echoed is not None:

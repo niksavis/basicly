@@ -64,7 +64,11 @@ def _read(clone: Any, *, remaining: Clock = lambda: events.DEFAULT_LOCK_TIMEOUT_
 
 
 def _claims(clone: Any, *, remaining: Clock = lambda: events.DEFAULT_LOCK_TIMEOUT_S) -> list[dict]:
-    found = [line for line in _read(clone, remaining=remaining) if line.get("kind") == "claim"]
+    return _claim_lines(_read(clone, remaining=remaining))
+
+
+def _claim_lines(lines: list[dict]) -> list[dict]:
+    found = [line for line in lines if line.get("kind") == "claim"]
     for line in found:
         stamp = line.get("at")
         if (
@@ -80,6 +84,32 @@ def _claims(clone: Any, *, remaining: Clock = lambda: events.DEFAULT_LOCK_TIMEOU
         ):
             _invalid("")
     return found
+
+
+def _release_lines(lines: list[dict]) -> list[dict]:
+    found = [
+        line
+        for line in lines
+        if isinstance(line.get("payload"), dict) and CANCELLED in line["payload"]
+    ]
+    if any(
+        line.get("kind") != "unassign"
+        or not isinstance(line["payload"][CANCELLED], str)
+        or not line["payload"][CANCELLED]
+        for line in found
+    ):
+        _invalid("")
+    return found
+
+
+def validate_lines(lines: list[dict]) -> None:
+    _claim_lines(lines)
+    _release_lines(lines)
+
+
+def validate_pending(clone: Any, remaining: Clock) -> None:
+    if has_pending(clone):
+        validate_lines(_read(clone, remaining=remaining))
 
 
 def has_pending(clone: Any) -> bool:
@@ -119,22 +149,15 @@ def _fences(
     *,
     remaining: Clock = lambda: events.DEFAULT_LOCK_TIMEOUT_S,
 ) -> list[dict]:
-    found = [
+    return [
         line
-        for line in _read(clone, remaining=remaining)
-        if line.get("kind") == "unassign"
-        and line.get("writer") == writer
+        for line in _release_lines(_read(clone, remaining=remaining))
+        if line.get("writer") == writer
         and line.get("session") == session
         and line.get("record") == record
         and isinstance(line.get("payload"), dict)
         and CANCELLED in line["payload"]
     ]
-    if any(
-        not isinstance(line["payload"][CANCELLED], str) or not line["payload"][CANCELLED]
-        for line in found
-    ):
-        _invalid("")
-    return found
 
 
 def _retire(
