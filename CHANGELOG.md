@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release adds checked migration from local ledgers to a private backlog vault. Migration preserves the source archive and verifies imported history. The standalone tracker includes MCP tools, agent skills, and user installation. Protected vault clones reject unrelated pushes through native Git hooks. The harness uses canonical vault ownership for its hooks and landing checks. Windows tracker state receives private access controls. Existing projects keep their local storage until migration is explicitly requested.
+
 ## v0.45.0 - 2026-11-13
 
 Delta: v0.44.1..v0.45.0
