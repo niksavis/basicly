@@ -30,6 +30,7 @@ def test_runtime_recovery_reads_current_facts_without_replaying_old_handoffs(
     )
     monkeypatch.chdir(repo)
     if phase == "session":
+        subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
         assert cli.main(["session", "start"]) == 0
         prompt = capsys.readouterr().out
     else:

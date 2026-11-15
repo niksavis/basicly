@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 from basicly import release
 
 SCRIPT = Path(__file__).resolve().parent.parent / ".scripts" / "release_reuse.py"
@@ -107,3 +109,22 @@ def test_a_release_commit_that_changes_code_needs_the_full_checks(tmp_path: Path
 
     assert not ok
     assert "src/basicly/cli.py" in reason
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [(".basicly/tracker-bootstrap.py", True), (".basicly/tracker-bootstrap-extra.py", False)],
+)
+def test_release_reuse_accepts_only_the_named_tracker_bootstrap_pin(
+    tmp_path: Path, path: str, expected: bool
+) -> None:
+    repo, _ = _repo(tmp_path)
+    green = _commit(repo, path, 'SOURCE = "basicly-1.0.0.whl"\n', "chore: bootstrap")
+    _commit(repo, path, 'SOURCE = "basicly-1.0.1.whl"\n', release.COMMIT_SUBJECT)
+    _git(repo, "tag", "v1.0.1")
+
+    ok, reason = reuse.reusable(repo, "v1.0.1", green=lambda sha: sha == green)
+
+    assert ok is expected, reason
+    if not expected:
+        assert path in reason

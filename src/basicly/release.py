@@ -40,7 +40,7 @@ PIN_FILES = (
     Path("packages/basicly-tracker/README.md"),
     Path("packages/basicly-board/README.md"),
 )
-PIN_GLOBS = ("docs/how-to/*.md", "docs/tutorial/*.md")
+PIN_GLOBS = ("docs/how-to/*.md", "docs/tutorial/*.md", ".basicly/tracker-bootstrap.py")
 
 
 RERECORDED_PATHS = ("docs/tutorial/",)

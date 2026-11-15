@@ -13,6 +13,7 @@ from basicly import (
     release,
     release_history,
     shipped_core,
+    tracker_agent,
     tracker_paths,
 )
 from basicly import policy as policy_mod
@@ -154,6 +155,31 @@ def test_a_release_produces_the_version_the_changelog_and_an_annotated_tag(repo:
     assert "v0.6.0 (2026-07-26)" in _git(repo, "cat-file", "-p", "v0.6.0")
     assert _git(repo, "log", "--format=%s", "-1").strip() == release.COMMIT_SUBJECT
     assert "fx-1" in _git(repo, "log", "--format=%B", "-1")
+    assert _git(repo, "status", "--porcelain").strip() == ""
+
+
+@pytest.mark.usefixtures("no_regen")
+def test_release_repins_the_committed_tracker_bootstrap_without_changing_runtime(
+    repo: Path,
+) -> None:
+    launcher = tracker_agent.write_launch(repo, version=CURRENT, tool="basicly")
+    before = launcher.read_text(encoding="utf-8")
+    _git(repo, "add", ".basicly/tracker-bootstrap.py")
+    _git(repo, "commit", "-qm", "chore: configure repository bootstrap")
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    preview = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
+    assert not preview.refused
+    assert launcher.read_text(encoding="utf-8") == before
+    assert _git(repo, "status", "--porcelain").strip() == ""
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert not result.refused and result.tagged
+    after = launcher.read_text(encoding="utf-8")
+    assert after == before.replace(CURRENT, "0.6.0")
+    assert "/releases/download/v0.6.0/basicly-0.6.0-py3-none-any.whl" in after
+    assert _git(repo, "show", "v0.6.0:.basicly/tracker-bootstrap.py") == after
     assert _git(repo, "status", "--porcelain").strip() == ""
 
 

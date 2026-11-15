@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from typing import TYPE_CHECKING
 
 import pytest
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
 
 def _repo(tmp_path: Path) -> Path:
     repo = flipped_repo(tmp_path)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
     seed_records(repo, [{"id": "basicly-aaa", "status": "open", "title": "open work"}])
     return repo
 
