@@ -53,6 +53,28 @@ def test_an_expired_probe_starts_no_more_commands_or_claims(tmp_path: Path, bare
     assert vault_claim.vault_queue.pending(clone.folder / "queue.jsonl") == []
 
 
+def test_undecided_share_returns_cannot_outlive_the_claim_budget(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone, state = _machine(tmp_path, bare, "undecided-share")
+    elapsed = [0.0]
+
+    def share(*_args: Any, **_options: Any) -> dict[str, object]:
+        assert elapsed[0] < 4.0
+        elapsed[0] += 1.0
+        return {"shared": 0, "pending": 0}
+
+    monkeypatch.setattr(vault_claim.vault_share, "share", share)
+
+    shown = vault_claim.claim(
+        _ask(clone, state, "claimant"), deadline=4.0, ticks=lambda: elapsed[0]
+    )
+
+    assert shown["exit"] == vault_claim.UNSETTLED, shown
+    assert elapsed[0] == 4.0
+    assert len(vault_claim.vault_queue.pending(clone.folder / "queue.jsonl")) == 1
+
+
 @pytest.mark.parametrize("winner", ["own", "foreign", "missing-view"])
 def test_transport_exhaustion_leaves_time_for_the_claim_response(
     tmp_path: Path, bare: Path, winner: str, monkeypatch: pytest.MonkeyPatch
@@ -103,3 +125,34 @@ def test_transport_exhaustion_leaves_time_for_the_claim_response(
     ), shown
     assert elapsed[0] < 4.0
     assert float(shown["timing"]["claim_s"]) < 4.0
+
+
+def test_a_successful_push_with_a_stale_local_head_refreshes_before_answering(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "stale-after-push")
+    vault_claim.vault_clone.fetch(clone, clock=time.time)
+    old = git_runner.run(["rev-parse", vault_claim.vault_clone.HEAD_REF], clone.bare).strip()
+    published = False
+    refreshed = False
+
+    def runner(args: list[str], cwd: Path, **options: Any) -> str:
+        nonlocal published, refreshed
+        result = git_runner.run(args, cwd, **options)
+        if "push" in args and not published:
+            published = True
+            git_runner.run(["update-ref", vault_claim.vault_clone.HEAD_REF, old], clone.bare)
+        elif args[0] == "fetch" and published:
+            refreshed = True
+        return result
+
+    shown = vault_claim.claim(_ask(clone, state, "claimant", runner=runner))
+
+    assert published
+    assert shown["exit"] == vault_claim.LANDED, shown
+    assert refreshed
+    remote = vault_claim.vault_clone.vault_shapes.valid_events(
+        vault_claim.vault_clone.vault_shapes.check(bare, "main")
+    )
+    assert sum(event["id"] == shown["claim"] for event in remote) == 1
+    assert vault_claim.vault_queue.pending(clone.folder / "queue.jsonl") == []

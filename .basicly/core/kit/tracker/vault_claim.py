@@ -193,6 +193,8 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
     while True:
         if decided():
             return joined_at is not None
+        if budget.left() <= 0:
+            raise vault_share.DeadlineError("the claim deadline expired")
         stalled = joined_at is not None and joined_at - budget.left() >= min(STALL, joined_at / 2)
         plan = vault_share.Plan(
             ask.clock,
@@ -226,7 +228,9 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
             continue
         budget.add("share_lock_wait_s", shared.get("lock_wait_s"))
         budget.add("fetch_lock_wait_s", shared.get("fetch_lock_wait_s"))
-        return joined_at is not None
+        if decided() or shared.get("ended"):
+            return joined_at is not None
+        fresh = False
 
 
 def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[str, object]:
