@@ -2,26 +2,23 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from tests.test_kit_vault_share import _machine, bare, git_runner, vault_share
+import pytest
 
-if TYPE_CHECKING:
-    import pytest
+from tests.test_kit_vault_share import _ids, _machine, _share, _write, bare, git_runner, vault_share
 
 __all__ = ["bare"]
 
 
-def test_a_fetch_retry_receives_only_the_remaining_transport_budget(
-    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+def test_an_urgent_share_does_not_restart_transport_with_an_exhausted_budget(
+    tmp_path: Path, bare: Path
 ) -> None:
-    clone, _state = _machine(tmp_path, bare, "fetch-deadline")
-    model = vault_share.vault_clone
-    previous = model.fetch(clone, clock=time.time)
+    clone, state = _machine(tmp_path, bare, "fetch-deadline")
+    vault_share.vault_clone.fetch(clone, clock=time.time)
+    written = _write(clone, state, 1, "keep pending")
     elapsed = [0.0]
     timeouts: list[float] = []
-    monkeypatch.setattr(model, "time", SimpleNamespace(monotonic=lambda: elapsed[0]))
 
     def timed_out(args: list[str], cwd: Path, **options: Any) -> str:
         if args[0] == "fetch":
@@ -31,8 +28,17 @@ def test_a_fetch_retry_receives_only_the_remaining_transport_budget(
             raise git_runner.GitTimeoutError("the transport consumed its budget")
         return git_runner.run(args, cwd, **options)
 
-    shown = model.fetch(clone, clock=time.time, runner=timed_out, timeout=0.25)
+    with pytest.raises(vault_share.DeadlineError):
+        _share(
+            clone,
+            state,
+            runner=timed_out,
+            plan=vault_share.Plan(time.time, urgent=True, deadline_s=0.25),
+            clock=lambda: elapsed[0],
+        )
 
-    assert shown["fetched"] is False
-    assert shown["head"] == previous["head"]
     assert timeouts == [0.25]
+    assert [
+        row["id"] for row in vault_share.vault_queue.pending(clone.folder / "queue.jsonl")
+    ] == written
+    assert _ids(bare) == {}

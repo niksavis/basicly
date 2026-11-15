@@ -1,1 +1,1 @@
-- Vault claims reserve half a short remaining budget for takeover. Shares avoid duplicate events during concurrent settlement, canonical outcomes stop retry transport, and fetch retries share one transport budget. The claim deadline stays unchanged.
+- Vault claims reserve half a short remaining budget for takeover. Shares avoid duplicate events during concurrent settlement, canonical outcomes stop retry transport, and urgent shares give each fetch attempt only the time left in their deadline. The claim deadline stays unchanged.

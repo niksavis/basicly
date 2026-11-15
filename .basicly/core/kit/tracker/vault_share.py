@@ -258,14 +258,19 @@ def share(
         attempt = total = 0
         fetch_waits = 0.0
         builder = _BatchBuilder(clone, writer)
-        head = ""
+
+        def fetching(args: list[str], cwd: Path, **options: Any) -> str:
+            if plan.urgent and args[0] == "fetch":
+                options["timeout"] = min(float(options["timeout"]), _budget(plan, started, clock))
+            return runner(args, cwd, **options)
+
         while True:
             attempt += 1
             if attempt > 1 and plan.stop_when is not None and plan.stop_when():
-                head = vault_clone._read(clone.folder / vault_clone.COVERS_NAME).strip() or head
+                head = vault_clone._read(clone.folder / vault_clone.COVERS_NAME).strip()
                 return _pending_share(clone, head, total, waited, fetch_waits)
             budget = _budget(plan, started, clock)
-            fetched = _share_head(clone, plan, runner, budget, fresh=attempt == 1 and plan.fresh)
+            fetched = _share_head(clone, plan, fetching, budget, fresh=attempt == 1 and plan.fresh)
             head = str(fetched["head"])
             fetch_waits += float(fetched.get("fetch_lock_wait_s") or 0.0)
             if fetched.get("retracted") or vault_clone.unrepaired(clone, runner, budget):
@@ -301,7 +306,7 @@ def share(
                 ) from None
             vault_clone.durable(clone.folder / SHARED_AT, f"{plan.wall()}\n")
             budget = _budget(plan, started, clock)
-            settled = _share_head(clone, plan, runner, budget, fresh=True)
+            settled = _share_head(clone, plan, fetching, budget, fresh=True)
             fetch_waits += float(settled.get("fetch_lock_wait_s") or 0.0)
             total += len(batch)
             left = len(prune(clone))
