@@ -204,6 +204,13 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
         asked = budget.now()
         try:
             shared = vault_share.share(ask.clone, ask.state, plan=plan, runner=ask.runner)
+        except (
+            vault_share.DeadlineError,
+            git_runner.GitTimeoutError,
+        ):
+            if decided():
+                return joined_at is not None
+            raise
         except events.LockUnavailableError:
             budget.add("joined_wait_s", budget.now() - asked)
             joined_at = budget.left() if joined_at is None else joined_at
