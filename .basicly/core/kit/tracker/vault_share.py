@@ -165,6 +165,7 @@ class _BatchBuilder:
     clone: Any
     writer: str
     prepared: tuple[str, list, str] | None = None
+    urgent: bool = False
 
     def build(self, head: str, batch: list, git: Runner) -> str:
         previous = self.prepared
@@ -172,6 +173,19 @@ class _BatchBuilder:
             previous = (head, batch, _build(self.clone, head, self.writer, batch, git))
             self.prepared = previous
         return previous[2]
+
+    def latest(
+        self, head: str, batch: list, git: Runner, budget: Callable[[], float]
+    ) -> tuple[str, list]:
+        while True:
+            budget()
+            commit = self.build(head, batch, git)
+            arrived = [line for line in prune(self.clone) if line.get("writer") == self.writer]
+            if not arrived or arrived == batch:
+                return commit, arrived
+            batch = arrived
+            if not self.urgent:
+                return self.build(head, batch, git), batch
 
 
 def _push(clone: Any, commit: str, runner: Runner, timeout: float) -> None:
@@ -257,7 +271,7 @@ def share(
             return {"shared": 0, "pending": 0, "lock_wait_s": waited}
         attempt = total = 0
         fetch_waits = 0.0
-        builder = _BatchBuilder(clone, writer)
+        builder = _BatchBuilder(clone, writer, urgent=plan.urgent)
 
         def fetching(args: list[str], cwd: Path, **options: Any) -> str:
             if plan.urgent and args[0] == "fetch":
@@ -288,11 +302,9 @@ def share(
             def git(args: list[str], **options: Any) -> str:
                 return runner(args, clone.bare, timeout=_budget(plan, started, clock), **options)
 
-            commit = builder.build(head, batch, git)
-            arrived = [line for line in prune(clone) if line.get("writer") == writer]
-            if arrived and arrived != batch:
-                batch = arrived
-                commit = builder.build(head, batch, git)
+            commit, batch = builder.latest(head, batch, git, lambda: _budget(plan, started, clock))
+            if not batch or (plan.stop_when is not None and plan.stop_when()):
+                return _pending_share(clone, head, total, waited, fetch_waits)
             try:
                 _push(clone, commit, runner, _budget(plan, started, clock))
             except git_runner.GitRunnerError as exc:
