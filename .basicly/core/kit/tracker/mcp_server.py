@@ -44,6 +44,7 @@ class Tracker:
         self.vault = config is not None
         if not self.vault and not (self.repository / ".basicly" / "ledger").is_dir():
             raise ValueError("The repository has no tracker. Run basicly-tracker init first.")
+        _load("bootstrap").prepare(self.repository)
         os.chdir(self.repository)
         self.cli = _load("cli")
 

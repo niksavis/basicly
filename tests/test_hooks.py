@@ -540,9 +540,7 @@ def test_staged_checks_reuse_prepared_uv_environment_without_building(
     monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "uv-cache"))
     monkeypatch.setenv("UV_PYTHON", sys.executable)
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(
-        [sys.executable, "-m", "venv", "--without-pip", str(tmp_path / ".venv")], check=True
-    )
+    subprocess.run(["uv", "venv", "--python", sys.executable, str(tmp_path / ".venv")], check=True)
     (tmp_path / ".gitignore").write_text(".venv/\n.basicly/bin/\nuv-cache/\n")
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "snapshot-check"\nversion = "0.0.0"\n'

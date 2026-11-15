@@ -102,7 +102,7 @@ layers =
     verify_receipt
     affected
     hook_runtime | hook_python
-    catalog | stemmer | tracker_agent
+    catalog | stemmer | tracker_agent | tracker_bootstrap_launch
 # One cycle survives as a function-level import carrying `# noqa: PLC0415`; the
 # top-level direction is the one the tiers encode. Listing it here is not a
 # weakening: `unmatched_ignore_imports_alerting` defaults to `error`, so when the cycle

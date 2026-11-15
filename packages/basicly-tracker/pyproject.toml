@@ -3,7 +3,7 @@ name = "basicly-tracker"
 version = "0.3.0"
 description = "An append-only work tracker whose ledger merges cleanly under parallel work"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.14"
 dependencies = []
 classifiers = [
   "Programming Language :: Python :: 3 :: Only",
@@ -28,3 +28,4 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "../kit_plugin.py" = "basicly_tracker/plugin.py"
 "../../.basicly/core/kit/board" = "basicly_tracker/board"
 "../../src/basicly/tracker_agent.py" = "basicly_tracker/agent.py"
+"../../src/basicly/tracker_bootstrap_launch.py" = "basicly_tracker/bootstrap_launch.py"

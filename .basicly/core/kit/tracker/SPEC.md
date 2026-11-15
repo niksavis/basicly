@@ -154,8 +154,9 @@ also an argument: each entry point accepts a redactor and imports none. The kit 
 library, with no third-party package, no network and no subprocess. The one exception is
 `git_runner.py`: it alone may start `git`, through `subprocess` with an argument list. It
 checks commit ids, writer ids and URLs before git runs, allows only the `https` and `ssh`
-protocols, and stops git at a deadline. The kit uses no syntax newer than Python 3.9,
-because a consumer's Python can be older.
+protocols, and stops git at a deadline. Distributed runtimes require Python 3.14 or later.
+Machine bootstrap provisions the required interpreter with uv; compatible implementation
+code does not need syntax-only changes.
 
 The `kit-boundary` commit hook enforces this direction. It ships with the kit and also runs in
 the authoring repository's full verify run. An import linter cannot enforce it. The kit is

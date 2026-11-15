@@ -9,6 +9,31 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
+MINIMUM_PYTHON = (3, 14)
+
+
+def require_runtime(command: str) -> None:
+    if sys.version_info < MINIMUM_PYTHON:
+        raise SystemExit(
+            f"{command} requires Python 3.14 or later. Run "
+            f"`uvx --python '>=3.14' {command}` to provision a suitable runtime."
+        )
+
+
+def write_bootstrap(kit_dir: Path, target: Path) -> Path:
+    here = Path(__file__).resolve().parent
+    candidates = (here / "agent.py", here.parent / "src/basicly/tracker_agent.py")
+    script = next((path for path in candidates if path.is_file()), None)
+    if script is None:
+        raise SystemExit("Tracker bootstrap is missing; reinstall basicly-tracker with uv.")
+    adapter = load_kit_module(script.parent, script.name, "basicly_tracker_agent")
+    version = read_kit_constant(kit_dir, "pin.py", "KIT_VERSION")
+    try:
+        return adapter.write_launch(target, version=version)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"tracker onboarding: {exc}") from None
+
+
 DEFAULT_ROOT = Path(".basicly") / "kit"
 
 SKILL_ROOTS = (

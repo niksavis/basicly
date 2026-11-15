@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from basicly import runner
 from basicly.runner import (
     BUILTIN_RUNNERS,
@@ -20,6 +22,14 @@ from basicly.runner import (
 )
 
 FORWARD_FLAG = "--forward-subagent-text"
+
+
+@pytest.fixture(autouse=True)
+def _ready_tracker_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        runner.tracker_agent, "memory_environment", lambda _root, _kit, env: dict(env)
+    )
+
 
 _TOOL_USE_ID = "toolu_01K53mB2SguD6493Ah6sTeiG"
 _SUBAGENT = "general-purpose"

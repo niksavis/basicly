@@ -14,6 +14,13 @@ from basicly.runner import CLAUDE_STREAM_JSON, HEADLESS, PROMPT_PLACEHOLDER, Run
 SESSION = "basicly-u2hl:bc7cc925"
 
 
+@pytest.fixture(autouse=True)
+def _ready_tracker_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        runner.tracker_agent, "memory_environment", lambda _root, _kit, env: dict(env)
+    )
+
+
 def _spec(body: str) -> RunnerSpec:
     return RunnerSpec(
         "claude",

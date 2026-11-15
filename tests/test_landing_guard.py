@@ -244,7 +244,7 @@ def test_self_hosted_engine_update_uses_a_stable_candidate_engine(
     )
     _git_here(lane.path, "commit", "-am", "update engine")
     runtime = tmp_path / "runtime"
-    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(runtime)], check=True)
+    subprocess.run(["uv", "venv", "--python", sys.executable, str(runtime)], check=True)
     site = (
         next(runtime.glob("lib/python*/site-packages"))
         if os.name != "nt"

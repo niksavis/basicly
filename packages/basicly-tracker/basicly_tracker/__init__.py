@@ -28,6 +28,7 @@ def _sibling(module_name: str, packaged: str, source: str, what: str):
 
 
 installer = _sibling("basicly_kit_installer", "installer.py", "kit_installer.py", "kit installer")
+installer.require_runtime("basicly-tracker")
 modes = _sibling("basicly_kit_modes", "modes.py", "kit_modes.py", "kit modes")
 
 LEDGER_DIR = ".basicly/ledger"
@@ -154,7 +155,12 @@ def _agent(args: list[str]) -> int:
     launcher = _sibling(
         "basicly_tracker_agent", "agent.py", "../src/basicly/tracker_agent.py", "agent launcher"
     )
-    return int(launcher.main(args))
+    return int(launcher.main(args, kit=KIT.directory))
+
+
+def _bootstrap(args: list[str]) -> int:
+    adapter = installer.load_kit_module(KIT.directory, "bootstrap.py", "basicly_tracker_bootstrap")
+    return int(adapter.main(args))
 
 
 def _mcp_config(args: list[str]) -> int:
@@ -297,6 +303,7 @@ def main(argv=None) -> int:
             "  serve LEDGER [--port PORT]  run the human UI and HTTP API\n"
             "  mcp --repository ROOT      serve agent tools over MCP stdio\n"
             "  agent -- CLIENT [ARGS]     launch a client with its own tracker session\n"
+            "  bootstrap                 establish repository tracker memory before work\n"
             "  mcp-config --client NAME --repository ROOT  print client registration\n"
             "  plugin --out DIRECTORY     export a portable agent plugin\n"
             "  bundle [--out FILE]         export the standalone Python archive\n\n"
@@ -307,6 +314,7 @@ def main(argv=None) -> int:
         "mcp": _mcp,
         "agent": _agent,
         "mcp-config": _mcp_config,
+        "bootstrap": _bootstrap,
     }
     if args and args[0] in exports:
         return exports[args[0]](args[1:])

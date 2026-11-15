@@ -3,7 +3,7 @@ name = "basicly-board"
 version = "0.1.0"
 description = "Serve a tracker ledger as a web page and an HTTP API on localhost"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.14"
 dependencies = []
 classifiers = [
   "Programming Language :: Python :: 3 :: Only",

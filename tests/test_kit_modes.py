@@ -175,7 +175,7 @@ def test_the_default_mode_writes_no_kit_code_and_the_sandbox_mode_one_file(
     modes.install_mode(package, _request(package, root), sandbox=False)
     assert not (root / ".basicly" / "tracker.pyz").exists()
     for folder in (".claude", ".agents"):
-        assert not (root / folder / "skills" / "tracker" / "SKILL.md").exists()
+        assert (root / folder / "skills" / "tracker" / "SKILL.md").is_file()
         assert modes.user_skill_paths(machine / "home", tracker.USER_SKILL)[0].is_file()
     assert not (root / ".basicly" / "kit").exists()
     assert (root / ".basicly" / "ledger" / ".kit-version").is_file()

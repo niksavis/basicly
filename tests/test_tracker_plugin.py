@@ -22,6 +22,9 @@ def package(tmp_path: Path) -> Path:
         ROOT / "packages/basicly-tracker/basicly_tracker/__init__.py", target / "__init__.py"
     )
     shutil.copyfile(ROOT / "src/basicly/tracker_agent.py", target / "agent.py")
+    shutil.copyfile(
+        ROOT / "src/basicly/tracker_bootstrap_launch.py", target / "bootstrap_launch.py"
+    )
     for name in ("installer", "modes", "bundle", "plugin"):
         shutil.copyfile(ROOT / "packages" / f"kit_{name}.py", target / f"{name}.py")
     for name, source in (("kit", "tracker"), ("board", "board")):

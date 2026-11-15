@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO
 
-from . import agents, context_window, models, run_record
+from . import agents, context_window, models, owned_store, run_record, tracker_agent
 from .checkout import sanitised_colour_env, sanitised_git_env
 from .context_window import (
     ADAPTER_WINDOW,
@@ -918,6 +918,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     stdin = prompt if spec.prompt_via == "stdin" else None
     stdin_source = subprocess.PIPE if stdin is not None else subprocess.DEVNULL
     env = dispatch_env(spec, os.environ, cwd)
+    env = tracker_agent.memory_environment(cwd, owned_store.packaged_kit_dir(), env)
     start = time.perf_counter()
     timed_out = False
     stopped: StopReason | None = None

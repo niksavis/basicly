@@ -28,7 +28,16 @@ def cli_command() -> list[str] | None:
 def orientation() -> str | None:
     command = cli_command()
     if command is None:
-        return None
+        for root in (Path.cwd(), *Path.cwd().parents):
+            if (root / ".git").exists():
+                script = root / ".basicly/tracker-bootstrap.py"
+                command = [sys.executable, str(script)] if script.is_file() else None
+                break
+    if command is None:
+        raise ValueError(
+            "run repository tracker bootstrap before implementation; "
+            "no tracker runtime is available"
+        )
     try:
         proc = subprocess.run(  # nosec B603 — argv list, no shell, command from PATH
             command,
@@ -40,14 +49,19 @@ def orientation() -> str | None:
             check=False,
         )
     except subprocess.TimeoutExpired:
-        _skipped(f"`basicly session start` outran {CLI_TIMEOUT_S:g}s")
-        return None
+        raise ValueError(
+            "tracker startup timed out; restore vault access and "
+            "run repository bootstrap before work"
+        ) from None
     if proc.returncode != 0:
-        _skipped(f"`basicly session start` exited {proc.returncode}")
-        return None
+        raise ValueError(
+            "tracker startup refused; run repository bootstrap and resolve its named remedy"
+        )
     report = proc.stdout.strip()
     if not report or report.startswith(NO_TRACKER_PREFIX):
-        return None
+        raise ValueError(
+            "persistent tracker memory is unavailable; complete repository onboarding before work"
+        )
     return within_cap(report)
 
 
@@ -59,8 +73,8 @@ def within_cap(report: str) -> str:
     return report[: HOOK_OUTPUT_CAP - len(notice)] + notice
 
 
-def _skipped(reason: str) -> None:
-    print(f"session-start: orientation skipped, {reason}", file=sys.stderr)
+def _refused(reason: str) -> None:
+    print(f"session-start: implementation refused, {reason}", file=sys.stderr)
 
 
 def wants_json_output(payload: dict) -> bool:
@@ -76,10 +90,13 @@ def main() -> int:
         payload = parsed if isinstance(parsed, dict) else {}
         report = orientation()
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
-        _skipped(type(exc).__name__)
-        return 0
+        _refused(str(exc))
+        return 2
     if report is None:
-        return 0
+        _refused(
+            "tracker startup supplied no persistent memory; run repository bootstrap before work"
+        )
+        return 2
     if wants_json_output(payload):
         print(json.dumps({"additionalContext": report}))
     else:

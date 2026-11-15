@@ -2,7 +2,8 @@
 
 The standalone tracker includes the CLI, human board, agent skills, plugin exporter and MCP tools.
 It runs without the basicly harness or third-party runtime packages.
-The package supports Python 3.9 or later, as declared in `pyproject.toml`.
+The package requires Python 3.14 or later, as declared in `pyproject.toml`.
+Use `uvx --python '>=3.14' basicly-tracker` to provision a suitable runtime.
 
 Install the tool for the user by default.
 Each repository chooses its tracker and project prefix explicitly.

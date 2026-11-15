@@ -12,6 +12,13 @@ import pytest
 from basicly import checkout, run_record, runner, task_context
 
 
+@pytest.fixture(autouse=True)
+def _ready_tracker_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        runner.tracker_agent, "memory_environment", lambda _root, _kit, env: dict(env)
+    )
+
+
 @pytest.fixture
 def consumer(tmp_path, monkeypatch):
     root = tmp_path / "consumer"

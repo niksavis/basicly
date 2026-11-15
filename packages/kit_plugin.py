@@ -28,7 +28,7 @@ def guidance(source: str) -> str:
         "\nResolve `<skill-directory>` to the absolute directory containing this SKILL.md. "
         "Run commands from the repository root. Its tracker may use `.basicly-tracker.toml` "
         "and a frozen `.basicly/ledger` guard, or a local ledger directory. "
-        "The bundled script needs Python 3.9 or later and no engine or third-party package.\n\n"
+        "The bundled script needs Python 3.14 or later and no engine or third-party package.\n\n"
         "For a new repository, run the bundled script with "
         "`init --sandbox --with-instructions` to install "
         "the ledger, repository instructions and Git claim gate. Do not run init in a "

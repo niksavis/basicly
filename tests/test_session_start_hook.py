@@ -73,19 +73,20 @@ def test_no_payload_at_all_takes_the_plain_shape(
     assert capsys.readouterr().out == REPORT + "\n"
 
 
-def test_an_orientation_slower_than_the_bound_is_abandoned_in_one_line(
+def test_an_orientation_slower_than_the_bound_refuses_in_one_line(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     module = _load_module()
     monkeypatch.setattr(module, "CLI_TIMEOUT_S", 0.2)
     _stub_cli(module, "import time; time.sleep(30)", monkeypatch)
 
-    assert _run(module, CLAUDE_PAYLOAD, monkeypatch) == 0
+    assert _run(module, CLAUDE_PAYLOAD, monkeypatch) == 2
 
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err.splitlines() == [
-        "session-start: orientation skipped, `basicly session start` outran 0.2s"
+        "session-start: implementation refused, tracker startup timed out; "
+        "restore vault access and run repository bootstrap before work"
     ]
 
 
@@ -95,17 +96,20 @@ def test_a_failing_or_absent_engine_injects_nothing(
     module = _load_module()
     _stub_cli(module, "raise SystemExit(3)", monkeypatch)
 
-    assert _run(module, CLAUDE_PAYLOAD, monkeypatch) == 0
+    assert _run(module, CLAUDE_PAYLOAD, monkeypatch) == 2
     first = capsys.readouterr()
     assert first.out == ""
-    assert "exited 3" in first.err
+    assert "tracker startup refused" in first.err
 
     monkeypatch.setattr(module, "cli_command", lambda: None)
-    assert _run(module, CLAUDE_PAYLOAD, monkeypatch) == 0
-    assert capsys.readouterr() == ("", "")
+    monkeypatch.setattr(module.Path, "cwd", lambda: Path("/"))
+    assert _run(module, CLAUDE_PAYLOAD, monkeypatch) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no tracker runtime" in captured.err
 
 
-def test_a_repository_with_no_owned_tracker_is_silent_end_to_end(tmp_path: Path) -> None:
+def test_a_repository_with_no_owned_tracker_refuses_end_to_end(tmp_path: Path) -> None:
 
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)  # nosec B603 B607
     hook = subprocess.run(  # nosec B603
@@ -116,7 +120,8 @@ def test_a_repository_with_no_owned_tracker_is_silent_end_to_end(tmp_path: Path)
         text=True,
         check=False,
     )
-    assert (hook.returncode, hook.stdout) == (0, "")
+    assert (hook.returncode, hook.stdout) == (2, "")
+    assert "implementation refused" in hook.stderr
 
     module = _load_module()
     command = module.cli_command()
@@ -124,7 +129,8 @@ def test_a_repository_with_no_owned_tracker_is_silent_end_to_end(tmp_path: Path)
     report = subprocess.run(  # nosec B603
         command, cwd=tmp_path, capture_output=True, text=True, check=False
     )
-    assert report.stdout.startswith(module.NO_TRACKER_PREFIX)
+    assert report.returncode == 2
+    assert "onboarding" in report.stdout + report.stderr
 
 
 def test_a_report_over_the_hook_cap_is_cut_to_the_cap_with_a_pointer(

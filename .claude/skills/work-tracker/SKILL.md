@@ -6,6 +6,16 @@ description: Reads, files, claims and closes records in the work tracker. Use to
 
 # Work Tracker
 
+Before implementation after a clone or pull, establish persistent tracker memory:
+
+```sh
+uv run --no-project --python '>=3.14' python .basicly/tracker-bootstrap.py
+```
+
+Stop implementation if bootstrap refuses. Follow its runtime, setup or credential remedy.
+Bootstrap configures this machine without repeating repository migration or replacing unrelated settings.
+With the engine installed, `basicly tracker bootstrap` establishes the same machine context before work.
+
 The tracker is an append-only event log. Ledger mode writes `.basicly/ledger/`, committed with the code. With `.basicly-tracker.toml`, writes queue vault events beside the clone; own pending writes are visible and marked `pending` until shared.
 The kit is `python3 .basicly/core/kit/tracker/cli.py`, which needs nothing installed. The engine is `basicly tracker`, which works when `basicly` is on PATH.
 

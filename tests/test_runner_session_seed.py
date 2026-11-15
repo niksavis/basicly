@@ -20,6 +20,13 @@ from basicly.runner import (
 CLAUDE = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "claude")
 
 
+@pytest.fixture(autouse=True)
+def _ready_tracker_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        runner.tracker_agent, "memory_environment", lambda _root, _kit, env: dict(env)
+    )
+
+
 def test_an_uncreated_seed_mints_the_session_under_the_id_the_harness_chose() -> None:
     argv = format_command(
         CLAUDE, "go", seed=SessionSeed("11111111-1111-4111-8111-111111111111", exists=False)

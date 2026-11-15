@@ -87,6 +87,7 @@ uv run basicly permissions-check
 
 ### Harness Loop
 
+- Before implementation after clone or pull, run `uv run --no-project --python '>=3.14' python .basicly/tracker-bootstrap.py`. Stop if persistent tracker memory is unavailable; follow the named setup or credential remedy before starting work.
 - Keep one responsible owner from task to completion; the tracker ledger and latest handover preserve shared history.
 - Delegate only for independent work, context pressure, independent review or specialist capabilities.
 - Use `basicly session start` when useful. Direct work needs no controller or skill; `harness-loop` is for an owner handoff or `--execution worker`.

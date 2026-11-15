@@ -152,11 +152,30 @@ def _render(package: Package, into: Path, typed: str) -> Path:
 
 def _write_guidance(package: Package, request, typed: str, *, skill: bool) -> None:
     installer, name = package.installer, package.kit.name
+    if name == "tracker":
+        root = request.target.resolve()
+        shared = (
+            "AGENTS.md",
+            "CLAUDE.md",
+            ".github/copilot-instructions.md",
+            ".agents/skills/tracker/SKILL.md",
+            ".claude/skills/tracker/SKILL.md",
+        )
+        if any(not (root / relative).resolve().is_relative_to(root) for relative in shared):
+            raise SystemExit(
+                "Tracker guidance points outside this repository; preserve it before onboarding."
+            )
     with tempfile.TemporaryDirectory() as scratch:
         rendered = _render(package, Path(scratch), typed)
-        if skill:
+        if skill or name == "tracker":
             installer.write_skill(rendered, request.target, name, request.stream)
-        if request.instructions:
+        if name == "tracker":
+            for relative in ("AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"):
+                path = request.target / relative
+                if not path.exists():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("", encoding="utf-8")
+        if request.instructions or name == "tracker":
             installer.write_block(rendered, request.target, name, request.stream)
 
 
@@ -216,8 +235,10 @@ def install_mode(package: Package, request, sandbox: bool) -> int:
         _check_version(package, request, found)
         _drop_file(target, Path(package.user.places[0]), stream, command)
         install_user(kit.directory, package.user, user_home(), stream)
+    if kit.name == "tracker":
+        installer.write_bootstrap(kit.directory, target)
     _write_guidance(package, request, typed, skill=found is None)
-    if found is not None:
+    if found is not None and kit.name != "tracker":
         installer.drop_skill(target, kit.name, stream)
     drop_vendored(installer, request)
     return 0

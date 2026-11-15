@@ -1046,13 +1046,17 @@ def _say_session_decisions(report: dict[str, Any], full: bool) -> None:
 def cmd_session_start(args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
+    try:
+        tracker_agent.memory_environment(repo_root, owned_store.packaged_kit_dir(), os.environ)
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        ui.fail(f"tracker startup refused: {exc}")
+        return 2
     report = _session_report(repo_root)
+    if not report["tracker"]["present"]:
+        ui.say("tracker memory became unavailable; run `basicly tracker bootstrap` before work")
+        return 2
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
-        return 0
-    if not report["tracker"]["present"]:
-        ui.say("ledger: none - this repository has no owned tracker, so no backlog to read")
-        _say_session_decisions(report, args.full)
         return 0
     if not report["tracker"]["records"]:
         ui.say("ledger: empty - no records yet, so nothing is ready and nothing is blocked")
@@ -1884,6 +1888,15 @@ def cmd_tracker_hook(args: argparse.Namespace) -> int:
             f"run `basicly {FOLD_COMMAND}` yourself after a merge",
             style="warn",
         )
+        return completed.returncode
+    if not dry_run:
+        try:
+            tracker_agent.write_launch(
+                repo_root, tool="basicly", version=owned_store.packaged_kit("pin").KIT_VERSION
+            )
+        except (OSError, ValueError) as exc:
+            ui.fail(f"tracker onboarding refused: {exc}")
+            return 2
     return 0
 
 
@@ -2466,7 +2479,12 @@ def cmd_tracker_fold(_args: argparse.Namespace) -> int:
 
 def cmd_tracker_agent(args: argparse.Namespace) -> int:
     context = ["--session", args.session] if args.session is not None else []
-    return tracker_agent.main([*context, *args.argv])
+    return tracker_agent.main([*context, *args.argv], kit=owned_store.packaged_kit_dir())
+
+
+def cmd_tracker_bootstrap(args: argparse.Namespace) -> int:
+    adapter = owned_store.packaged_kit("bootstrap")
+    return int(adapter.main(["--repository", str(args.repository)]))
 
 
 def cmd_tracker(args: argparse.Namespace) -> int:
@@ -2476,6 +2494,7 @@ def cmd_tracker(args: argparse.Namespace) -> int:
         "scrub": cmd_tracker_scrub,
         "fold": cmd_tracker_fold,
         "agent": cmd_tracker_agent,
+        "bootstrap": cmd_tracker_bootstrap,
         **tracker_query.HANDLERS,
     }
     return _dispatch(args, "tracker_command", handlers, group="tracker")
@@ -5438,7 +5457,8 @@ def _add_session_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     session_sub = session_parser.add_subparsers(dest="session_command", required=True)
     start = session_sub.add_parser(
-        "start", help="Read-only orientation for a new session (never writes, always exits 0)"
+        "start",
+        help="Establish tracker memory and orient a new session; refuse unavailable context",
     )
     start.add_argument(
         "--json", action="store_true", help="Emit the orientation as JSON (stable schema)"
@@ -5469,6 +5489,8 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     tracker_sub = tracker_parser.add_subparsers(dest="tracker_command", required=True)
     tracker_query.add_parsers(tracker_sub)
+    t_bootstrap = tracker_sub.add_parser("bootstrap", help="Establish persistent tracker memory")
+    t_bootstrap.add_argument("--repository", type=Path, default=Path.cwd())
     t_agent = tracker_sub.add_parser("agent", help="Launch an agent with its own tracker session")
     t_agent.add_argument("--session", help="An existing tracker session for an intentional resume")
     t_agent.add_argument("argv", nargs=argparse.REMAINDER, help="Launcher options and client argv")

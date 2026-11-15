@@ -26,6 +26,7 @@ def _load(file_name: str, module_name: str) -> Any:
     return module
 
 
+_load("bootstrap.py", "basicly_tracker_bootstrap").require_runtime()
 snapshot = _load("snapshot.py", "basicly_tracker_kit_snapshot")
 scheduler = _load("scheduler.py", "basicly_tracker_kit_scheduler")
 commands = _load("commands.py", "basicly_tracker_kit_commands")
@@ -384,6 +385,8 @@ def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None)
 def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | None = None) -> int:
 
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["bootstrap"]:
+        return int(_load("bootstrap.py", "basicly_tracker_bootstrap").main(argv[1:]))
     argv = list(vault_config.with_vault(argv, Path.cwd(), vault_arguments.routed_verbs(argv)))
     verb = argv[0] if argv else ""
     routed = "--vault" in argv or verb in vault_arguments.VAULT_ONLY

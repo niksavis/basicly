@@ -5,6 +5,17 @@ description: Use the append-only work tracker as this repository's issue tracker
 
 # The work tracker
 
+Before implementation after clone or pull, run the committed machine bootstrap:
+
+```sh
+uv run --no-project --python '>=3.14' python .basicly/tracker-bootstrap.py
+```
+
+It reuses a suitable tracker or provisions the pinned user tool with uv.
+An explicit repository sandbox uses its committed bundle.
+If setup or vault access fails, stop implementation and follow the named remedy.
+Do not repeat repository migration or replace unrelated machine settings.
+
 The tracker stores append-only work events.
 With `.basicly-tracker.toml`, the private vault holds shared history for the configured project.
 `.basicly/ledger` can be a frozen guard file. Never replace it with a directory.

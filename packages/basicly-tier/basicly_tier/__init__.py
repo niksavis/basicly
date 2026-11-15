@@ -25,6 +25,7 @@ def _installer():
 
 
 installer = _installer()
+installer.require_runtime("basicly-tier")
 
 
 KIT = installer.Kit(

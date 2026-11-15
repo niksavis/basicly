@@ -4675,6 +4675,9 @@ _CLAUDE = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "claude")
 def test_lane_context_is_bound_to_each_task_and_its_worktree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setattr(
+        runner.tracker_agent, "memory_environment", lambda _root, _kit, env: dict(env)
+    )
     fake, _seen = _worker_fixture(monkeypatch, tmp_path, stdout="")
     fake.issues["epic.2"] = {**fake.issues["epic.1"], "id": "epic.2"}
     selected = []

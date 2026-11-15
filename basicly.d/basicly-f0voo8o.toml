@@ -1,0 +1,2 @@
+[ratchet.noqa_debt.frozen]
+S603 = 1

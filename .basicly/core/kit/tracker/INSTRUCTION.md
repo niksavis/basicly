@@ -1,6 +1,14 @@
 ## Work Tracker
 
 **Use this repository's tracker before proposing work and as work moves.**
+After cloning or pulling repository setup, establish machine-local memory before implementation:
+
+```sh
+uv run --no-project --python '>=3.14' python .basicly/tracker-bootstrap.py
+```
+
+Do not implement while bootstrap refuses. Follow its runtime, setup or credential remedy.
+Repository onboarding is committed once; subsequent machines run bootstrap without migrating again.
 With `.basicly-tracker.toml`, the configured vault holds shared history.
 `.basicly/ledger` can be a frozen guard file. Keep it intact.
 Without vault configuration, `.basicly/ledger/` holds the local event log.

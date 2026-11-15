@@ -35,6 +35,13 @@ from basicly.runner import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _ready_tracker_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        runner.tracker_agent, "memory_environment", lambda _root, _kit, env: dict(env)
+    )
+
+
 def _which_none(_binary: str) -> str | None:
     return None
 

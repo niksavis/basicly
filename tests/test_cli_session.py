@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,7 @@ def _with_decisions(repo: Path, text: str = ARCHITECTURE) -> Path:
 
 
 def _run(repo: Path, monkeypatch: pytest.MonkeyPatch, *argv: str) -> int:
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
     monkeypatch.chdir(repo)
     return cli.main(["session", "start", *argv])
 
@@ -149,12 +151,14 @@ def test_an_empty_ledger_says_so_instead_of_drawing_an_empty_frame(
     assert "Ready (" not in out and "Grants (" not in out
 
 
-def test_a_repository_with_no_owned_tracker_reports_no_backlog(
+def test_a_repository_with_no_owned_tracker_refuses_before_orientation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _run(tmp_path, monkeypatch) == 0
+    assert _run(tmp_path, monkeypatch) == 2
 
-    assert "ledger: none" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "onboarding" in captured.out + captured.err
+    assert "ledger: none" not in captured.out
 
 
 def test_a_grant_on_a_closed_root_is_not_live(

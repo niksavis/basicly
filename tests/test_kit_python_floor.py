@@ -25,9 +25,9 @@ def _refused(path: Path, floor: tuple[int, int]) -> str | None:
     return None
 
 
-def test_a_paren_free_except_is_refused_at_the_floor(tmp_path: Path) -> None:
+def test_invalid_except_syntax_is_refused_at_the_floor(tmp_path: Path) -> None:
     planted = tmp_path / "planted.py"
-    planted.write_text("try:\n    pass\nexcept A, B:\n    pass\n", encoding="utf-8")
+    planted.write_text("try:\n    pass\nexcept A as:\n    pass\n", encoding="utf-8")
 
     refused = _refused(planted, _floor())
 

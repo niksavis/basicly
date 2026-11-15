@@ -13,6 +13,13 @@ import pytest
 from basicly import runner
 
 
+@pytest.fixture(autouse=True)
+def _ready_tracker_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        runner.tracker_agent, "memory_environment", lambda _root, _kit, env: dict(env)
+    )
+
+
 def load_trial_runner() -> Any:
     path = Path(__file__).resolve().parents[1] / ".scripts/harness_trial_runner.py"
     spec = importlib.util.spec_from_file_location("harness_trial_runner", path)

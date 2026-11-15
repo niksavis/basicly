@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import venv
+import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
@@ -31,7 +31,7 @@ def _checkout(root: Path, value: str) -> tuple[Path, Path]:
     (source / "checkout_value.py").write_text(f"VALUE = {value!r}\n")
     checkout.git(["add", "."], cwd=root)
     environment = root / ".venv"
-    venv.EnvBuilder(with_pip=False).create(environment)
+    subprocess.run(["uv", "venv", "--python", sys.executable, str(environment)], check=True)
     interpreter = environment / "bin/python"
     site = Path(
         subprocess.check_output(

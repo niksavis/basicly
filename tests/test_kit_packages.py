@@ -62,7 +62,7 @@ def test_every_kit_has_a_package_that_names_the_same_command(kit: str) -> None:
 
     assert f'name = "basicly-{kit}"' in manifest
     assert f'basicly-{kit} = "basicly_{kit}:main"' in manifest
-    assert 'requires-python = ">=3.9"' in manifest
+    assert 'requires-python = ">=3.14"' in manifest
     assert "dependencies = []" in manifest
 
 
