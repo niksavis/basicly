@@ -45,12 +45,14 @@ def fingerprints(
         parent = min(parents, key=lambda path: len(path.parts))
         groups.setdefault(parent, []).append(root)
 
+    visited: set[Path] = set()
     for parent, members in groups.items():
         for directory, dirs, files in parent.walk(on_error=pyright_inputs._unreadable):
             dirs[:] = sorted(name for name in dirs if name not in _IGNORED)
             if any((directory / name).is_symlink() for name in dirs):
                 raise pyright_inputs.UnsupportedInputsError("symlinked pytest dependency directory")
             active = [root for root in members if directory.is_relative_to(root)]
+            visited.update(root for root in active if directory == root)
             for name in sorted(files):
                 path = directory / name
                 if name.startswith(".env"):
@@ -68,6 +70,6 @@ def fingerprints(
                             f"{path.relative_to(root).as_posix()}\0{resolved}\0".encode()
                         )
                     digests[root].update(content)
-    if any(root.resolve() != canonical[root] for root in roots):
+    if any(root not in visited or root.resolve() != canonical[root] for root in roots):
         raise pyright_inputs.UnsupportedInputsError("pytest dependency root changed")
     return {root: digest.hexdigest() for root, digest in digests.items()}

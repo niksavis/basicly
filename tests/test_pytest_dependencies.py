@@ -91,6 +91,17 @@ def test_an_explicit_cache_root_is_fingerprinted_without_entering_the_parent_pro
     assert after[cache] != before[cache]
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_a_missing_explicit_root_refuses_the_combined_proof(
+    roots: tuple[Path, Path], reverse: bool
+) -> None:
+    parent, _ = roots
+    missing = parent / "missing"
+    order = (missing, parent) if reverse else (parent, missing)
+    with pytest.raises(pyright_inputs.UnsupportedInputsError):
+        pytest_dependencies.fingerprints(order)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows paths have case-insensitive aliases")
 @pytest.mark.parametrize("reverse", [False, True])
 def test_a_case_alias_of_an_explicit_cache_root_stays_visible(
