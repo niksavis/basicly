@@ -5,7 +5,7 @@ import sys
 import time
 import traceback
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +103,7 @@ class _Budget:
         return self._ticks()
 
     def left(self, cap: float | None = None) -> float:
-        remaining = max(0.01, self._end - self._ticks())
+        remaining = max(0.0, self._end - self._ticks())
         return remaining if cap is None else min(cap, remaining)
 
 
@@ -155,12 +155,15 @@ def _check(ask: Ask, budget: _Budget, writer: str) -> dict[str, object] | None:
             vault_clone.Fetch(
                 clock=ask.clock,
                 runner=ask.runner,
-                timeout=budget.left(PROBE),
+                timeout=min(PROBE, budget.left() / 2),
                 lock_wait=budget.left(),
                 coalesce=True,
             ),
         )
-    except vault_clone.CloneError:
+    except (
+        vault_clone.CloneError,
+        git_runner.GitTimeoutError,
+    ):
         fetched = {"fetched": False}
     budget.add("fetch_lock_wait_s", fetched.get("fetch_lock_wait_s"))
     if not fetched.get("fetched"):
@@ -251,9 +254,18 @@ def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[s
 
 def _attempt(ask: Ask, budget: _Budget) -> dict[str, object]:
     started = budget.now()
+
+    def runner(args: list[str], cwd: Path, **options: Any) -> str:
+        left = budget.left()
+        if left <= 0:
+            raise git_runner.GitTimeoutError("the claim deadline expired")
+        options["timeout"] = min(float(options.get("timeout", left)), left)
+        return ask.runner(args, cwd, **options)
+
+    bounded = replace(ask, runner=runner)
     writer = vault_queue.writer_of(ask.state)
-    early = _check(ask, budget, writer)
-    shown = early if early is not None else _land(ask, budget, writer, budget.left())
+    early = _check(bounded, budget, writer)
+    shown = early if early is not None else _land(bounded, budget, writer, budget.left())
     budget.add("claim_s", budget.now() - started)
     return {**shown, "timing": dict(budget.timing)}
 
