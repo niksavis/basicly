@@ -1,0 +1,1 @@
+- Landing verification avoids repeated runtime-root resolution while rereading every dependency and refusing a root retargeted during its scan.

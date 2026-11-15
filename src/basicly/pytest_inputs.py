@@ -55,6 +55,7 @@ def _workspace(root: Path) -> dict[str, str]:
 
 def _dependency(root: Path, workspace: Path | None = None, *, engine: Path | None = None) -> str:
     digest = hashlib.sha256()
+    resolved_root = root.resolve()
     for directory, dirs, files in root.walk(on_error=pyright_inputs._unreadable):
         dirs[:] = sorted(name for name in dirs if name not in {"__pycache__", ".cache"})
         if any((directory / name).is_symlink() for name in dirs):
@@ -64,7 +65,7 @@ def _dependency(root: Path, workspace: Path | None = None, *, engine: Path | Non
             if name.startswith(".env"):
                 raise pyright_inputs.UnsupportedInputsError("protected pytest dependency")
             resolved = path.resolve()
-            if not resolved.is_relative_to(root.resolve()):
+            if not resolved.is_relative_to(resolved_root):
                 if path.suffix == ".pth" or not resolved.is_file():
                     raise pyright_inputs.UnsupportedInputsError("external pytest dependency")
                 digest.update(f"{path.relative_to(root).as_posix()}\0{resolved}\0".encode())
@@ -76,7 +77,7 @@ def _dependency(root: Path, workspace: Path | None = None, *, engine: Path | Non
                         target = (path.parent / line.strip()).resolve()
                         if (
                             target != engine
-                            and not target.is_relative_to(root.resolve())
+                            and not target.is_relative_to(resolved_root)
                             and not (
                                 workspace is not None and target in {workspace, workspace / "src"}
                             )
@@ -86,6 +87,8 @@ def _dependency(root: Path, workspace: Path | None = None, *, engine: Path | Non
                             )
             digest.update(path.relative_to(root).as_posix().encode() + b"\0")
             digest.update(hashlib.sha256(path.read_bytes()).digest())
+    if root.resolve() != resolved_root:
+        raise pyright_inputs.UnsupportedInputsError("pytest dependency root changed")
     return digest.hexdigest()
 
 

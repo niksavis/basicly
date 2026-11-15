@@ -110,6 +110,18 @@ def test_changed_runtime_package_changes_the_runtime_proof(tmp_path: Path) -> No
     assert pytest_inputs._dependency(tmp_path) != before
 
 
+def test_same_size_runtime_edit_with_restored_mtime_changes_the_proof(tmp_path: Path) -> None:
+    package = tmp_path / "package.py"
+    package.write_bytes(b"before\n")
+    state = package.stat()
+    before = pytest_inputs._dependency(tmp_path)
+    package.write_bytes(b"after!\n")
+    os.utime(package, ns=(state.st_atime_ns, state.st_mtime_ns))
+    assert package.stat().st_size == state.st_size
+    assert package.stat().st_mtime_ns == state.st_mtime_ns
+    assert pytest_inputs._dependency(tmp_path) != before
+
+
 def test_empty_launcher_runs_fresh_instead_of_crashing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -317,6 +329,44 @@ def test_external_standard_library_changes_invalidate_landing(
 SYMLINKS = pytest.mark.skipif(
     sys.platform == "win32", reason="creating a symlink needs a privilege Windows withholds"
 )
+
+
+@SYMLINKS
+def test_a_runtime_root_retargeted_during_its_scan_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    for root in (first, second):
+        (root / "package.py").write_bytes(b"value = 1\n")
+    library = tmp_path / "lib"
+    library.symlink_to(first, target_is_directory=True)
+    read_bytes = Path.read_bytes
+
+    def retarget(path: Path) -> bytes:
+        result = read_bytes(path)
+        if path == library / "package.py":
+            library.rename(tmp_path / "original-link")
+            library.symlink_to(second, target_is_directory=True)
+        return result
+
+    monkeypatch.setattr(Path, "read_bytes", retarget)
+    with pytest.raises(pyright_inputs.UnsupportedInputsError, match="dependency root changed"):
+        pytest_inputs._dependency(library)
+
+
+@SYMLINKS
+def test_a_runtime_directory_link_is_refused(tmp_path: Path) -> None:
+    library = tmp_path / "lib"
+    library.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "package.py").write_bytes(b"value = 1\n")
+    (library / "linked").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(pyright_inputs.UnsupportedInputsError, match="external pytest dependency"):
+        pytest_inputs._dependency(library)
 
 
 @SYMLINKS
