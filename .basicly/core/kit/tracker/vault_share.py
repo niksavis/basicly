@@ -160,6 +160,20 @@ def _build(clone: Any, head: str, writer: str, batch: list, git: Runner) -> str:
     return git(made, env=ident).strip()
 
 
+@dataclass
+class _BatchBuilder:
+    clone: Any
+    writer: str
+    prepared: tuple[str, list, str] | None = None
+
+    def build(self, head: str, batch: list, git: Runner) -> str:
+        previous = self.prepared
+        if previous is None or previous[0] != head or previous[1] != batch:
+            previous = (head, batch, _build(self.clone, head, self.writer, batch, git))
+            self.prepared = previous
+        return previous[2]
+
+
 def _push(clone: Any, commit: str, runner: Runner, timeout: float) -> None:
     vault_clone.protect(clone)
     hooks = clone.bare / "hooks"
@@ -224,6 +238,7 @@ def share(
             return {"shared": 0, "pending": 0, "lock_wait_s": waited}
         attempt = total = 0
         fetch_waits = 0.0
+        builder = _BatchBuilder(clone, writer)
         while True:
             attempt += 1
             budget = _budget(plan, started, clock)
@@ -256,11 +271,11 @@ def share(
             def git(args: list[str], **options: Any) -> str:
                 return runner(args, clone.bare, timeout=_budget(plan, started, clock), **options)
 
-            commit = _build(clone, head, writer, batch, git)
+            commit = builder.build(head, batch, git)
             arrived = [line for line in prune(clone) if line.get("writer") == writer]
             if arrived and arrived != batch:
                 batch = arrived
-                commit = _build(clone, head, writer, batch, git)
+                commit = builder.build(head, batch, git)
             try:
                 _push(clone, commit, runner, _budget(plan, started, clock))
             except git_runner.GitRunnerError as exc:
