@@ -230,6 +230,14 @@ def _stopped(head: str, stop: Mapping[str, object], clone: Any) -> dict[str, obj
     }
 
 
+def _retry_head(clone: Any, plan: Plan, runner: Runner, budget: float, previous: str) -> dict:
+    if plan.urgent and previous:
+        head = vault_clone._advanced_head(clone, previous, runner, budget)
+        if head:
+            return {"head": head, "seen": head, "moved": False}
+    return {}
+
+
 def _share_head(clone: Any, plan: Plan, runner: Runner, budget: float, *, fresh: bool) -> dict:
     if fresh:
         settled = vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
@@ -270,6 +278,7 @@ def share(
         if not prune(clone):
             return {"shared": 0, "pending": 0, "lock_wait_s": waited}
         attempt = total = 0
+        rejected_head = ""
         fetch_waits = 0.0
         builder = _BatchBuilder(clone, writer, urgent=plan.urgent)
 
@@ -284,7 +293,13 @@ def share(
                 head = vault_clone._read(clone.folder / vault_clone.COVERS_NAME).strip()
                 return _pending_share(clone, head, total, waited, fetch_waits)
             budget = _budget(plan, started, clock)
-            fetched = _share_head(clone, plan, fetching, budget, fresh=attempt == 1 and plan.fresh)
+            fetched = _retry_head(clone, plan, fetching, budget, rejected_head) or _share_head(
+                clone,
+                plan,
+                fetching,
+                budget,
+                fresh=attempt == 1 and plan.fresh,
+            )
             head = str(fetched["head"])
             fetch_waits += float(fetched.get("fetch_lock_wait_s") or 0.0)
             if fetched.get("retracted") or vault_clone.unrepaired(clone, runner, budget):
@@ -310,6 +325,7 @@ def share(
             except git_runner.GitRunnerError as exc:
                 if "signature" in str(getattr(exc, "stderr", "")).lower():
                     raise ShareError(SIGNED_ONLY) from None
+                rejected_head = head
                 if _again(plan, attempt, started, clock):
                     continue
                 raise (DeadlineError if plan.urgent else ShareError)(

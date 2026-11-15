@@ -322,6 +322,26 @@ def fetch(
     return fetch_with(clone, Fetch(clock, runner, timeout, lock_wait))
 
 
+def _covered_head(clone: Clone, runner: Runner, timeout: float) -> str:
+    head = ref(clone, HEAD_REF, runner, timeout)
+    if (
+        head
+        and _read(clone.folder / COVERS_NAME).strip() == head
+        and ref(clone, SEEN_REF, runner, timeout) == head
+    ):
+        return head
+    return ""
+
+
+def _advanced_head(clone: Clone, previous: str, runner: Runner, timeout: float) -> str:
+    try:
+        with events.LedgerLock(clone.folder / "fetch", timeout_s=0):
+            head = _covered_head(clone, runner, timeout)
+            return head if head != previous else ""
+    except events.LockUnavailableError:
+        return ""
+
+
 def fetch_with(clone: Clone, request: Fetch) -> dict[str, object]:
 
     runner, timeout, lock_wait, clock, coalesce = (
@@ -349,12 +369,7 @@ def fetch_with(clone: Clone, request: Fetch) -> dict[str, object]:
             except git_runner.GitValueError:
                 joined = False
         if joined:
-            head = ref(clone, HEAD_REF, runner, timeout)
-            joined = bool(
-                head
-                and _read(clone.folder / COVERS_NAME).strip() == head
-                and ref(clone, SEEN_REF, runner, timeout) == head
-            )
+            joined = bool(_covered_head(clone, runner, timeout))
         fetched = joined or _fetch_twice(clone, runner, timeout)
         head = ref(clone, HEAD_REF, runner, timeout)
         if not head:
