@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -221,6 +222,15 @@ def work_repo(
 
 
 MEASURED_PREFIX = "measured_"
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    if report.failed:
+        print(
+            f"\nFAILED {report.nodeid} during {report.when}\n{report.longreprtext}",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:

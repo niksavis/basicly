@@ -1,0 +1,1 @@
+- Report failing pytest cases immediately so a cancelled CI run retains their names and tracebacks.
