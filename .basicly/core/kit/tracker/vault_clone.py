@@ -156,9 +156,13 @@ def ref(clone: Clone, name: str, runner: Runner, timeout: float) -> str:
 
 def _fetch_twice(clone: Clone, runner: Runner, timeout: float) -> bool:
     argv = ["fetch", "--quiet", "--no-tags", "origin", FETCH_REFSPEC]
+    started = time.monotonic()
     for _attempt in range(2):
+        remaining = timeout - (time.monotonic() - started)
+        if remaining <= 0:
+            return False
         try:
-            runner(argv, clone.bare, timeout=timeout, allow_file=clone.allow_file)
+            runner(argv, clone.bare, timeout=remaining, allow_file=clone.allow_file)
         except git_runner.GitRunnerError:
             continue
         return True

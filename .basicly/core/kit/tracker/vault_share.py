@@ -216,6 +216,25 @@ def _stopped(head: str, stop: Mapping[str, object], clone: Any) -> dict[str, obj
     }
 
 
+def _share_head(clone: Any, plan: Plan, runner: Runner, budget: float, *, fresh: bool) -> dict:
+    if fresh:
+        settled = vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
+        return {**settled, "head": settled["seen"]}
+    return vault_clone.fetch(
+        clone, clock=plan.wall, runner=runner, timeout=budget, lock_wait=budget
+    )
+
+
+def _pending_share(clone: Any, head: str, total: int, waited: float, fetch_waits: float) -> dict:
+    return {
+        "shared": total,
+        "head": head,
+        "pending": len(prune(clone)),
+        "lock_wait_s": waited,
+        "fetch_lock_wait_s": round(fetch_waits, 3),
+    }
+
+
 def share(
     clone: Any,
     state: Path,
@@ -239,15 +258,14 @@ def share(
         attempt = total = 0
         fetch_waits = 0.0
         builder = _BatchBuilder(clone, writer)
+        head = ""
         while True:
             attempt += 1
+            if attempt > 1 and plan.stop_when is not None and plan.stop_when():
+                head = vault_clone._read(clone.folder / vault_clone.COVERS_NAME).strip() or head
+                return _pending_share(clone, head, total, waited, fetch_waits)
             budget = _budget(plan, started, clock)
-            if attempt == 1 and plan.fresh:
-                fetched = {"head": vault_clone.ref(clone, vault_clone.HEAD_REF, runner, budget)}
-            else:
-                fetched = vault_clone.fetch(
-                    clone, clock=plan.wall, runner=runner, timeout=budget, lock_wait=budget
-                )
+            fetched = _share_head(clone, plan, runner, budget, fresh=attempt == 1 and plan.fresh)
             head = str(fetched["head"])
             fetch_waits += float(fetched.get("fetch_lock_wait_s") or 0.0)
             if fetched.get("retracted") or vault_clone.unrepaired(clone, runner, budget):
@@ -260,13 +278,7 @@ def share(
                 return _stopped(head, stop, clone)
             batch = [line for line in prune(clone) if line.get("writer") == writer]
             if not batch or (plan.stop_when is not None and plan.stop_when()):
-                return {
-                    "shared": total,
-                    "head": head,
-                    "pending": len(vault_queue.pending(clone.folder / vault_queue.QUEUE_NAME)),
-                    "lock_wait_s": waited,
-                    "fetch_lock_wait_s": round(fetch_waits, 3),
-                }
+                return _pending_share(clone, head, total, waited, fetch_waits)
 
             def git(args: list[str], **options: Any) -> str:
                 return runner(args, clone.bare, timeout=_budget(plan, started, clock), **options)
@@ -289,7 +301,7 @@ def share(
                 ) from None
             vault_clone.durable(clone.folder / SHARED_AT, f"{plan.wall()}\n")
             budget = _budget(plan, started, clock)
-            settled = vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
+            settled = _share_head(clone, plan, runner, budget, fresh=True)
             fetch_waits += float(settled.get("fetch_lock_wait_s") or 0.0)
             total += len(batch)
             left = len(prune(clone))

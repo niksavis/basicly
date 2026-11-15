@@ -1,1 +1,1 @@
-- A joined vault claim now reserves half its remaining budget for takeover when less than twice the normal stall period remains. This bounds the join wait without changing the claim deadline.
+- Vault claims reserve half a short remaining budget for takeover. Shares avoid duplicate events during concurrent settlement, canonical outcomes stop retry transport, and fetch retries share one transport budget. The claim deadline stays unchanged.
