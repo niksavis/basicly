@@ -265,6 +265,8 @@ def rebuild(
 def _advance(clone: Clone, head: str, runner: Runner, timeout: float) -> dict[str, object]:
 
     seen = ref(clone, SEEN_REF, runner, timeout)
+    if seen and head == seen and _read(clone.folder / COVERS_NAME).strip() == seen:
+        return {"seen": head, "moved": False, "retracted": False, "quarantined": []}
     chain = vault_shapes.first_parent_chain(clone.bare, head)
     if seen and seen not in chain:
         _retract(clone, seen, runner, timeout)
