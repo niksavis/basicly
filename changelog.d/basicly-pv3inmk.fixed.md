@@ -1,0 +1,1 @@
+- Reduce Linux ledger isolation observer overhead while preserving path and symlink checks.

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import ctypes
 import os
 import stat
 import sys
 import threading
 import warnings
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -26,6 +27,35 @@ _ANNOUNCED: set[str] = set()
 _CACHE: dict[Path, tuple[tuple[int, ...], bytes]] = {}
 _CACHE_BYTES = 64 * 1024 * 1024
 _CACHE_FILES = 64
+
+
+def _native_resolver() -> Callable[[str | os.PathLike[str]], str] | None:
+    if sys.platform != "linux":
+        return None
+    try:
+        library = ctypes.CDLL(None)
+        resolve = library.realpath
+        release = library.free
+    except AttributeError, OSError:
+        return None
+    resolve.argtypes = [ctypes.c_char_p, ctypes.c_void_p]
+    resolve.restype = ctypes.c_void_p
+    release.argtypes = [ctypes.c_void_p]
+    release.restype = None
+
+    def canonical(path: str | os.PathLike[str]) -> str:
+        result = resolve(os.fsencode(path), None)
+        if result is None:
+            return os.path.realpath(path)
+        try:
+            return os.fsdecode(ctypes.string_at(result))
+        finally:
+            release(result)
+
+    return canonical
+
+
+_RESOLVE = _native_resolver() or os.path.realpath
 
 
 class LedgerChangedWarning(UserWarning):
@@ -82,7 +112,7 @@ def _writes(mode: object, flags: object) -> bool:
 
 def _audit(event: str, args: tuple[object, ...]) -> None:
 
-    if event != "open":
+    if event != "open" or not (_READ_GUARDS or _WATCHES):
         return
     path, mode, flags = args
     if not isinstance(path, str | os.PathLike):
@@ -91,7 +121,7 @@ def _audit(event: str, args: tuple[object, ...]) -> None:
     for prefix, node in _READ_GUARDS:
         if any(
             candidate == prefix or candidate.startswith(prefix + os.sep)
-            for candidate in (opened, os.path.normcase(os.path.realpath(path)))
+            for candidate in (opened, os.path.normcase(_RESOLVE(path)))
         ):
             pytest.fail(f"{node} reads the live ledger; mark it live_ledger so it runs fresh")
     if not _writes(mode, flags):
