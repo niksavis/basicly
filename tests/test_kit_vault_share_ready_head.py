@@ -31,9 +31,12 @@ def test_an_urgent_retry_reuses_only_a_newer_completed_local_view(
     peer_ids: list[str] = []
     peer_generation = ""
     pushes = 0
+    prefetch_refs = 0
 
     def runner(args: list[str], cwd: Path, **options: Any) -> str:
-        nonlocal rejected, retry_fetches, peer_generation, pushes
+        nonlocal rejected, retry_fetches, peer_generation, pushes, prefetch_refs
+        if rejected and not retry_fetches and args[0] == "rev-parse":
+            prefetch_refs += 1
         if args[0] == "fetch" and rejected:
             retry_fetches += 1
         if "push" in args:
@@ -66,6 +69,8 @@ def test_an_urgent_retry_reuses_only_a_newer_completed_local_view(
 
     assert rejected
     assert retry_fetches == (0 if witness == "ready" else 1) + int(repeat)
+    if witness in {"unchanged", "missing"}:
+        assert prefetch_refs == 0
     assert shown["pending"] == 0
     assert _ids(bare) == dict.fromkeys([*written, *peer_ids], 1)
     current = (clone.folder / vault_share.vault_clone.FETCH_GENERATION_NAME).read_text()

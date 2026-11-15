@@ -336,6 +336,9 @@ def _covered_head(clone: Clone, runner: Runner, timeout: float) -> str:
 def _advanced_head(clone: Clone, previous: str, runner: Runner, timeout: float) -> str:
     try:
         with events.LedgerLock(clone.folder / "fetch", timeout_s=0):
+            covered = _read(clone.folder / COVERS_NAME).strip()
+            if not covered or covered == previous:
+                return ""
             head = _covered_head(clone, runner, timeout)
             return head if head != previous else ""
     except events.LockUnavailableError:
