@@ -10,7 +10,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path, PurePath, PureWindowsPath
 
-from . import checkout, hook_python, pyright_inputs
+from . import checkout, hook_python, pyright_inputs, pytest_dependencies
 from .runner import sanitised_project_env
 from .verify_receipt import InputFingerprint, implementation_digest
 
@@ -54,42 +54,7 @@ def _workspace(root: Path) -> dict[str, str]:
 
 
 def _dependency(root: Path, workspace: Path | None = None, *, engine: Path | None = None) -> str:
-    digest = hashlib.sha256()
-    resolved_root = root.resolve()
-    for directory, dirs, files in root.walk(on_error=pyright_inputs._unreadable):
-        dirs[:] = sorted(name for name in dirs if name not in {"__pycache__", ".cache"})
-        if any((directory / name).is_symlink() for name in dirs):
-            raise pyright_inputs.UnsupportedInputsError("symlinked pytest dependency directory")
-        for name in sorted(files):
-            path = directory / name
-            if name.startswith(".env"):
-                raise pyright_inputs.UnsupportedInputsError("protected pytest dependency")
-            resolved = path.resolve()
-            if not resolved.is_relative_to(resolved_root):
-                if path.suffix == ".pth" or not resolved.is_file():
-                    raise pyright_inputs.UnsupportedInputsError("external pytest dependency")
-                digest.update(f"{path.relative_to(root).as_posix()}\0{resolved}\0".encode())
-                digest.update(hashlib.sha256(resolved.read_bytes()).digest())
-                continue
-            if path.suffix == ".pth":
-                for line in path.read_text().splitlines():
-                    if line.strip() and not line.startswith(("#", "import ", "import\t")):
-                        target = (path.parent / line.strip()).resolve()
-                        if (
-                            target != engine
-                            and not target.is_relative_to(resolved_root)
-                            and not (
-                                workspace is not None and target in {workspace, workspace / "src"}
-                            )
-                        ):
-                            raise pyright_inputs.UnsupportedInputsError(
-                                "external pytest import path"
-                            )
-            digest.update(path.relative_to(root).as_posix().encode() + b"\0")
-            digest.update(hashlib.sha256(path.read_bytes()).digest())
-    if root.resolve() != resolved_root:
-        raise pyright_inputs.UnsupportedInputsError("pytest dependency root changed")
-    return digest.hexdigest()
+    return pytest_dependencies.fingerprints((root,), workspace, engine=engine)[root]
 
 
 def _project_launcher(root: PurePath) -> PurePath:
@@ -271,10 +236,17 @@ def _landing_python(interpreter: Path, root: Path, environment: dict[str, str]) 
     ):
         raise pyright_inputs.UnsupportedInputsError("invalid landing Python runtime metadata")
     contents = {str(interpreter.resolve()): hashlib.sha256(interpreter.read_bytes()).hexdigest()}
+    dependencies = pytest_dependencies.fingerprints(
+        [Path(value) for value in paths if Path(value).is_dir()],
+        root,
+        engine=Path(__file__).resolve().parent.parent,
+    )
     for value in paths:
         path = Path(value)
         if path.is_dir():
-            contents[value] = _dependency(path, root, engine=Path(__file__).resolve().parent.parent)
+            if path not in dependencies:
+                raise pyright_inputs.UnsupportedInputsError("landing Python runtime changed")
+            contents[value] = dependencies[path]
         elif path.is_file():
             contents[value] = hashlib.sha256(path.read_bytes()).hexdigest()
         else:

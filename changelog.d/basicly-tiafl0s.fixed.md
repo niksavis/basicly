@@ -1,1 +1,1 @@
-- Landing verification avoids repeated runtime-root resolution while rereading every dependency and refusing a root retargeted during its scan.
+- Landing verification reads overlapping runtime files once per capture while preserving separate proofs, fresh content and boundary checks.

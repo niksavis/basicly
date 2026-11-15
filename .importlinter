@@ -58,6 +58,7 @@ layers =
     lane_split
     lane_log
     pytest_inputs
+    pytest_dependencies
     pyright_inputs
     task_context
     claude_settings | codex_hooks | codex_permissions | runner
