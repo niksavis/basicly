@@ -79,3 +79,37 @@ def test_a_missing_vault_event_still_refuses_an_engine_receipt(
     assert _history(root) == before
     shown = _report(_kit(root, "show", LEDGER, record))
     assert not any(row["text"] == payload["text"] for row in shown.get("comment_log", []))
+
+
+@pytest.mark.parametrize(
+    "case", [("config", False), ("config", True), ("marker", False), ("marker", True)]
+)
+def test_install_refuses_invalid_frozen_binding_before_managed_writes(
+    tmp_path: Path,
+    bare: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: tuple[str, bool],
+) -> None:
+    damage, dry_run = case
+    root = _frozen(tmp_path, bare)
+    target = root / (".basicly-tracker.toml" if damage == "config" else LEDGER)
+    target.write_text("invalid frozen binding", encoding="utf-8")
+    before = _history(root)
+    config = (root / ".basicly-tracker.toml").read_bytes()
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(cli.markdownlint, "require_prerequisites", lambda *_a: None)
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("invalid frozen binding reached managed-file planning or writes")
+
+    monkeypatch.setattr(cli, "_preflight_install", unexpected)
+    monkeypatch.setattr(cli, "_sync_core", unexpected)
+
+    code = cli.main(["install", *(["--dry-run"] if dry_run else [])])
+
+    output = capsys.readouterr()
+    assert code != 0
+    assert "Traceback" not in output.err
+    assert _history(root) == before
+    assert (root / ".basicly-tracker.toml").read_bytes() == config
