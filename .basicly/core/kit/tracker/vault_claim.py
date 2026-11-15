@@ -91,7 +91,7 @@ def name_refusal(name: str) -> str:
 
 class _Budget:
     def __init__(self, deadline: float, ticks: Clock) -> None:
-        self._end = ticks() + deadline
+        self._end = ticks() + deadline - min(POLL, deadline / 2)
         self._ticks = ticks
         self.timing: dict[str, float] = {}
 
