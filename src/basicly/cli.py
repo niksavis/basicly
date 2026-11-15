@@ -1278,15 +1278,23 @@ def _tracker_prefix(repo_root: Path) -> str:
     return prefix
 
 
+def _has_vault_tracker(repo_root: Path) -> bool:
+    ledger = repo_root / owned_store.LEDGER_DIR
+    return bool(
+        (
+            (repo_root / ".basicly-tracker.toml").exists()
+            or ledger.is_file()
+            or (repo_root / ".basicly/ledger-archive").exists()
+        )
+        and owned_store.packaged_kit("vault_cli").harness_config(repo_root) is not None
+    )
+
+
 def _setup_tracker(repo_root: Path, *, dry_run: bool = False) -> None:
 
     refuse_ignored_tracker_prefix(repo_root)
     ledger = repo_root / owned_store.LEDGER_DIR
-    if (
-        (repo_root / ".basicly-tracker.toml").exists()
-        or ledger.is_file()
-        or (repo_root / ".basicly/ledger-archive").exists()
-    ) and owned_store.packaged_kit("vault_cli").harness_config(repo_root) is not None:
+    if _has_vault_tracker(repo_root):
         print("Tracker vault binding exists; frozen ledger and archive left unchanged.")
         return
     if ledger.is_dir():
@@ -1692,6 +1700,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     paths = load_project_paths(repo_root)
 
     refuse_ignored_tracker_prefix(repo_root)
+    _has_vault_tracker(repo_root)
     selection = frozenset(technologies) if technologies else load_technology_selection(repo_root)
     markdownlint.require_prerequisites(repo_root, selection)
     if not dry_run:

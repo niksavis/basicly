@@ -1,1 +1,1 @@
-- Complete engine installation over frozen vault trackers without touching the archive, and verify accepted write receipts against the canonical or pending view while still refusing missing events.
+- Validate frozen vault bindings before installation writes, complete engine reinstallation without changing archived history, and verify accepted canonical or pending writes while still refusing missing events.
