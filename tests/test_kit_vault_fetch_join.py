@@ -108,11 +108,12 @@ def test_a_later_fetch_does_not_reuse_an_earlier_success(tmp_path: Path, origin:
 
 
 @pytest.mark.parametrize("condition", ["unchanged", "incomplete", "invalid-marker", "rewound"])
-def test_a_rejected_parent_does_not_make_an_unvalidated_refresh_reusable(
+def test_a_previous_generation_does_not_make_an_unvalidated_refresh_reusable(
     tmp_path: Path, origin: Vault, condition: str
 ) -> None:
     clone = _clone(tmp_path, origin)
     previous = str(_fetch(clone)["head"])
+    generation = (clone.folder / vault_clone.FETCH_GENERATION_NAME).read_text()
     if condition != "unchanged":
         _batch(origin)
         _fetch(clone)
@@ -130,7 +131,7 @@ def test_a_rejected_parent_does_not_make_an_unvalidated_refresh_reusable(
             raise git_runner.GitTimeoutError("the fixture transport is unavailable")
         return git_runner.run(args, cwd, **options)
 
-    shown = _joining_fetch(clone, runner=unavailable, after=previous)
+    shown = _joining_fetch(clone, runner=unavailable, previous_generation=generation)
 
     assert shown["fetched"] is False and not shown.get("coalesced", False)
     assert attempts == ["fetch", "fetch"]

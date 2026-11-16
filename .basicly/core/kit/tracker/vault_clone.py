@@ -316,7 +316,7 @@ class Fetch:
     timeout: float = git_runner.DEFAULT_TIMEOUT
     lock_wait: float = LOCK_WAIT
     coalesce: bool = False
-    after: str = ""
+    previous_generation: str | None = None
 
 
 def fetch(
@@ -367,20 +367,22 @@ def fetch_with(clone: Clone, request: Fetch) -> dict[str, object]:
     private(clone.folder)
     stamp = clone.folder / FETCHED_NAME
     generation = clone.folder / FETCH_GENERATION_NAME
-    before = _read(generation) if coalesce else ""
+    before = request.previous_generation
+    if before is None:
+        before = _read(generation) if coalesce else ""
     asked = time.monotonic()
     with events.LedgerLock(clone.folder / "fetch", timeout_s=lock_wait):
         waited = round(time.monotonic() - asked, 3)
         _ensure(clone, runner, timeout)
         latest = _read(generation) if coalesce else ""
-        joined = bool(latest and (latest != before or request.after))
+        joined = bool(latest and latest != before)
         if joined:
             try:
                 git_runner.writer_id(latest.strip())
             except git_runner.GitValueError:
                 joined = False
         covered = _covered_head(clone, runner, timeout) if joined else ""
-        joined = bool(covered and (latest != before or covered != request.after))
+        joined = bool(covered)
         fetched = joined or _fetch_twice(clone, runner, timeout)
         head = covered if joined else ref(clone, HEAD_REF, runner, timeout)
         if not head:

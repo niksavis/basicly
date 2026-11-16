@@ -242,12 +242,15 @@ def _stopped(head: str, stop: Mapping[str, object], clone: Any) -> dict[str, obj
 
 def _retry_head(clone: Any, plan: Plan, runner: Runner, budget: float, previous: str) -> dict:
     if plan.urgent and previous:
+        generation = vault_clone._read(clone.folder / vault_clone.FETCH_GENERATION_NAME)
         head = vault_clone._advanced_head(clone, previous, runner, budget)
         if head:
             return {"head": head, "seen": head, "moved": False}
         return vault_clone.fetch_with(
             clone,
-            vault_clone.Fetch(plan.wall, runner, budget, budget, coalesce=True, after=previous),
+            vault_clone.Fetch(
+                plan.wall, runner, budget, budget, coalesce=True, previous_generation=generation
+            ),
         )
     return {}
 
