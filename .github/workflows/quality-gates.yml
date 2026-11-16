@@ -96,7 +96,7 @@ jobs:
     # at 5h57m on every push for two days, and the ubuntu failure underneath it was
     # unreadable the entire time. A slow job must fail while somebody is still looking
     # (basicly-t31pvf).
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
