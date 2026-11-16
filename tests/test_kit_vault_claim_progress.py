@@ -4,10 +4,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from tests.test_kit_vault_claim import _ask, vault_claim
-from tests.test_kit_vault_share import _machine, _write, bare, vault_share
+from tests.test_kit_vault_share import _machine, _write, bare
+
+vault_share = vault_claim.vault_share
 
 if TYPE_CHECKING:
     import pytest
@@ -120,6 +123,7 @@ def test_an_exhausted_helper_keeps_time_for_the_claim_response(
     (clone.folder / vault_claim.vault_clone.FETCHED_NAME).write_text("0", encoding="utf-8")
     elapsed = [0.0]
     fetches: list[float] = []
+    original_sleep = time.sleep
 
     def busy(*_args: Any, **_options: Any) -> dict:
         raise vault_claim.events.LockUnavailableError("the publisher is busy")
@@ -136,7 +140,8 @@ def test_an_exhausted_helper_keeps_time_for_the_claim_response(
 
     monkeypatch.setattr(vault_claim, "_check", lambda *_: None)
     monkeypatch.setattr(vault_share, "share", busy)
-    monkeypatch.setattr(vault_claim.time, "sleep", sleep)
+    monkeypatch.setattr(vault_claim, "time", SimpleNamespace(sleep=sleep))
+    assert time.sleep is original_sleep
     shown = vault_claim.claim(
         _ask(clone, state, "helper", runner=runner), deadline=2, ticks=lambda: elapsed[0]
     )
@@ -145,3 +150,33 @@ def test_an_exhausted_helper_keeps_time_for_the_claim_response(
     assert shown["exit"] == vault_claim.UNSETTLED, shown
     assert elapsed[0] < 2
     assert len(vault_claim.vault_queue.pending(clone.folder / "queue.jsonl")) == 1
+
+
+def test_a_completed_refresh_does_not_delay_an_already_canonical_claim(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone, state = _machine(tmp_path, bare, "completed-refresh")
+    share = vault_share.share
+    sleeps: list[float] = []
+    canonical = False
+
+    def busy(*_args: Any, **_options: Any) -> dict:
+        raise vault_claim.events.LockUnavailableError("the publisher is busy")
+
+    def refreshed(*_args: Any, **_options: Any) -> bool:
+        nonlocal canonical
+        share(clone, state, plan=vault_share.Plan(time.time, urgent=True))
+        canonical = True
+        return False
+
+    def sleep(seconds: float) -> None:
+        if canonical:
+            sleeps.append(seconds)
+
+    monkeypatch.setattr(vault_share, "share", busy)
+    monkeypatch.setattr(vault_claim, "_refresh_join", refreshed)
+    monkeypatch.setattr(vault_claim, "time", SimpleNamespace(sleep=sleep))
+    shown = vault_claim.claim(_ask(clone, state, "winner"))
+
+    assert shown["exit"] == vault_claim.LANDED, shown
+    assert sleeps == []

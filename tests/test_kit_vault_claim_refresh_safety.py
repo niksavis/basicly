@@ -7,7 +7,9 @@ from typing import Any
 import pytest
 
 from tests.test_kit_vault_claim import _ask, vault_claim
-from tests.test_kit_vault_share import _machine, bare, vault_share
+from tests.test_kit_vault_share import _machine, bare
+
+vault_share = vault_claim.vault_share
 
 __all__ = ["bare"]
 

@@ -36,6 +36,7 @@ vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
 
 SEGMENT_BYTES = 1 << 20
 BULK_ATTEMPTS = 5
+BATCH_QUIET = 0.1
 SHARE_LOCK = "share"
 SHARED_AT = "shared.at"
 PROGRESS_NAME = "share.progress"
@@ -179,11 +180,18 @@ class _BatchBuilder:
     def latest(
         self, head: str, batch: list, git: Runner, budget: Callable[[], float]
     ) -> tuple[str, list]:
+        settling = self.urgent and self.prepared is None
         while True:
             budget()
             commit = self.build(head, batch, git)
             arrived = [line for line in prune(self.clone) if line.get("writer") == self.writer]
-            if not arrived or arrived == batch:
+            if not arrived:
+                return commit, arrived
+            if arrived == batch:
+                if settling:
+                    settling = False
+                    time.sleep(min(BATCH_QUIET, budget()))
+                    continue
                 return commit, arrived
             batch = arrived
             if not self.urgent:

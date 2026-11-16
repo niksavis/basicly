@@ -228,7 +228,7 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
                 return True
             if budget.left() <= POLL:
                 raise
-            if _wait_join(ask, budget):
+            if _wait_join(ask, budget, decided):
                 return True
             continue
         budget.add("share_lock_wait_s", shared.get("lock_wait_s"))
@@ -238,8 +238,8 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
         fresh = False
 
 
-def _wait_join(ask: Ask, budget: _Budget) -> bool:
-    if _refresh_join(ask, budget):
+def _wait_join(ask: Ask, budget: _Budget, decided: Callable[[], bool]) -> bool:
+    if _refresh_join(ask, budget) or decided():
         return True
     if budget.left() > POLL:
         time.sleep(POLL)
