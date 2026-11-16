@@ -1,1 +1,0 @@
-- The burst claim test in the release gate now runs 9 clones and 36 claims, by the owner's decision of 2026-11-16, because 13 clones pass or fail by chance under load. 13 clones return when basicly-g9g6wg3 lands.
