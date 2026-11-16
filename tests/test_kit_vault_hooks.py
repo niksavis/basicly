@@ -119,6 +119,23 @@ def test_status_shows_the_data_age_without_a_network_call(tmp_path: Path, bare: 
     assert shown["retracted"] == []
 
 
+def test_status_names_each_queued_event_the_vault_has_not_received(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    _write(clone, state, 1, "a")
+    _hook("stop", clone, state)
+    queued = _write(clone, state, 2, "b")
+    bare.rename(tmp_path / "gone.git")
+
+    shown = _status(clone)
+
+    assert shown["queued"] == 2
+    assert [entry["record"] for entry in shown["pending"]] == ["acme-a1b2", "acme-a1b2"]
+    assert sorted(str(entry["queue_id"]) for entry in shown["pending"]) == sorted(queued)
+    assert all(entry["age_s"] is not None for entry in shown["pending"])
+
+
 def test_a_hook_never_fails_the_agent_when_the_vault_is_unreachable(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

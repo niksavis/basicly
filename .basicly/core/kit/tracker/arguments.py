@@ -303,6 +303,9 @@ def _add_vault_parsers(sub: Any) -> None:
     fetched.add_argument("--vault", required=True, help="the vault URL or local repository")
     fetched.add_argument("--state", help="the machine state folder (default: per user)")
     fetched.add_argument("--timeout", type=float, default=30.0, help="seconds per git call")
+    status = sub.add_parser("status", help="list the queued local events a vault has not received")
+    status.add_argument("--vault", required=True, help="the vault URL or local repository")
+    status.add_argument("--state", help="the machine state folder (default: per user)")
 
 
 def _add_sync_parser(sub: Any) -> None:

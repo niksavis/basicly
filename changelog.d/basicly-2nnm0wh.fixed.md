@@ -1,0 +1,1 @@
+- The vault `status` command now lists each queued local event that the vault has not received, with its record, event id and age, and `status` appears in the command list (basicly-2nnm0wh).

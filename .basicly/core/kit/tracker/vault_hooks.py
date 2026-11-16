@@ -124,5 +124,18 @@ def status(clone: Any, *, clock: Clock) -> dict[str, object]:
         "writers": seen,
         "queued": len(queued),
         "oldest_age_s": round(clock() - min(times), 1) if times else None,
+        "pending": [_pending_entry(line, clock) for line in queued],
         "retracted": sorted(stuck),
+    }
+
+
+def _pending_entry(line: dict, clock: Clock) -> dict[str, object]:
+    carried = line.get("ledger")
+    at = line.get("at")
+    return {
+        "queue_id": line.get("id"),
+        "kind": line.get("kind"),
+        "record": line.get("record"),
+        "event": carried.get("id") if isinstance(carried, dict) else None,
+        "age_s": round(clock() - at, 1) if isinstance(at, (int, float)) else None,
     }

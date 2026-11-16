@@ -268,6 +268,17 @@ Windows), else under `~/.local/state`.
 python3 .basicly/kit/tracker/cli.py fetch --vault path/to/vault.git
 ```
 
+### status
+
+Show the local vault state without a network call. The report gives the age of the last
+fetch, each writer's last write, and the queued local events that the vault has not
+received. `pending` names each queued event: its queue id, kind, record, carried event id
+and age. `queued` is their count.
+
+```sh
+python3 .basicly/kit/tracker/cli.py status --vault path/to/vault.git
+```
+
 `hook EVENT --vault` runs from an agent hook and never fails the agent. `session-start` and
 `prompt` fetch with a 3 s deadline at most every 20 s, then share only when this clone's bulk
 slot is due (180 s after its last share). `stop` and `session-end` share the whole queue. A
