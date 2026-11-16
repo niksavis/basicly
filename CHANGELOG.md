@@ -6,7 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.46.1 - 2026-11-16
+
+Delta: v0.46.0..v0.46.1
+
 This patch corrects the catalog output in the first-loop tutorial. Urgent claims reuse completed refreshes while waiting. Failed helper retries preserve time for the publisher to finish. The claim deadline and verification gates stay unchanged.
+
+### Fixed
+
+- Correct the catalog routing result in the first-loop tutorial to match the published catalog. Keep the tutorial validation unchanged. (basicly-gtb19bg.43.33)
+
+- Reuse completed refreshes for waiting urgent publishers. Bound helper retry groups and stop failed helper transports from consuming the publisher response allowance. Keep claim deadlines and safety checks unchanged. (basicly-gtb19bg.43.42)
 
 ## v0.46.0 - 2026-11-16
 
