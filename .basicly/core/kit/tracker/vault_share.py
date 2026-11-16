@@ -236,6 +236,10 @@ def _retry_head(clone: Any, plan: Plan, runner: Runner, budget: float, previous:
         head = vault_clone._advanced_head(clone, previous, runner, budget)
         if head:
             return {"head": head, "seen": head, "moved": False}
+        return vault_clone.fetch_with(
+            clone,
+            vault_clone.Fetch(plan.wall, runner, budget, budget, coalesce=True),
+        )
     return {}
 
 

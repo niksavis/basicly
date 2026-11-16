@@ -228,14 +228,44 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
                 return True
             if budget.left() <= POLL:
                 raise
-            time.sleep(POLL)
-            budget.add("joined_wait_s", POLL)
+            if _wait_join(ask, budget):
+                return True
             continue
         budget.add("share_lock_wait_s", shared.get("lock_wait_s"))
         budget.add("fetch_lock_wait_s", shared.get("fetch_lock_wait_s"))
         if decided() or shared.get("ended"):
             return joined_at is not None
         fresh = False
+
+
+def _wait_join(ask: Ask, budget: _Budget) -> bool:
+    if _refresh_join(ask, budget):
+        return True
+    if budget.left() > POLL:
+        time.sleep(POLL)
+        budget.add("joined_wait_s", POLL)
+    return False
+
+
+def _refresh_join(ask: Ask, budget: _Budget) -> bool:
+    stamp = vault_clone._read(ask.clone.folder / vault_clone.FETCHED_NAME).strip()
+    if stamp and ask.clock() - float(stamp) < POLL:
+        return False
+    request = vault_clone.Fetch(
+        clock=ask.clock,
+        runner=ask.runner,
+        timeout=min(PROBE, budget.left() / 2),
+        lock_wait=0,
+        coalesce=True,
+    )
+    try:
+        shown = vault_clone.fetch_with(ask.clone, request)
+    except events.LockUnavailableError, vault_clone.CloneError, git_runner.GitTimeoutError:
+        return False
+    budget.add("fetch_lock_wait_s", shown.get("fetch_lock_wait_s"))
+    if shown.get("retracted") or vault_clone.unrepaired(ask.clone, ask.runner, budget.left()):
+        raise vault_share.ShareError("the vault dropped seen commits; run fsck --repair --vault")
+    return vault_clone.ended(ask.clone) is not None
 
 
 def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[str, object]:
