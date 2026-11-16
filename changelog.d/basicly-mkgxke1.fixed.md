@@ -1,1 +1,0 @@
-- Refuse mixed tracker hook and locator generations with the named reinstall command, preserving frozen data and avoiding attribute-error tracebacks.

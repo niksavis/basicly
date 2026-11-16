@@ -1,1 +1,0 @@
-- Preserve plain-ledger compatibility, check vault APIs before writes, and isolate each kit generation. Guard migrated or newly configured projects with a tracked ledger file and verified archive. Standalone commit hooks read canonical ownership and select a working Python interpreter.

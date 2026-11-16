@@ -1,1 +1,0 @@
-- Ledger-form writes on vault-born records now name the correct vault command or the pending lifecycle repair. They leave the queue and local ledger unchanged.

@@ -1,1 +1,0 @@
-- Landing verification reads overlapping runtime files once per capture while preserving separate proofs, fresh content and boundary checks.

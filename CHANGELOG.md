@@ -6,9 +6,71 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.46.0 - 2026-11-16
+
+Delta: v0.45.0..v0.46.0
+
 This release adds checked migration from local ledgers to a private backlog vault. Migration preserves the source archive and verifies imported history. The standalone tracker includes MCP tools, agent skills, and user installation. Protected vault clones reject unrelated pushes through native Git hooks. The harness uses canonical vault ownership for its hooks and landing checks. Windows tracker state receives private access controls. Existing projects keep their local storage until migration is explicitly requested.
 
 Code audit and close/reopen suggestions remain deferred. Native Windows supports use after a Linux freeze. Native Windows freeze remains unsupported.
+
+### Added
+
+- The standalone tracker can preview and import ledger, beads, br and beans backlogs into a vault, then export a prefix. Record ids stay intact. Changed payloads receive valid ids with an optional private map. Import checks counts, digests and ledger integrity before publication. (basicly-gtb19bg.43.30)
+
+- Ship MCP tools, client registration, agent launchers and agent skills with tracker 0.3.0 and the harness. Default init to user scope. Keep repository installation explicit. Preserve claim identity and all tracker gates. Refuse evidence commands before the active privacy policy changes their arguments. Publish the standalone wheel with release assets. (basicly-gtb19bg.43.32)
+
+- Add a local migration rehearsal that retains source copies and scratch vaults, compares independent canonical imports, checks integrity and process evidence, counts old beads records, and prepares consumer controls without touching the live vault. (basicly-gtb19bg.43.33)
+
+- List every vault project's records for a board with `basicly tracker list --json --all-projects`, including the captured vault head, read time, canonical holders, priorities and readiness. (basicly-gtb19bg.43.35)
+
+- Add native Git push protection for tracker and manual vault clones. Refuse invalid events, unrelated paths, extra refs and rewritten history. Preserve existing hooks and code pushes. Active retries prevent extra takeovers. Stalled publishers permit takeover within the original deadline. Reuse ancestry queries during validation. Require no extra hook dependency. (basicly-gtb19bg.43.42)
+
+- **New `agent-mail` skill: messages and locks between local coding agents.** A bundled standard-library script gives agents that cannot message each other, such as a Codex and a Claude session, one shared mailbox folder with `init`, `root`, `join`, `send`, `wait`, `read` and `lock`. Nine skill descriptions are shorter to keep the Codex listing size. (basicly-p71af3r)
+
+### Changed
+
+- Clarify agent continuation and evidence rules, scope error handling and approval boundaries, and align skill routing, evaluation and model selection instructions with current guidance. (basicly-azz4whe)
+
+- Repository onboarding commits shared tracker bootstrap and skills. Managed agents refuse implementation without persistent memory; clone/pull startup reuses or provisions tools through uv. Distributed basicly tools require Python 3.14 or later. (basicly-f0voo8o)
+
+- Build the tracker event index once for each readiness batch, reducing board emission CPU while preserving review invalidation and the existing emission cap. (basicly-t31in5n)
+
+### Fixed
+
+- Ledger-form writes on vault-born records now name the correct vault command or the pending lifecycle repair. They leave the queue and local ledger unchanged. (basicly-ak6qrz0)
+
+- Complete ordinary vault record writes through shared engine and standalone admission, show own pending writes with a pending label, preserve canonical claim aliases, validate native comments, and initialize a vault without a personal Git identity. Unsupported forms and legacy raw comments name a real remedy or follow-up. (basicly-bebeo6k)
+
+- Vault claims reserve half a short budget for takeover. Concurrent settlement avoids duplicates, and validated outcomes survive share expiry. Known outcomes stop retries. Claim transports and urgent fetch attempts use only their remaining deadlines. Claim budgets reserve completion time. Urgent batches refresh arrivals after every build and recheck terminal decisions before pushing. (basicly-gtb19bg.43.18)
+
+- Harness hooks read the canonical vault view, preserve frozen ledger archives and refuse unsafe late ledger changes before landing. Commit claim checks use the native vault protocol, including settled claim completion and advisory ownership warnings. (basicly-gtb19bg.43.31)
+
+- The vault view keeps imported holder history and valid event identities. It derives the current holder from vault claims and writes gapless sequences with valid totals. (basicly-gtb19bg.43.39)
+
+- Vault shares start a new segment before the next line crosses the existing size limit. An oversized line refuses before publication and leaves the queue intact. (basicly-gtb19bg.43.40)
+
+- Vault refusals now include one readable sentence for the claim hook and board. A held-record refusal names the holder and the commands to release and claim it. (basicly-gtb19bg.43.41)
+
+- Validate frozen vault bindings before installation writes, complete engine reinstallation without changing archived history, and verify accepted canonical or pending writes while still refusing missing events. (basicly-hd5wbhm)
+
+- Allocate rounded landing stages from cumulative elapsed time so their total cannot exceed the measured landing duration. (basicly-jpl8l3g)
+
+- Keep tracker bootstrap clocks injectable, include its hidden directory in type checks, and preserve session reads with older installed kits. (basicly-jt4g0f9)
+
+- Refuse mixed tracker hook and locator generations with the named reinstall command, preserving frozen data and avoiding attribute-error tracebacks. (basicly-mkgxke1)
+
+- Reduce Linux ledger isolation observer overhead while preserving path and symlink checks. (basicly-pv3inmk)
+
+- Landing verification reads overlapping runtime files once per capture while preserving separate proofs, fresh content and boundary checks. (basicly-tiafl0s)
+
+- Report failing pytest cases immediately so a cancelled CI run retains their names and tracebacks. (basicly-ub42fnu)
+
+- Preserve plain-ledger compatibility, check vault APIs before writes, and isolate each kit generation. Guard migrated or newly configured projects with a tracked ledger file and verified archive. Standalone commit hooks read canonical ownership and select a working Python interpreter. (basicly-wecjejf)
+
+### Security
+
+- Create Windows tracker state with current-user ownership and protected access. Check default file ownership and existing descendants before fetching. Refuse unsafe state while preserving its existing folder and queued events. (basicly-ti5msz2)
 
 ## v0.45.0 - 2026-11-13
 

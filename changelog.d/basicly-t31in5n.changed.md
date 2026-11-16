@@ -1,1 +1,0 @@
-- Build the tracker event index once for each readiness batch, reducing board emission CPU while preserving review invalidation and the existing emission cap.

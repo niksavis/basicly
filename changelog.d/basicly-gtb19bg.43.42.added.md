@@ -1,1 +1,0 @@
-- Add native Git push protection for tracker and manual vault clones. Refuse invalid events, unrelated paths, extra refs and rewritten history. Preserve existing hooks and code pushes. Active retries prevent extra takeovers. Stalled publishers permit takeover within the original deadline. Reuse ancestry queries during validation. Require no extra hook dependency.

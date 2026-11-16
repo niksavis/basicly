@@ -1,1 +1,0 @@
-- Repository onboarding commits shared tracker bootstrap and skills. Managed agents refuse implementation without persistent memory; clone/pull startup reuses or provisions tools through uv. Distributed basicly tools require Python 3.14 or later.

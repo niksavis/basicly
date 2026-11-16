@@ -1,1 +1,0 @@
-- Vault shares start a new segment before the next line crosses the existing size limit. An oversized line refuses before publication and leaves the queue intact.

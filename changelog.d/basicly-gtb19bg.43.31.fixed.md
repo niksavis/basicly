@@ -1,1 +1,0 @@
-- Harness hooks read the canonical vault view, preserve frozen ledger archives and refuse unsafe late ledger changes before landing. Commit claim checks use the native vault protocol, including settled claim completion and advisory ownership warnings.
