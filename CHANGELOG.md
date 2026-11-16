@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch corrects the catalog output shown in the first-loop tutorial. The tutorial check keeps its existing validation.
+
 ## v0.46.0 - 2026-11-16
 
 Delta: v0.45.0..v0.46.0

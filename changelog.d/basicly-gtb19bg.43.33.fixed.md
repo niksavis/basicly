@@ -1,0 +1,1 @@
+- Correct the catalog routing result in the first-loop tutorial to match the published catalog. Keep the tutorial validation unchanged.
