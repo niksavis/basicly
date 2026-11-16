@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import json
+import os
 import sys
 import time
 import uuid
@@ -263,13 +264,10 @@ def _pending_share(clone: Any, head: str, total: int, waited: float, fetch_waits
 
 
 def _progress(clone: Any) -> None:
-    token = uuid.uuid4().hex
-    temporary = clone.folder / f"progress-{token}"
-    try:
-        temporary.write_text(token, encoding="utf-8")
-        temporary.replace(clone.folder / PROGRESS_NAME)
-    finally:
-        temporary.unlink(missing_ok=True)
+    handle = events.locking.open_movable(clone.folder / PROGRESS_NAME)
+    with os.fdopen(handle, "w", encoding="ascii") as stream:
+        stream.write(uuid.uuid4().hex)
+        stream.truncate()
 
 
 def share(

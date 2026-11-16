@@ -48,3 +48,27 @@ def test_a_waiter_preserves_the_publishers_terminal_refusal(
     )
     assert refreshes == 1
     assert len(vault_claim.vault_queue.pending(clone.folder / "queue.jsonl")) == 1
+
+
+def test_a_claim_keeps_publishing_while_another_reader_holds_its_progress_hint(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone, state = _machine(tmp_path, bare, "held-progress-reader")
+    vault_claim.vault_clone.fetch(clone, clock=time.time)
+    path = clone.folder / vault_share.PROGRESS_NAME
+    path.write_text("a" * 32, encoding="ascii")
+    replace = Path.replace
+
+    def sharing_denied(self: Path, target: Path | str) -> Path:
+        if Path(target) == path:
+            raise PermissionError("the open reader denies Windows file replacement")
+        return replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", sharing_denied)
+    with path.open(encoding="ascii"):
+        shown = vault_claim.claim(_ask(clone, state, "publisher"))
+
+    assert shown["exit"] == vault_claim.LANDED, shown
+    assert len(path.read_text(encoding="ascii")) == 32
+    assert path.read_text(encoding="ascii") != "a" * 32
+    assert not vault_claim.vault_queue.pending(clone.folder / "queue.jsonl")
