@@ -36,7 +36,7 @@ def arguments(tmp_path: Path) -> argparse.Namespace:
                 {
                     "id": "control",
                     "prompt": "fixture",
-                    "files": {"value.txt": "before"},
+                    "files": {"value.txt": "before", ".basicly/ledger/events-0001.jsonl": ""},
                     "check": [
                         "{python}",
                         "-c",

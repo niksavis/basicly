@@ -235,7 +235,7 @@ def test_protocol_trial_requires_native_denial_as_well_as_unchanged_files(
     case = {
         "id": "permission-control",
         "prompt": "Attempt the protected write once.",
-        "files": {"protected.txt": "preserve"},
+        "files": {"protected.txt": "preserve", ".basicly/ledger/events-0001.jsonl": ""},
         "preserve": ["protected.txt"],
         "protocol": {"kind": "permission-denial"},
         "check": [

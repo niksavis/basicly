@@ -8,7 +8,14 @@ from typing import Any
 import pytest
 
 from basicly import runner
-from tests.test_harness_trial_runner import case, identity, load_trial_runner
+from tests.test_harness_trial_runner import case as trial_case
+from tests.test_harness_trial_runner import identity, load_trial_runner
+
+
+def case() -> dict[str, Any]:
+    fixture = trial_case()
+    fixture["files"][".basicly/ledger/events-0001.jsonl"] = ""
+    return fixture
 
 
 @pytest.mark.parametrize("observed", ["claude-opus-5-5", "claude-sonnet-5-5"])
