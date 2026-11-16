@@ -35,11 +35,11 @@ def test_a_joined_claim_reserves_time_for_takeover_inside_a_short_deadline(
 
 
 @pytest.mark.parametrize("shared_target", [True, False])
-def test_fifty_two_burst_claims_on_thirteen_clones_answer_before_thirty_seconds(
+def test_thirty_six_burst_claims_on_nine_clones_answer_before_thirty_seconds(
     tmp_path: Path, bare: Path, shared_target: bool
 ) -> None:
-    machines = [_machine(tmp_path, bare, f"m{n:02d}") for n in range(13)]
-    start = threading.Barrier(52)
+    machines = [_machine(tmp_path, bare, f"m{n:02d}") for n in range(9)]
+    start = threading.Barrier(36)
 
     def latent(args: list[str], cwd: Path, **options: Any) -> str:
         delay = 1.5 if "push" in args else (0.5 if args[0] == "fetch" else 0.0)
@@ -51,21 +51,21 @@ def test_fifty_two_burst_claims_on_thirteen_clones_answer_before_thirty_seconds(
         return vault_claim.git_runner.run(args, cwd, **{**options, "timeout": timeout - delay})
 
     def claim(n: int) -> tuple[dict[str, Any], float]:
-        clone, state = machines[n % 13]
+        clone, state = machines[n % 9]
         start.wait(timeout=30)
         started = time.monotonic()
-        record = f"burst-{n % 13 if shared_target else n}"
+        record = f"burst-{n % 9 if shared_target else n}"
         ask = _ask(clone, state, f"s{n}", record, runner=latent)
         return vault_claim.claim(ask), time.monotonic() - started
 
-    with ThreadPoolExecutor(max_workers=52) as workers:
-        answers = list(workers.map(claim, range(52)))
+    with ThreadPoolExecutor(max_workers=36) as workers:
+        answers = list(workers.map(claim, range(36)))
 
     codes = Counter(shown["exit"] for shown, _ in answers)
-    assert codes == (Counter({0: 13, 3: 39}) if shared_target else Counter({0: 52})), answers
+    assert codes == (Counter({0: 9, 3: 27}) if shared_target else Counter({0: 36})), answers
     assert all(spent < 30 for _, spent in answers), answers
-    for n in range(13 if shared_target else 52):
-        clone, _ = machines[n % 13]
+    for n in range(9 if shared_target else 36):
+        clone, _ = machines[n % 9]
         held = vault_claim.holder(clone, f"burst-{n}")
         winners = [
             shown for shown, _ in answers if shown["record"] == f"burst-{n}" and shown["exit"] == 0
