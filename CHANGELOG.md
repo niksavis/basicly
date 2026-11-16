@@ -6,7 +6,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-This patch removes a redundant refresh from urgent claim retries. Shared refresh results retain their validated commit when concurrent publication changes the tracking ref. Claim deadlines and validation gates stay unchanged.
+This patch makes hooks run the installed basicly version instead of an older global one. It also removes a redundant refresh from urgent claim retries. Shared refresh results keep their validated commit when concurrent publication changes the tracking ref. Known issue: when 13 clones claim at once, some claims can still miss the 30-second deadline, and the burst test in the full quality run fails by chance (basicly-g9g6wg3).
 
 ## v0.46.1 - 2026-11-16
 
