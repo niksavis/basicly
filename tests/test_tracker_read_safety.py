@@ -230,6 +230,7 @@ def test_a_repository_kit_of_the_engine_version_is_admitted(tmp_path: Path) -> N
 
 def test_session_start_reads_a_repository_on_an_older_kit(tmp_path: Path) -> None:
     repo = _seeded_repo(tmp_path)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
     state.write_install_state(repo / ".basicly" / "state" / "install.json", "0.20.2", {})
 
     result = _basicly(repo, "session", "start", "--json")

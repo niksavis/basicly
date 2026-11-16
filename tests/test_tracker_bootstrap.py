@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from basicly import owned_store
 from tests.test_tracker_mcp import BOOT
 from tests.test_tracker_plugin import package
 
@@ -20,6 +21,28 @@ def _call(argv: list[str], root: Path, env: dict[str, str]) -> subprocess.Comple
     )
     assert done.returncode == 0, done.stdout + done.stderr
     return done
+
+
+def test_machine_freshness_uses_the_supplied_bootstrap_clock(
+    package: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repository"
+    root.mkdir()
+    state = tmp_path / "machine-state"
+    monkeypatch.setenv("BASICLY_TRACKER_STATE", str(state))
+    env = os.environ.copy()
+    _call(["git", "init", "-q", str(root)], tmp_path, env)
+    vault = tmp_path / "vault.git"
+    _call(["git", "init", "--bare", "-q", "-b", "main", str(vault)], tmp_path, env)
+    command = [sys.executable, "-I", "-S", "-c", BOOT, str(package / "__init__.py")]
+    _call([*command, "vault-init", "--vault", str(vault), "--prefix", "demo", "--yes"], root, env)
+
+    report = owned_store.packaged_kit("bootstrap").prepare(root, clock=lambda: 1234.5)
+
+    assert report["ready"] is True
+    stamps = list(state.glob("vaults/*/fetched"))
+    assert len(stamps) == 1
+    assert float(stamps[0].read_text()) == 1234.5
 
 
 @pytest.mark.parametrize("arrival", ["clone", "pull"])

@@ -4,7 +4,7 @@ import argparse
 import importlib.util
 import json
 import sys
-import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,7 @@ def _load(name: str) -> Any:
     return module
 
 
-def _prepare(directory: Path) -> dict[str, object]:
+def run(directory: Path, clock: Callable[[], float]) -> tuple[int, dict[str, object]]:
     require_runtime()
     git = _load("git_runner")
     root = Path(git.run(["rev-parse", "--show-toplevel"], directory).strip()).resolve()
@@ -47,7 +47,7 @@ def _prepare(directory: Path) -> dict[str, object]:
         clones = _load("vault_clone")
         state = adapter._state_root()
         clone = clones.locate(state, config.vault)
-        fetched = clones.fetch(clone, clock=time.time)
+        fetched = clones.fetch(clone, clock=clock)
         if not fetched.get("fetched") or fetched.get("retracted"):
             raise ValueError(
                 "Tracker memory could not be refreshed. Restore vault access and credentials, "
@@ -59,7 +59,7 @@ def _prepare(directory: Path) -> dict[str, object]:
                 "starting implementation."
             )
         view = _load("vault_view")
-        ledger = view.present(clone, view.Want(config.prefix), clock=time.time)
+        ledger = view.present(clone, view.Want(config.prefix), clock=clock)
         backend = "vault"
         head = str(fetched["head"])
     elif not ledger.is_dir():
@@ -75,7 +75,7 @@ def _prepare(directory: Path) -> dict[str, object]:
             "and repair the named input before starting implementation."
         )
     records = events.fold(found).records
-    return {
+    return 0, {
         "schema": "basicly.tracker.bootstrap.v1",
         "ready": True,
         "repository": str(root),
@@ -87,17 +87,22 @@ def _prepare(directory: Path) -> dict[str, object]:
     }
 
 
-def prepare(directory: Path) -> dict[str, object]:
+def prepare(directory: Path, *, clock: Callable[[], float] | None = None) -> dict[str, object]:
     require_runtime()
     git = _load("git_runner")
     events = _load("events")
     try:
-        return _prepare(directory)
+        code, report = _load("cli").invoke(
+            argparse.Namespace(command="bootstrap", repository=directory, clock=clock)
+        )
     except git.GitRunnerError, events.LedgerError:
         raise ValueError(
             "Persistent tracker memory is unavailable. Check Git, vault access and "
             "credentials, then run `basicly-tracker bootstrap` before implementation."
         ) from None
+    if code != 0:
+        raise ValueError(str(report.get("refused") or "Tracker bootstrap refused startup."))
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -296,9 +296,17 @@ def _migration(
 
 
 def _run(args: argparse.Namespace, redact: Callable[[str], str] | None) -> tuple[int, Any]:
+    clock = events.wall_clock(getattr(args, "clock", None))
+    if args.command == "bootstrap":
+        return _load("bootstrap.py", "basicly_tracker_bootstrap").run(args.repository, clock)
+    return _run_command(args, redact, clock)
+
+
+def _run_command(
+    args: argparse.Namespace, redact: Callable[[str], str] | None, clock: Callable[[], float]
+) -> tuple[int, Any]:
     if not (args.command == "migrate" and getattr(args, "freeze", False)):
         vault_cli.check_frozen()
-    clock = events.wall_clock()
     context = commands.vault_write.WriteContext(redact, clock)
     vault_cli.route_ledger_alias(args)
     vault = vault_cli.HANDLERS.get(args.command)

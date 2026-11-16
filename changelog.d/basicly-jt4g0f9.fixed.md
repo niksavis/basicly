@@ -1,0 +1,1 @@
+- Keep tracker bootstrap clocks injectable, include its hidden directory in type checks, and preserve session reads with older installed kits.
