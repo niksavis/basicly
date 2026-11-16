@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import shutil
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
+from typing import Any
 
 CLI_TIMEOUT_S = 10.0
 
@@ -15,14 +15,25 @@ HOOK_OUTPUT_CAP = 10_000
 CUT_NOTICE = "\n[cut at the {cap}-character hook cap: run `basicly session start` for the rest]"
 
 
-def cli_command() -> list[str] | None:
+def _engine_pin() -> Any:
+    source = Path(__file__).with_name("engine_pin.py")
+    spec = importlib.util.spec_from_file_location("basicly_hook_engine_pin", source)
+    if spec is None or spec.loader is None:
+        raise ValueError("hook runtime engine_pin.py is missing; rerun the basicly install command")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-    found = shutil.which("basicly")
-    if found:
-        return [found, "session", "start"]
-    if importlib.util.find_spec("basicly") is not None:
-        return [sys.executable, "-m", "basicly.cli", "session", "start"]
-    return None
+
+def _repo_root() -> Path:
+    for root in (Path.cwd(), *Path.cwd().parents):
+        if (root / ".git").exists():
+            return root
+    return Path.cwd()
+
+
+def cli_command() -> list[str] | None:
+    return _engine_pin().engine_command(["session", "start"], _repo_root(), uvx_fallback=False)
 
 
 def orientation() -> str | None:

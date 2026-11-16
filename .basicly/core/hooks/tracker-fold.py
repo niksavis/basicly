@@ -22,6 +22,31 @@ def _harness(module: Any) -> Any:
     return factory()
 
 
+def _engine_pin() -> Any:
+    source = Path(__file__).with_name("engine_pin.py")
+    spec = importlib.util.spec_from_file_location("basicly_hook_engine_pin", source)
+    if spec is None or spec.loader is None:
+        raise ValueError("hook runtime engine_pin.py is missing; rerun the basicly install command")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _fold_command(root: Path) -> list[str]:
+    found = shutil.which("basicly")
+    pinned_command = json.loads(os.environ["BASICLY_FOLD_COMMAND"])
+    if not found:
+        return pinned_command
+    pin = _engine_pin()
+    try:
+        want = pin.pinned_version(root)
+    except ValueError:
+        return pinned_command
+    if want is None or pin.path_version(found) == want:
+        return ["basicly", "tracker", "fold"]
+    return pinned_command
+
+
 def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603 B607
         ["git", *args], cwd=root, capture_output=True, text=True, encoding="utf-8", check=False
@@ -81,10 +106,7 @@ def _legacy(root: Path) -> int:
         or not any((root / ".basicly/ledger").glob("pending-*.jsonl"))
     ):
         return 0
-    engine = shutil.which("basicly")
-    command = (
-        ["basicly", "tracker", "fold"] if engine else json.loads(os.environ["BASICLY_FOLD_COMMAND"])
-    )
+    command = _fold_command(root)
     print(
         f"tracker: pending shards are unchanged; run {shlex.join(command)} outside Git hooks",
         file=sys.stderr,

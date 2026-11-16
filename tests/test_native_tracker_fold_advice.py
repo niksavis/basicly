@@ -51,7 +51,12 @@ def test_native_post_merge_upgrade_preserves_state_until_explicit_folding(
     if manager == "central":
         destination = repo / ".basicly/core/hooks"
         destination.mkdir(parents=True)
-        for name in ("lefthook-runtime.py", "staged-snapshot.py", "tracker-fold.py"):
+        for name in (
+            "lefthook-runtime.py",
+            "staged-snapshot.py",
+            "tracker-fold.py",
+            "engine_pin.py",
+        ):
             shutil.copy2(bundled_catalog_root() / "hooks" / name, destination / name)
         lefthook_binary.sync_binary(repo)
         lefthook_config.sync_config(
