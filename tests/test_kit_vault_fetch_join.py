@@ -107,6 +107,35 @@ def test_a_later_fetch_does_not_reuse_an_earlier_success(tmp_path: Path, origin:
     assert shown["head"] == previous["head"]
 
 
+@pytest.mark.parametrize("condition", ["unchanged", "incomplete", "invalid-marker", "rewound"])
+def test_a_rejected_parent_does_not_make_an_unvalidated_refresh_reusable(
+    tmp_path: Path, origin: Vault, condition: str
+) -> None:
+    clone = _clone(tmp_path, origin)
+    previous = str(_fetch(clone)["head"])
+    if condition != "unchanged":
+        _batch(origin)
+        _fetch(clone)
+    if condition == "incomplete":
+        (clone.folder / vault_clone.COVERS_NAME).write_text(previous)
+    elif condition == "invalid-marker":
+        (clone.folder / vault_clone.FETCH_GENERATION_NAME).write_text("invalid nonce")
+    elif condition == "rewound":
+        git_runner.run(["update-ref", vault_clone.HEAD_REF, previous], clone.bare)
+    attempts: list[str] = []
+
+    def unavailable(args: list[str], cwd: Path, **options: Any) -> str:
+        if args[0] == "fetch":
+            attempts.append("fetch")
+            raise git_runner.GitTimeoutError("the fixture transport is unavailable")
+        return git_runner.run(args, cwd, **options)
+
+    shown = _joining_fetch(clone, runner=unavailable, after=previous)
+
+    assert shown["fetched"] is False and not shown.get("coalesced", False)
+    assert attempts == ["fetch", "fetch"]
+
+
 def test_a_transport_success_without_completed_publication_cannot_be_reused(
     tmp_path: Path, origin: Vault, monkeypatch: pytest.MonkeyPatch
 ) -> None:

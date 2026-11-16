@@ -316,6 +316,7 @@ class Fetch:
     timeout: float = git_runner.DEFAULT_TIMEOUT
     lock_wait: float = LOCK_WAIT
     coalesce: bool = False
+    after: str = ""
 
 
 def fetch(
@@ -372,16 +373,16 @@ def fetch_with(clone: Clone, request: Fetch) -> dict[str, object]:
         waited = round(time.monotonic() - asked, 3)
         _ensure(clone, runner, timeout)
         latest = _read(generation) if coalesce else ""
-        joined = bool(latest and latest != before)
+        joined = bool(latest and (latest != before or request.after))
         if joined:
             try:
                 git_runner.writer_id(latest.strip())
             except git_runner.GitValueError:
                 joined = False
-        if joined:
-            joined = bool(_covered_head(clone, runner, timeout))
+        covered = _covered_head(clone, runner, timeout) if joined else ""
+        joined = bool(covered and (latest != before or covered != request.after))
         fetched = joined or _fetch_twice(clone, runner, timeout)
-        head = ref(clone, HEAD_REF, runner, timeout)
+        head = covered if joined else ref(clone, HEAD_REF, runner, timeout)
         if not head:
             raise CloneError(f"could not fetch {clone.url} and no earlier fetch exists; retry")
         if joined:

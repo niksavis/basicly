@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch removes a redundant refresh from urgent claim retries. Shared refresh results retain their validated commit when concurrent publication changes the tracking ref. Claim deadlines and validation gates stay unchanged.
+
 ## v0.46.1 - 2026-11-16
 
 Delta: v0.46.0..v0.46.1

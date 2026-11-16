@@ -1,0 +1,1 @@
+- Reuse a validated refresh that finishes between a rejected vault push and its retry. Keep the validated commit as the shared refresh result when a concurrent push changes the tracking ref.
