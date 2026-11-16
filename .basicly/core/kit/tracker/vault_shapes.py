@@ -73,10 +73,23 @@ def _git(vault: Path, *args: str) -> str:
 
 def first_parent_chain(vault: Path, ref: str = "HEAD") -> list[str]:
 
+    return list(first_parent_entries(vault, ref))
+
+
+def first_parent_entries(vault: Path, ref: str = "HEAD") -> dict[str, list[str]]:
+
     if not ref or ref.startswith("-"):
         raise ShapeError(f"refused ref {ref!r}: name a branch or commit")
-    out = _git(vault, "rev-list", "--first-parent", "--reverse", git_runner.END_OF_OPTIONS, ref)
-    return [line for line in out.splitlines() if line]
+    out = _git(
+        vault,
+        "rev-list",
+        "--first-parent",
+        "--reverse",
+        "--parents",
+        git_runner.END_OF_OPTIONS,
+        ref,
+    )
+    return {fields[0]: fields[1:] for line in out.splitlines() if (fields := line.split())}
 
 
 def _parents(vault: Path, commit: str) -> list[str]:
@@ -170,9 +183,9 @@ def _is_archive(changes: list[Change]) -> bool:
     return bool(gone) and len(gone) + len(moved) == len(changes) and gone == moved
 
 
-def _shape(vault: Path, commit: str) -> Verdict:
+def _shape(vault: Path, commit: str, parents: list[str] | None = None) -> Verdict:
 
-    parents = _parents(vault, commit)
+    parents = _parents(vault, commit) if parents is None else parents
     if not parents:
         changes = _changes(vault, commit, None)
         added = {c.path for c in changes if c.status == "A"}
@@ -191,10 +204,10 @@ def _shape(vault: Path, commit: str) -> Verdict:
     return Verdict(commit, BATCH, events=_batch_events(vault, changes))
 
 
-def classify(vault: Path, commit: str) -> Verdict:
+def classify(vault: Path, commit: str, *, parents: list[str] | None = None) -> Verdict:
 
     try:
-        return _shape(vault, commit)
+        return _shape(vault, commit, parents)
     except ShapeError as exc:
         return Verdict(commit, QUARANTINED, rule=str(exc))
 

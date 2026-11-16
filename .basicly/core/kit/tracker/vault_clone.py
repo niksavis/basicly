@@ -215,13 +215,17 @@ def quarantine(clone: Clone) -> list[dict[str, object]]:
     return list({entry["commit"]: entry for entry in found}.values())
 
 
-def _verdicts(clone: Clone, commits: list[str], stop: dict | None) -> tuple:
+def _verdicts(
+    clone: Clone, commits: list[str], stop: dict | None, parents: dict[str, list[str]]
+) -> tuple:
 
     ids: list[str] = []
     found: list[dict] = []
     held: list[dict[str, object]] = []
     for commit in commits:
-        verdict = None if stop else vault_shapes.classify(clone.bare, commit)
+        verdict = (
+            None if stop else vault_shapes.classify(clone.bare, commit, parents=parents[commit])
+        )
         if verdict is None or not verdict.valid:
             held.append({"commit": commit, "rule": verdict.rule if verdict else AFTER_ENDED})
             continue
@@ -267,13 +271,14 @@ def _advance(clone: Clone, head: str, runner: Runner, timeout: float) -> dict[st
     seen = ref(clone, SEEN_REF, runner, timeout)
     if seen and head == seen and _read(clone.folder / COVERS_NAME).strip() == seen:
         return {"seen": head, "moved": False, "retracted": False, "quarantined": []}
-    chain = vault_shapes.first_parent_chain(clone.bare, head)
+    parents = vault_shapes.first_parent_entries(clone.bare, head)
+    chain = list(parents)
     if seen and seen not in chain:
         _retract(clone, seen, runner, timeout)
         return {"seen": seen, "moved": False, "retracted": True, "quarantined": []}
     whole = not seen or _read(clone.folder / COVERS_NAME).strip() != seen
     new = chain if whole else chain[chain.index(seen) + 1 :]
-    ids, held, stop, found = _verdicts(clone, new, None if whole else ended(clone))
+    ids, held, stop, found = _verdicts(clone, new, None if whole else ended(clone), parents)
     lines = "".join(json.dumps(event, sort_keys=True) + "\n" for event in found)
     durable(clone.folder / EVENTS_NAME, lines, append=not whole)
     durable(clone.folder / VALID_NAME, "".join(f"{i}\n" for i in ids), append=not whole)

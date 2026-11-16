@@ -37,6 +37,7 @@ SEGMENT_BYTES = 1 << 20
 BULK_ATTEMPTS = 5
 SHARE_LOCK = "share"
 SHARED_AT = "shared.at"
+PROGRESS_NAME = "share.progress"
 SIGNED_ONLY = (
     "the vault refused unsigned commits; share commits are unsigned and authored by the writer "
     "id, so turn off required commit signatures for the vault repository"
@@ -257,6 +258,16 @@ def _pending_share(clone: Any, head: str, total: int, waited: float, fetch_waits
     }
 
 
+def _progress(clone: Any) -> None:
+    token = uuid.uuid4().hex
+    temporary = clone.folder / f"progress-{token}"
+    try:
+        temporary.write_text(token, encoding="utf-8")
+        temporary.replace(clone.folder / PROGRESS_NAME)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def share(
     clone: Any,
     state: Path,
@@ -289,6 +300,7 @@ def share(
 
         while True:
             attempt += 1
+            _progress(clone)
             if attempt > 1 and plan.stop_when is not None and plan.stop_when():
                 head = vault_clone._read(clone.folder / vault_clone.COVERS_NAME).strip()
                 return _pending_share(clone, head, total, waited, fetch_waits)

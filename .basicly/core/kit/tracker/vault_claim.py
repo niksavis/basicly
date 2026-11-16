@@ -179,6 +179,7 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
 
     joined_at = None
     writer = vault_queue.writer_of(ask.state)
+    progress = vault_clone._read(ask.clone.folder / vault_share.PROGRESS_NAME)
 
     def decided() -> bool:
         try:
@@ -195,6 +196,10 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
             return joined_at is not None
         if budget.left() <= 0:
             raise vault_share.DeadlineError("the claim deadline expired")
+        latest = vault_clone._read(ask.clone.folder / vault_share.PROGRESS_NAME)
+        if joined_at is not None and latest and latest != progress:
+            joined_at = budget.left()
+        progress = latest
         stalled = joined_at is not None and joined_at - budget.left() >= min(STALL, joined_at / 2)
         plan = vault_share.Plan(
             ask.clock,
