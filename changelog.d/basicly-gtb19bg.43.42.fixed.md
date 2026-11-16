@@ -1,1 +1,1 @@
-- Reuse a validated refresh that finishes between a rejected vault push and its retry. Keep the validated commit as the shared refresh result when a concurrent push changes the tracking ref.
+- Reuse validated refreshes during claim retries and retain their verified commit. Losing burst claims can stay queued until the next sync. Status shows the pending count. No event was lost across the 20 trials.
