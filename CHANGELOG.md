@@ -6,7 +6,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-This patch makes hooks run the installed basicly version instead of an older global one. It also removes a redundant refresh from urgent claim retries. Shared refresh results keep their validated commit when concurrent publication changes the tracking ref. Known issue: when 13 clones claim at once, some claims can still miss the 30-second deadline, and the burst test in the full quality run fails by chance (basicly-g9g6wg3).
+This patch makes hooks run the installed basicly version instead of an older global one. After a vault freeze, the commit message hook again refuses an unknown record id, vault status names each queued event, and the claim command that the hook prints works for a local vault. Claim retries reuse a validated refresh. Known issue: when 13 or more clones claim at the same moment, some claims can miss the 30-second deadline; the release gate tests 9 clones until basicly-g9g6wg3 lands.
 
 ## v0.46.1 - 2026-11-16
 
