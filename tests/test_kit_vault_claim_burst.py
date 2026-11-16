@@ -130,16 +130,22 @@ def test_a_join_with_almost_no_budget_refuses_once_without_spinning(
     holder = _hold_share_lock(clone)
     calls: list[object] = []
     share = vault_claim.vault_share.share
+    clock = [0.0]
 
     def counted(*args: Any, **options: Any) -> dict[str, object]:
         calls.append(options["plan"])
-        return share(*args, **options)
+        try:
+            return share(*args, **options)
+        finally:
+            clock[0] += 0.001
 
     monkeypatch.setattr(vault_claim, "_check", lambda *_: None)
     monkeypatch.setattr(vault_claim.vault_share, "share", counted)
     try:
         started = time.monotonic()
-        shown = vault_claim.claim(_ask(clone, state, "joined", "burst-floor"), deadline=0.01)
+        shown = vault_claim.claim(
+            _ask(clone, state, "joined", "burst-floor"), ticks=lambda: clock[0], deadline=0.01
+        )
         spent = time.monotonic() - started
     finally:
         holder.kill()
