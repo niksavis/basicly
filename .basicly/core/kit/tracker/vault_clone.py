@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -82,9 +83,16 @@ def state_root(environ: Mapping[str, str], home: Path, *, windows: bool) -> Path
     return home / ".local" / "state" / STATE_NAME
 
 
+def _local_path(text: str) -> Path:
+    if not text.startswith("file://"):
+        return Path(text)
+    rest = re.sub(r"%([0-9A-Fa-f]{2})", lambda hit: chr(int(hit.group(1), 16)), text[7:])
+    return Path(rest[1:] if re.match(r"/[A-Za-z]:", rest) else rest)
+
+
 def vault_source(text: str) -> tuple[str, bool]:
 
-    path = Path(text)
+    path = _local_path(text)
     if path.is_dir():
         return path.resolve().as_uri(), True
     try:

@@ -182,6 +182,8 @@ def test_a_record_this_session_does_not_hold_is_accepted_with_the_claim_command(
     assert shown["exit"] == hook.ACCEPTED
     assert "does not hold" in shown["warning"]
     assert shown["next"] == f"claim {ID} --vault {clone.url}"
+    printed = str(shown["next"]).split(" --vault ", 1)[1]
+    assert hook.vault_clone.vault_source(printed) == (clone.url, True)
 
 
 def test_an_unsettled_claim_is_accepted_with_a_warning_and_the_claim_command(
