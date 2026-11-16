@@ -94,6 +94,7 @@ class _Budget:
         self._end = ticks() + deadline - min(POLL, deadline / 2)
         self._ticks = ticks
         self.timing: dict[str, float] = {}
+        self.refresh_failed = False
 
     def add(self, key: str, seconds: object) -> None:
         value = float(seconds) if isinstance(seconds, (int, float)) else 0.0
@@ -248,20 +249,46 @@ def _wait_join(ask: Ask, budget: _Budget, decided: Callable[[], bool]) -> bool:
 
 
 def _refresh_join(ask: Ask, budget: _Budget) -> bool:
+    if budget.refresh_failed:
+        return False
     stamp = vault_clone._read(ask.clone.folder / vault_clone.FETCHED_NAME).strip()
     if stamp and ask.clock() - float(stamp) < POLL:
         return False
+    allowance = min(PROBE * 2, budget.left() / 2)
+    end = budget.now() + allowance
+    fetch_failed = False
+
+    def runner(args: list[str], cwd: Path, **options: Any) -> str:
+        nonlocal fetch_failed
+        left = end - budget.now()
+        if left <= 0:
+            raise git_runner.GitTimeoutError("the helper refresh allowance expired")
+        options["timeout"] = min(float(options.get("timeout", left)), left)
+        try:
+            result = ask.runner(args, cwd, **options)
+        except git_runner.GitRunnerError:
+            if args[0] == "fetch":
+                fetch_failed = True
+            raise
+        if args[0] == "fetch":
+            fetch_failed = False
+        return result
+
     request = vault_clone.Fetch(
         clock=ask.clock,
-        runner=ask.runner,
-        timeout=min(PROBE, budget.left() / 2),
+        runner=runner,
+        timeout=allowance / 2,
         lock_wait=0,
         coalesce=True,
     )
     try:
         shown = vault_clone.fetch_with(ask.clone, request)
-    except events.LockUnavailableError, vault_clone.CloneError, git_runner.GitTimeoutError:
+    except events.LockUnavailableError:
         return False
+    except vault_clone.CloneError, git_runner.GitTimeoutError:
+        budget.refresh_failed = fetch_failed
+        return False
+    budget.refresh_failed = not shown.get("fetched", False)
     budget.add("fetch_lock_wait_s", shown.get("fetch_lock_wait_s"))
     if shown.get("retracted") or vault_clone.unrepaired(ask.clone, ask.runner, budget.left()):
         raise vault_share.ShareError("the vault dropped seen commits; run fsck --repair --vault")

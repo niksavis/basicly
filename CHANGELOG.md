@@ -6,7 +6,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-This patch corrects the catalog output shown in the first-loop tutorial. The tutorial check keeps its existing validation.
+This patch corrects the catalog output in the first-loop tutorial. Urgent claims reuse completed refreshes while waiting. Failed helper retries preserve time for the publisher to finish. The claim deadline and verification gates stay unchanged.
 
 ## v0.46.0 - 2026-11-16
 

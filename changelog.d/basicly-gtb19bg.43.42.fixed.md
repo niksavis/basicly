@@ -1,0 +1,1 @@
+- Reuse completed refreshes for waiting urgent publishers. Bound helper retry groups and stop failed helper transports from consuming the publisher response allowance. Keep claim deadlines and safety checks unchanged.

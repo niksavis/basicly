@@ -256,6 +256,10 @@ def _share_head(clone: Any, plan: Plan, runner: Runner, budget: float, *, fresh:
     if fresh:
         settled = vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
         return {**settled, "head": settled["seen"]}
+    if plan.urgent:
+        return vault_clone.fetch_with(
+            clone, vault_clone.Fetch(plan.wall, runner, budget, budget, coalesce=True)
+        )
     return vault_clone.fetch(
         clone, clock=plan.wall, runner=runner, timeout=budget, lock_wait=budget
     )
