@@ -227,14 +227,11 @@ sections:
   - name: 'The judged-output contract: a reviewer structurally incapable of seeing the producer''s
       conclusion, a review base recorded before dispatch, re-review scoped to the fix range,
       late rounds escalating a tier'
-    status: designed
-    record: basicly-a4q3.11
-    note: '**Deterministic engine code, not a persona**, which is why it survived the routing
-      landing'
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-a4q3.11): the engine reviewer dispatch is being removed under basicly-gtb19bg.30.2"
   - name: Cost per landed unit
-    status: researching
-    record: basicly-884gj4
-    note: The instrument the tier claims rest on
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-884gj4): the engine lane cost split loses its population when basicly-gtb19bg.30.2 removes engine dispatch"
 - name: The board
   capabilities:
   - name: A published snapshot contract a foreign harness can conform to
