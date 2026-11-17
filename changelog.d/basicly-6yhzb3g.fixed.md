@@ -1,0 +1,1 @@
+- Hooks no longer run an older global basicly against a newer installed kit. Catalog lint runs the installed version through uvx and says so, or refuses and names both versions and the upgrade command when uvx is missing. Session start refuses the same way. The tracker fold advice names the installed version.

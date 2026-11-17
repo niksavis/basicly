@@ -1,0 +1,1 @@
+- A vault command now accepts a `file://` address for a local vault folder, so the claim command that the commit hook prints works as shown (basicly-pt25e62).
