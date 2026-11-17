@@ -1,1 +1,0 @@
-- After a vault freeze, the commit message hook again refuses a record id that the vault does not hold, with the same message as before the freeze. A message without a record id still reaches the claim check (basicly-5ifjrrl).

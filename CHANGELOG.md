@@ -6,7 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.46.3 - 2026-11-17
+
+Delta: v0.46.1..v0.46.3
+
 This patch makes hooks run the installed basicly version instead of an older global one. After a vault freeze, the commit message hook again refuses an unknown record id, vault status names each queued event, and the claim command that the hook prints works for a local vault. Claim retries reuse a validated refresh, and a claim's share now uses the claim's own clock. Known issue: when 13 or more clones claim at the same moment, some claims can miss the 30-second deadline; the release gate tests 9 clones until basicly-g9g6wg3 lands.
+
+### Changed
+
+- The burst claim test in the release gate now runs 9 clones and 36 claims, by the owner's decision of 2026-11-16, because 13 clones pass or fail by chance under load. 13 clones return when basicly-g9g6wg3 lands. (basicly-gtb19bg.43.42)
+
+### Fixed
+
+- The vault `status` command now lists each queued local event that the vault has not received, with its record, event id and age, and `status` appears in the command list (basicly-2nnm0wh).
+
+- After a vault freeze, the commit message hook again refuses a record id that the vault does not hold, with the same message as before the freeze. A message without a record id still reaches the claim check (basicly-5ifjrrl).
+
+- Hooks no longer run an older global basicly against a newer installed kit. Catalog lint runs the installed version through uvx and says so, or refuses and names both versions and the upgrade command when uvx is missing. Session start refuses the same way. The tracker fold advice names the installed version. (basicly-6yhzb3g)
+
+- Reuse validated refreshes during claim retries and retain their verified commit. Losing burst claims can stay queued until the next sync. Status shows the pending count. No event was lost across the 20 trials. (basicly-gtb19bg.43.42)
+
+- A vault command now accepts a `file://` address for a local vault folder, so the claim command that the commit hook prints works as shown (basicly-pt25e62).
 
 ## v0.46.1 - 2026-11-16
 
