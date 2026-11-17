@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
     from datetime import datetime
 
-# module-size-waiver: cost(basicly-k6tpep.1): 6217 of 4000 tokens. It was 4416 when
+# module-size-waiver: cost(basicly-gtb19bg.30.4): 6217 of 4000 tokens. It was 4416 when
 
 _SUBJECT_SEP = "#wait-"
 

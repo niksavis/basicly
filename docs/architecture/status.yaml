@@ -42,9 +42,8 @@ sections:
     record: basicly-m4zv.3
     note: Model-invoked skills carry one by convention; fragments carry none
   - name: Relieve the always-on baseline by scoping what is conditional
-    status: building
-    record: basicly-a3ab
-    note: Authoring work, not engine work
+    status: deferred
+    note: Dropped in the owner's backlog triage of 2026-11-17 (basicly-a3ab closed as cancelled)
   - name: Tutorial and how-to layer
     status: shipped
     note: The tutorial was executed end to end on a fresh repository before it was written
@@ -104,7 +103,7 @@ sections:
       because they have nothing to key on
   - name: Enforcement at the tool-call boundary, not only at the commit boundary
     status: designed
-    record: basicly-q9aa4q
+    record: basicly-imnu.3
     note: 'Engine work before it is catalog work: the host event vocabulary is barely mapped'
   - name: '`basicly install` reporting the capability tier it actually delivered'
     status: building
@@ -193,12 +192,8 @@ sections:
     status: shipped
     note: Has run live and filed one issue; manual-dispatch caller only, by decision
   - name: A schema-validated handoff artifact at each state boundary
-    status: building
-    record: basicly-mmmrqd
-    note: Three of eight kinds have a producer, two of those a consumer. The rest refuse
-      nothing, and four of those - `classification`, `change-shape`, `verification-evidence`
-      and `validation-transcript` - are tracked by no work item. Architecture §33 carries the
-      per-kind measurement
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-mmmrqd): its only consumer is the headless loop, which basicly-gtb19bg.30.2 removes"
   - name: Tier injection on claude, so a declared tier reaches the spawn
     status: shipped
     note: 'Measured on three spawn paths 2026-09-16, each read off the model the run actually
@@ -224,14 +219,11 @@ sections:
       turn for free, and the test must use a tier whose model differs from the default'
 
   - name: Per-model spend and wall-clock forecast enforced at pass admission
-    status: building
-    record: basicly-u6jq.3
-    note: The current forecast models working set, not turn count, and that is now measured
-      rather than suspected
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-u6jq.3): dropped by the owner"
   - name: A supervised multi-lane run with zero human interventions caused by an engine defect
-    status: building
-    record: basicly-zq9i2m
-    note: ''
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-zq9i2m): dropped by the owner"
   - name: 'The judged-output contract: a reviewer structurally incapable of seeing the producer''s
       conclusion, a review base recorded before dispatch, re-review scoped to the fix range,
       late rounds escalating a tier'
@@ -297,53 +289,29 @@ sections:
       in content - joining the heading entries with a space says 22, rendering them as bullets
       says 36 - so the answer depends on a formatting choice the comparison itself makes'
   - name: Both verification and validation fields required at the definition of ready
-    status: designed
-    record: basicly-zt85dgy
-    note: Architecture section 32.11 and D-50. Every open record owes both the day it lands, and
-      `invest.owed` already computes that list
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-zt85dgy): superseded, because the tracker field table makes acceptance criteria ready and requirements optional on purpose"
   - name: 'A seat: one session held open across tasks and released at the cache window'
-    status: designed
-    record: basicly-zi8nv3a
-    note: Architecture section 31A.2 and D-46. Measured 2026-09-13 on five live dispatches
-      (basicly-8724lqq) - a warm session cost 0.20x and 0.19x of a fresh one on two replications
-      at the same token count, because the cache write is avoided rather than tokens saved. Two
-      turns per task, and the cold resume is unpriced
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-zi8nv3a): dropped by the owner"
   - name: A declared prompt cache window per runner adapter
-    status: designed
-    record: basicly-ytzqz22
-    note: Architecture D-46. The engine may not assume a window a host has not published; a host
-      that publishes none dispatches fresh
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-ytzqz22): seat cache windows belong to the headless factory that basicly-gtb19bg.30.2 removes"
   - name: A free seat takes the next matching ready task itself
-    status: designed
-    record: basicly-88jz7w8
-    note: Architecture section 31A.3 and D-46. Not a second scheduler - the ready set already
-      ranks and section 28.2's five conditions are already the pull predicate. It is the
-      mechanism that holds a seat inside its cache window
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-88jz7w8): dropped by the owner"
   - name: Task to seat matching on four declared axes
-    status: designed
-    record: basicly-s8hxsun
-    note: Architecture section 31A.6 and D-47. Three axes exist - scope globs, integrity level,
-      model tier - and only the tools axis is new. The tier axis stays inert at spawn until
-      basicly-a3yi lands, so a match on it reports unbound
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-s8hxsun): conflicts with the owner direction that one session implements"
   - name: Announcements as ledger events with a per seat watermark
-    status: designed
-    record: basicly-1ayiwmh
-    note: Architecture section 31A.5 and D-45. One event kind and one derived watermark; no
-      mailbox, no daemon, no second store. The section 8 non-goal stands for a mailbox and is
-      amended for this form
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-1ayiwmh): conflicts with the owner direction that one session implements; cross-session messages ship as the agent-mail skill"
   - name: Why a lane carries nine times the scope its plan declares
-    status: researching
-    record: basicly-awawrt3
-    note: Measured 2026-09-13 over 561 claude run records - declared scope median 12,000 tokens,
-      working set median 78,832, ratio 9.3x with a p90 of 27.8x, and the working set is re-read
-      26.1x. Cost is the working set times the turns, so this is the largest single lever and
-      its cause is unknown
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-awawrt3): dropped by the owner"
   - name: The cost of resuming a seat after its cache window has closed
-    status: researching
-    record: basicly-w921i6b
-    note: The unpriced half of D-46. Every run in basicly-8724lqq began seconds after its
-      predecessor, so the cold arm of that experiment is missing and the release rule rests on
-      an argument rather than a number
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-w921i6b): conflicts with the owner direction that one session implements"
 - name: The standalone tracker kit
   capabilities:
   - name: A writer appends to its own shard, so two branches touch no shared path
@@ -391,12 +359,8 @@ sections:
       boundary, so a consumer pinning a git ref pins what was gated; a second channel would be
       a second place a version can be current
   - name: Validated by a consumer who is not its author
-    status: researching
-    record: basicly-lddx5vr
-    note: '**Every validation on the rows above is the author''s own, against fixtures the
-      author wrote.** Each was run from a built wheel in a repository with no `.basicly/core`
-      present, which is the right shape, but nobody outside has installed it. The owner is
-      trialling it on other projects and this row stays open until that reports'
+    status: deferred
+    note: "Closed in the owner backlog triage of 2026-11-17 (basicly-lddx5vr): dropped by the owner"
 - name: The work graph
   capabilities:
   - name: Issues, dependencies, gate results, checkpoints and evidence in a tracked graph

@@ -291,7 +291,6 @@ file_count = 6
 ".basicly/core/templates/board/board_theme.css.j2" = 13
 
 [tool.corpus_drift.frozen]
-"basicly-u2hl" = 4
 
 # Stale-citation debt (basicly-miqr). The gate is `.scripts/check_docs_citations.py`, wired as
 # the `docs-citations` [[verify.checks]] entry. A `file.py:line` in a document is a claim about

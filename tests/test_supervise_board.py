@@ -1,4 +1,4 @@
-# module-size-waiver: cost(basicly-k6tpep.2): 4618 of 4000 tokens. Three end-to-end cases
+# module-size-waiver: cost(basicly-gtb19bg.30.4): 4618 of 4000 tokens. Three end-to-end cases
 
 from __future__ import annotations
 
