@@ -227,6 +227,8 @@ acceptance and rollout work; these documents do not declare the epic complete.
 The [orchestrator kit](../design/orchestrator-kit.md) design draft states the planned
 cross-vendor mail, roles and approval records, and the probes that decide them. Its tasks
 under `basicly-qpr2xmr.3` carry the probe results; the draft does not declare the kit built.
+The [session state](../design/session-state.md) design states how a reporter labels
+herdr panes from vendor hooks, with its probes and known gaps.
 
 The [value pilot](../research/harness-value-pilot.md) and its JSON record the measured comparison.
 They leave monetary cost and broader reliability unresolved.

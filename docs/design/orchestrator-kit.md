@@ -14,7 +14,7 @@ The kit ships in basicly like the tracker kit. A consumer with no engine install
 
 - All sessions run under one OS user on one machine. Any agent with a shell can write any file that user can write. The kit therefore provides mistake-proofing and an audit trail, not security against an agent that edits files on purpose. It never claims more.
 - Prompt injection is real: an agent steered by text it reads may act against its rules. The kit never turns text into a permission. No hook in this kit returns allow. Every vendor permission prompt and classifier refusal stays with the person in that session's window.
-- Version 1 builds on documented, stable interfaces only: files, a CLI and each vendor's hooks. Session hosts and vendor message servers may become adapters later.
+- Version 1 builds on documented, stable interfaces only: files, a CLI and each vendor's hooks. Vendor message servers may become adapters later. herdr is an optional adapter of the `basicly-orch` package for session state ([session state](session-state.md)); the kit itself never calls it.
 - One machine. Records carry a `host` field, and all state changes go through one store module (section 9), so a remote store later replaces one module.
 - Requirement R0 of `basicly-qpr2xmr` holds: no vendor credential is collected, stored or brokered.
 
