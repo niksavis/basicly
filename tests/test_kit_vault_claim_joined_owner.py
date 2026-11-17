@@ -70,17 +70,26 @@ def test_a_claim_stops_retrying_its_share_after_fetching_another_winner(
     clone, state = _machine(tmp_path, bare, "follower")
     other, other_state = _machine(tmp_path, bare, "winner")
     ready, finish = threading.Event(), threading.Event()
+    paused = [0.0]
+
+    def ticks() -> float:
+        return time.monotonic() - paused[0]
 
     def refused(args: list[str], cwd: Path, **options: Any) -> str:
         if "push" in args:
             ready.set()
+            blocked = time.monotonic()
             assert finish.wait(5)
+            paused[0] += time.monotonic() - blocked
             raise vault_claim.git_runner.GitTimeoutError("the follower cannot publish")
         return vault_claim.git_runner.run(args, cwd, **options)
 
     with ThreadPoolExecutor(max_workers=1) as workers:
         follower = workers.submit(
-            vault_claim.claim, _ask(clone, state, "follower", runner=refused), deadline=1
+            vault_claim.claim,
+            _ask(clone, state, "follower", runner=refused),
+            ticks=ticks,
+            deadline=1,
         )
         try:
             assert ready.wait(5)
