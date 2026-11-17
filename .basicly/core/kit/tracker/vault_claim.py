@@ -214,7 +214,9 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
         )
         asked = budget.now()
         try:
-            shared = vault_share.share(ask.clone, ask.state, plan=plan, runner=ask.runner)
+            shared = vault_share.share(
+                ask.clone, ask.state, plan=plan, runner=ask.runner, clock=budget.now
+            )
         except (
             vault_share.DeadlineError,
             git_runner.GitTimeoutError,

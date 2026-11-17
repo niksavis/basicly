@@ -228,17 +228,30 @@ def test_proof_t_no_code_write_a_thousand_writes_and_hooks_leave_the_code_clone_
 
 _AGENT = textwrap.dedent(
     """
-    import importlib.util, io, json, contextlib, sys
+    import importlib.util, io, json, contextlib, sys, time
+    TRIES = 5
     kit, phase, bare, state, count = sys.argv[1:6]
     spec = importlib.util.spec_from_file_location("agent_cli", kit)
     cli = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cli)
     waits = []
-    def run(argv):
+    refusals = []
+    unaccepted = []
+    def call(argv):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            cli.main(argv)
-        report = json.loads(out.getvalue())
+            code = cli.main(argv)
+        return code, json.loads(out.getvalue())
+    def run(argv):
+        for attempt in range(TRIES):
+            code, report = call(argv)
+            if code == 0:
+                break
+            refusals.append({"argv": argv[:4], "code": code, "refused": report.get("refused")})
+            time.sleep(0.2 * 2 ** attempt)
+        else:
+            unaccepted.append(argv[:4])
+            return
         shared = report.get("shared") if isinstance(report.get("shared"), dict) else {}
         waits.extend(w for w in (report.get("lock_wait_s"), shared.get("lock_wait_s")) if w)
     base = ["--vault", bare, "--state", state]
@@ -247,7 +260,8 @@ _AGENT = textwrap.dedent(
             run(["comment", "r-1", "--text", f"e{sys.argv[6]}-{n}", *base])
     else:
         run(["hook", "stop", *base])
-    print(json.dumps({"max_wait": max(waits, default=0.0)}))
+    summary = {"max_wait": max(waits, default=0.0), "refusals": refusals}
+    print(json.dumps({**summary, "unaccepted": unaccepted}))
     """
 )
 
@@ -290,10 +304,15 @@ def test_proof_t_agents_eight_sessions_in_three_worktrees_land_each_event_once(
         ]
         done = [proc.communicate(timeout=300) for proc in procs]
         assert [proc.returncode for proc in procs] == [0] * 8, [err for _out, err in done]
-        return [json.loads(out)["max_wait"] for out, _err in done]
+        reports = [json.loads(out) for out, _err in done]
+        refusals.extend(r for report in reports for r in report["refusals"])
+        assert [report["unaccepted"] for report in reports] == [[]] * 8, reports
+        return [report["max_wait"] for report in reports]
 
+    refusals: list[dict] = []
     waits = phase("write") + phase("stop")
 
+    assert all(r["code"] != 0 and r["refused"] for r in refusals), refusals
     landed = _ids(bare)
     assert sum(landed.values()) == 1000
     assert set(Counter(landed).values()) == {1}
