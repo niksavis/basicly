@@ -274,6 +274,40 @@ Finding from probe P8 on Copilot CLI, 2026-11-18 (its built-in `copilot help per
 - The kit therefore ships the wait as its own executable name, not as a subcommand of a general `orch` command. A rule for a general command would also allow its other subcommands.
 - A worker is allowed `orch-wait` alone, by name. A worker never gets an allow for `orch` or `orch:*`, because that would also allow `orch approve`. `orch doctor` refuses a worker configuration that allows `orch` or `orch:*`, and names the file and the rule.
 
+### 15.2 Where each part lives
+
+The long-term aim is an engine that needs no terminal program, with any interface built on top. Each part is placed on two axes: engine or interface and adapter, and inside the repository or outside it, per user or per machine. Nothing moves in the current cut; this table feeds later research cuts.
+
+| Part | Engine or adapter | Repository or outside |
+| --- | --- | --- |
+| `orch` commands, `orch-wait`, `orch-deliver` | engine | outside (installed tool) |
+| `[orchestration]` enable table, orchestrator member name | engine configuration | repository (committed) |
+| Orchestration fragments, orchestrator agent source, skills | engine catalog | repository (catalog) |
+| Vendor hook entries that call `orch` | engine | repository (projected settings) |
+| Mail store, role lock, member registry | engine state | outside, per user |
+| Approval records | engine state | outside, per user |
+| Lessons log | engine state | outside, per user; exported lessons enter the repository as catalog changes |
+| Session ids and vendor session files | vendor state | outside, per user |
+| herdr delivery, herdr state reporter, tmux delivery | adapter | outside, per machine |
+| Vendor credentials | none: the kit holds none (R0) | outside, vendor-owned |
+| Session map, project list, the person's own rule quotes | workspace binding | repository of the workspace, local overlay |
+
+Parts in the wrong place today:
+
+- The mail store and its lock live under the workspace's ignored `.orchestrator/` folder. They belong in a per-user state folder, so sessions in any repository share one store.
+- The lessons log lives in the workspace's ignored `.orchestrator/lessons`. It belongs in the same per-user state folder; only exported lessons belong in a repository.
+- The herdr reporter was installed into the user settings by a workspace-local tool (`.orchestrator/dev-orch-state`). The installer belongs to the kit, as an adapter install with its own rollback.
+- The workspace orchestrator agent is a hand-written file. It belongs in the catalog (task .3.16), and the install now refuses to overwrite a hand-written agent file.
+- The generic orchestration rules live in the workspace's architecture document. They belong in catalog fragments (task .3.17).
+
+### 15.3 The orchestrator role on Codex
+
+Measured on 2026-11-18 with `codex exec` (Codex CLI 0.170, gpt-6-luna):
+
+- `-c model_instructions_file=<file>` loads a role file, but it replaces Codex's built-in instructions: the input dropped from 15,007 to 11,575 tokens. The kit does not use it.
+- `-c developer_instructions="<text>"` adds the role to Codex's own instructions (15,026 tokens) and the model followed it. The kit's session start command passes the projected role file this way, so no always-on line in `AGENTS.md` and no skill entry is needed.
+- The Codex skill listing is already over its budget (6,760 of 5,168 characters), so a new skill entry would push other skills out.
+
 ## 16. Lessons
 
 The orchestrator learns from each worker and each job, and its agent instructions and skills improve inside the harness.
