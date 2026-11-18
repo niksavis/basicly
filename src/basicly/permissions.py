@@ -145,6 +145,12 @@ def _shell_command_drop_reason(tool: str, content: str, pattern: str) -> str | N
     return None
 
 
+def active_deny_rules(
+    permissions_dir: Path | None = None, features: frozenset[str] = frozenset()
+) -> list[DenyRule]:
+    return [rule for rule in load_deny_rules(permissions_dir) if set(rule.requires) <= features]
+
+
 def load_claude_permissions(
     permissions_dir: Path | None = None, features: frozenset[str] = frozenset()
 ) -> ClaudePermissions:
@@ -156,11 +162,7 @@ def load_claude_permissions(
             raise ValueError(f"{manifest}: allow pattern {pattern!r} is refused: {reason}")
     return ClaudePermissions(
         allow=tuple(allow),
-        deny=tuple(
-            claude_deny_patterns([
-                rule for rule in load_deny_rules(permissions_dir) if set(rule.requires) <= features
-            ])
-        ),
+        deny=tuple(claude_deny_patterns(active_deny_rules(permissions_dir, features))),
     )
 
 
