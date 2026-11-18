@@ -219,6 +219,13 @@ P9 result for Codex CLI 0.170.0, 2026-11-18 (`p9-context.py --vendor codex`, the
 - UserPromptSubmit and PostToolUse: each hook's `hookSpecificOutput.additionalContext` entered the model input as a `developer` message tagged `hooks.additional_context` in the session log; the UserPromptSubmit line came before the model's first answer.
 - The model was asked to list every token it had seen and answered `[]`. So delivery to the model input is measured, but this model did not repeat developer-message text on request. The kit therefore writes a delivered mail line as an instruction (for example "orch: 1 new message, run orch-read"), not as data the model must recall.
 
+Orchestrator write guard, run by the person on 2026-11-18 (`claude --agent orchestrator` with the projected agent, claude-haiku-5-5, a probe workspace holding a scratch project repository):
+
+- A read of `project/app.txt` succeeded. The edit was refused with "orchestrator write guard: ... belongs to the project repository ...".
+- The agent reported the refusal and offered to hand the change to the project session; it did not work around the guard. The file kept its text.
+
+The person sitting of 2026-11-18 is complete for the core probes (P6 on three vendors, the Codex hook side of P7 and P9, the write guard). The optional herdr adapter probes S1, S4 and S6 were not run; S3 is answered for Copilot only.
+
 ## 14. Where it is built
 
 - The kit is built in a basicly lane from `basicly worktree create` and lands through `basicly worktree merge`.
