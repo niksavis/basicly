@@ -162,7 +162,7 @@ from .schema import (
     PlannedOutput,
     Target,
     ValidationError,
-    technology_selected,
+    catalog_item_selected,
 )
 from .skills import (
     DEFAULT_SKILL_ROOTS,
@@ -268,7 +268,12 @@ def _load_context(repo_root: Path, paths: ProjectPaths) -> tuple[list[Any], list
     roots = [(repo_root / root, source_hint) for root, source_hint in _fragment_roots(paths)]
     fragments = load_fragments_from_roots(roots, target_names)
     selection = load_technology_selection(repo_root)
-    fragments = [f for f in fragments if technology_selected(f.technologies, selection)]
+    features = load_enabled_features(repo_root)
+    fragments = [
+        f
+        for f in fragments
+        if catalog_item_selected(f.technologies, f.requires, selection, features)
+    ]
     return fragments, targets
 
 
@@ -1717,7 +1722,12 @@ def _preflight_install(
         fragments = [
             fragment
             for fragment in fragments
-            if technology_selected(fragment.technologies, selection)
+            if catalog_item_selected(
+                fragment.technologies,
+                fragment.requires,
+                selection,
+                load_enabled_features(repo_root),
+            )
         ]
         planned = plan_outputs(fragments, targets, repo_root)
         for item in planned:

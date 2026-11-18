@@ -144,6 +144,7 @@ def _load_fragment(path: Path, root: Path, source_hint: str | None = None) -> Fr
         scope_paths=scope_paths,
         tags=front.get("tags", []),
         technologies=front.get("technologies") or [],
+        requires=front.get("requires") or [],
         status=front.get("status", "active"),
         title=front.get("title"),
         body=body,

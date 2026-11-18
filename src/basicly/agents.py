@@ -12,7 +12,12 @@ from .copilot_tools import (
     resolve_copilot_tool,
 )
 from .projection import SyncResult, sync_file
-from .schema import MODEL_TIERS, ValidationError, technology_selected, validate_technologies
+from .schema import (
+    MODEL_TIERS,
+    ValidationError,
+    catalog_item_selected,
+    validate_technologies,
+)
 from .skill_source import discover_skills
 
 CORE_AGENTS_DIR = Path(".basicly/core/agents")
@@ -366,7 +371,7 @@ class HandWrittenAgentError(Exception):
 def agent_selected(
     agent: AgentDefinition, selection: frozenset[str] | None, features: frozenset[str]
 ) -> bool:
-    return technology_selected(agent.technologies, selection) and set(agent.requires) <= features
+    return catalog_item_selected(agent.technologies, agent.requires, selection, features)
 
 
 def output_roots(agent: AgentDefinition) -> tuple[AgentOutputRoot, ...]:

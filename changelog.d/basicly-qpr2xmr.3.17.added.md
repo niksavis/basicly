@@ -1,0 +1,1 @@
+- An `orchestrated-session` rule fragment for workspaces with `[orchestration] enabled = true`: it tells every session how orders, relayed approvals and orchestrator decisions on ask-first items count, what stays with the person, and how to report. Catalog fragments can now declare `requires` like agents.
