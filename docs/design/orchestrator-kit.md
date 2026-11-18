@@ -177,7 +177,7 @@ Each probe has its own task under `basicly-qpr2xmr.3` and runs in scratch, never
 | --- | --- | --- | --- |
 | P10 | Do the shell and Python mail tools read each other's mailboxes and locks? | Migration without a mail move | passed |
 | P11 | Do the agent-mail scripts work on Windows and macOS (`basicly-5zqycyb`)? | Landing precondition | open |
-| P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | Claude Code and Copilot passed; Codex open, with trusted hooks |
+| P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | Claude Code and Copilot passed; Codex delivered to the model input (2026-11-18, section 13) |
 | P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | measured on all three vendors (Codex hook side 2026-11-18, section 13) |
 | P8 | Longest blocking call, background wait and wake, token cost of one empty cycle, per vendor | Idle-session wake | Codex and Copilot measured (P8, P8b, section 15); Claude Code wake turns measured from a session transcript; the Claude trust dialog run open, with a person |
 | P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | Claude Code and Codex passed; Copilot FAILED: a hook answer of "ask" removed the prompt (2026-11-18) |
@@ -212,6 +212,12 @@ P7 result for Codex CLI 0.170.0, hook side, 2026-11-18 (`p7-identity.py --vendor
 - start: `source` is `startup`. resume: the same `session_id`, `source` is `resume`. fork: a new `session_id`, `source` is `fork`.
 - The hook's direct parent process is the `codex` process in each run, so the vendor process id is the hook's parent process id.
 - `permission_mode` is present in the hook input, which probe P6 asked about for Codex.
+
+P9 result for Codex CLI 0.170.0, 2026-11-18 (`p9-context.py --vendor codex`, the three probe hooks trusted by the person through `/hooks`, the Codex default model):
+
+- Stop: a `decision: block` with a reason continued the turn, and the model answered "stopseen". The silent-hook control did not.
+- UserPromptSubmit and PostToolUse: each hook's `hookSpecificOutput.additionalContext` entered the model input as a `developer` message tagged `hooks.additional_context` in the session log; the UserPromptSubmit line came before the model's first answer.
+- The model was asked to list every token it had seen and answered `[]`. So delivery to the model input is measured, but this model did not repeat developer-message text on request. The kit therefore writes a delivered mail line as an instruction (for example "orch: 1 new message, run orch-read"), not as data the model must recall.
 
 ## 14. Where it is built
 
