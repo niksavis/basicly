@@ -218,6 +218,22 @@ Result of probe P8 for Codex CLI and Copilot CLI, 2026-11-18 (`orchestrator-kit-
 - The interval between checks is chosen by the vendor, not by the command. Whether a configuration setting can lengthen it is not established.
 - The wait itself polled the flag every 2 s in this probe. The kit's `orch-wait` uses inotify on Linux, with a 2 s poll fallback, so it uses no CPU between messages.
 
+Delivery with no model in the loop (probe P8b, 2026-11-18, interactive Codex CLI and Copilot CLI in herdr panes). This is the default design for Codex and Copilot. The waiting worker above is an opt-in per vendor, with its cost reported by `orch doctor`.
+
+- `orch-deliver` is a small process, not a model. It watches the mail store with inotify. When mail arrives for a member whose herdr pane is idle, it submits one short line, for example `orch: 1 new message, run orch-read`, with `herdr agent prompt`. The session takes it as a user turn.
+- It never uses `herdr pane send-text` plus Enter. `herdr agent prompt` refuses an agent at an approval or question dialog with `agent_blocked` before it sends any input, so the check and the send are one herdr server call.
+- It sends only after two `herdr agent get` reads, at least 3 s apart, both show `idle`.
+- The fallback for a worker with no pane is a resume per message (`codex exec resume`, `copilot --resume`).
+
+| Vendor | Delivery | Tokens while idle 120 s |
+| --- | --- | --- |
+| Codex CLI | user turn, answered in 2.8 s, 15,337 input (11,264 cached), 5 output | 0 (token events 1 before, 1 after) |
+| Copilot CLI | user turn, 24,750 input (first call, no cache), 21 output | 0 (usage events 2 before, 2 after) |
+
+- Negative control, measured: Copilot showed its folder trust dialog, `herdr agent get` reported `blocked`, and `herdr agent prompt` exited 1 with `agent_blocked`. The dialog stayed unanswered, and no text was typed.
+- `herdr agent prompt --wait` returned `agent_prompt_stalled` for Copilot although the message arrived and was answered. herdr saw no `working` state within its 5 s window. `orch-deliver` therefore confirms delivery from the session log or the pane text, not from that exit code.
+- Remaining race, an argument and not a measurement: herdr warns that `idle` "does not guarantee that an unfamiliar approval dialog was recognized". An idle agent has no running turn, so it opens no permission dialog by itself; a dialog comes from a turn. The remaining risk is a person typing in the same instant. The two idle reads narrow it, and nothing removes it.
+
 Finding from probe P8 on Copilot CLI, 2026-11-18 (its built-in `copilot help permissions` and three runs):
 
 - A shell rule matches the command name, plus the first subcommand for known tools such as git or npm. It does not match arguments. So `shell(python3 wait.py mail.flag 900)` matched nothing, and the call was denied in `-p` mode with "no interactive user response".
