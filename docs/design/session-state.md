@@ -12,7 +12,8 @@ A person who runs Claude Code, Codex CLI and GitHub Copilot CLI sessions in herd
 - herdr is a terminal runtime for coding agents. Licence: Apache License 2.0 (GitHub `herdrdev/herdr`, read 2026-11-17). It is widely used: about 51,000 stars and daily commits at that date. Measured version: 0.9.5.
 - herdr classifies every agent pane as `idle`, `working`, `blocked`, `done` or `unknown` from the screen, by versioned rules (`herdr agent explain <pane>` names the rule). `blocked` means herdr recognized an approval or question; `done` means a turn ended and nobody has looked at the pane yet; `unknown` means an agent is present but not classified.
 - `herdr pane report-metadata <pane> --source <id> --state-label <status>=<text> --ttl-ms <n> --seq <n>` stores a display-only label per state and takes no lifecycle authority (herdr 0.9.5 `--help`). The pane id comes first. Labels are capped at 80 characters, the time to live is 1 to 86,400,000 ms, and `seq` must increase across restarts (herdr documentation).
-- Measured 2026-11-17 on one pane (probe S2, partial): a report left `agent_status` at `working`, `herdr pane get` showed the label, and a clear removed it. One report took 1.6 to 3.9 ms (probe S5).
+- Measured 2026-11-17 and 2026-11-18 on the measuring pane (probe S2, `session-state-probes/s2-idle-done.py`): a report left `agent_status` unchanged in the states `working`, `done` and `idle`; `herdr pane get` showed the label; a clear removed only the labels of its own `--source`. Labels of several sources coexist, and for one state the latest report shows. One report took 1.6 to 3.9 ms (probe S5).
+- Measured 2026-11-18 with the reporter installed: when a Claude Code turn ended while one background shell ran, the Stop hook set `paused: 1 background` on `idle` and `done` (probe S4, partial).
 - herdr's vendor integrations bind the session id at session start; the screen decides the state.
 
 ## 3. What the person sees
@@ -67,9 +68,9 @@ herdr's own badge and state colour stay the primary signal. The reporter adds on
 | Id | Question | State |
 | --- | --- | --- |
 | S1 | Where do state labels show in herdr's tab list and pane frame, per state? | open, with a person |
-| S2 | Does a report leave `agent_status` unchanged in every state? | working state measured |
+| S2 | Does a report leave `agent_status` unchanged in every state? | passed for working, done and idle; blocked open, with a person |
 | S3 | Does herdr show blocked for each prompt kind of each vendor? | open, with a person |
-| S4 | Do background shells and monitors appear in Stop `background_tasks`, and does their completion fire a hook? | open |
+| S4 | Do background shells and monitors appear in Stop `background_tasks`, and does their completion fire a hook? | a background shell appears; monitors and the wake open |
 | S5 | Does a hook run stay under 50 ms? | passed, about 25 ms |
 | S6 | Does herdr alert (sound, OS notice, tab highlight) when a pane turns blocked? If not, the reporter sends one OS notice at PermissionRequest | open, with a person |
 
