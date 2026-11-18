@@ -186,3 +186,39 @@ Each probe has its own task under `basicly-qpr2xmr.3` and runs in scratch, never
 - The kit is built in a basicly lane from `basicly worktree create` and lands through `basicly worktree merge`.
 - Landing waits for P11 and for a passing landing verify on main.
 - The kit's tests use an injected clock and no real sleeps. The landing check records the kit tests' wall time against the normal CI budget.
+
+## 15. The orchestrator on every vendor
+
+The orchestrator role must run from Claude Code, Codex CLI or GitHub Copilot CLI, and it must reach workers on all three. It must not depend on one vendor's own messaging between sessions.
+
+| Need | How the kit meets it | Gap |
+| --- | --- | --- |
+| Transport | The mail store is files under one root; any session with a shell reads and writes it through `orch` | none |
+| Busy delivery | A context line at UserPromptSubmit and PostToolUse (section 8) | Codex measured only by documentation and source; pending probe P9 with trusted hooks |
+| Idle delivery | A blocking `orch wait` that the session keeps running | Hooks cannot wake an idle session on Codex (its documentation) and on Copilot an idle wake is not established; whether each vendor keeps a long background call alive is pending probe P8 |
+| Role lock and identity | The `role-orchestrator` lock and the member registry, the same for every vendor (section 6) | Codex ids on resume and fork pending probe P7 |
+| Minting an approval | `orch approve` under the vendor's own ask prompt (section 5.2) | Claude Code has ask rules. Copilot has no ask rule in settings; the kit would need a `preToolUse` hook that answers `ask`. Codex has prompt rules only as an experimental rules file. Whether each hook reports the permission mode is pending probe P6. Until P6 passes on a vendor, the orchestrator role on that vendor can send and read mail but cannot mint approvals |
+| The orchestrator's own instructions | One catalog source, projected per vendor | Claude Code reads an agent file; Copilot reads `.github/agents/*.agent.md`; Codex has no agent file, so the role prompt ships as a skill and an `AGENTS.md` block. The projection for Copilot and Codex is not built |
+
+## 16. Lessons
+
+The orchestrator learns from each worker and each job, and its agent instructions and skills improve inside the harness.
+
+- `orch lesson add --what "<what happened>" --requirement "<the rule that would have prevented it>" --record <id>` appends one line to `lessons.jsonl` in the kit root. The tool stamps the time from the clock and the member name from the session.
+- Before the append, the tool runs the repository's secret scanner on the text and refuses a line that the scanner flags, naming the rule, so a lesson never blocks a later commit.
+- `orch lessons export` turns open lessons into a proposal: a patch against the catalog sources of the orchestrator agent and its skills. The patch lands through normal catalog authoring and review; the kit never edits a projected file.
+- A lesson closes when the landed change that answers it is named in the log. `orch doctor` lists lessons older than 14 days with no change.
+- The catalog rule that every rule ships with its enforcement applies: an exported lesson names its check (a test, a hook, a gate or a tool refusal), or it states why only guidance is possible.
+
+The first lessons, from operating the workspace orchestrator, are requirements for this kit:
+
+| # | Requirement | Enforcement in the kit |
+| --- | --- | --- |
+| L1 | Before it proposes a design, the orchestrator reads the standing list of owner constraints, and a proposal names how it meets each one that applies | the constraint list is one catalog source; the orchestrator skill's checklist names it |
+| L2 | The orchestrator decides ask-first items itself; only a short closed list goes to the person: harness prompts, gate bypass, irreversible destruction, private data exposure and rule changes | the closed list is one source; `orch approve` refuses an item outside its tier-A scope (section 5.1) |
+| L3 | Every command shown to the person is complete and checked; no placeholder | `orch send` to the person refuses a body that holds a placeholder pattern such as `<NAME>` |
+| L4 | Every recorded time comes from a clock call | `orch` stamps `sent_at` and lesson times itself; no time argument exists |
+| L5 | A note or lesson is scanned for secrets before it is written to an append-only store | the lesson and mail writers run the secret scanner first |
+| L6 | A rehearsal includes the consumer environment: CI without credentials and a fresh clone | the orchestrator skill's rehearsal checklist |
+| L7 | A read-only fact is measured before a worker or the person is asked | the orchestrator skill's checklist |
+| L8 | The transport is vendor-neutral and the role runs from any vendor | sections 8 and 15 |
