@@ -180,7 +180,7 @@ Each probe has its own task under `basicly-qpr2xmr.3` and runs in scratch, never
 | P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | Claude Code and Copilot passed; Codex open, with trusted hooks |
 | P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | Claude Code and Copilot measured; Codex thread ids measured with `codex exec --json` (resume keeps the id, fork gets a new one); the Codex hook side open, with trusted hooks |
 | P8 | Longest blocking call, background wait and wake, token cost of one empty cycle, per vendor | Idle-session wake | Codex and Copilot measured (P8, P8b, section 15); Claude Code wake turns measured from a session transcript; the Claude trust dialog run open, with a person |
-| P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | Claude Code passed (person-run, 2026-11-18); Copilot and Codex open |
+| P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | Claude Code and Codex passed (person-run, 2026-11-18); Copilot open |
 
 P6 result for Claude Code, run by a person on 2026-11-18 with `p6-ask-setup.py` (project rule `permissions.ask: Bash(orch-approve-probe *)`, model claude-haiku-5-5, auto mode on):
 
@@ -188,6 +188,14 @@ P6 result for Claude Code, run by a person on 2026-11-18 with `p6-ask-setup.py` 
 - The prompt carried the banner "Rule Bash(orch-approve-probe *) from shared project settings overrides auto mode."
 - The second run, `orch-approve-probe two`, prompted again with the same options.
 - So on Claude Code a project ask rule prompts every time, cannot be saved away by the person, and overrides auto mode. `orch approve` may run there behind such a rule.
+
+P6 result for Codex CLI, run by a person on 2026-11-18 (project rule `prefix_rule(pattern = ["orch-approve-probe"], decision = "prompt")`, gpt-6-luna, the person's default of full access with approval on request):
+
+- Both runs prompted: "`/usr/bin/zsh -lc 'orch-approve-probe one'` requires approval by policy", with only "Yes, proceed" and "No". No "don't ask again" option was offered. So the project prompt rule prompts every time, also under full access.
+- After approval, both runs exited 127, "command not found". Codex runs a command in a login shell (`zsh -lc`), which rebuilds PATH from the profile and drops a PATH prefix set when Codex was started. The prompt comes before execution, so the P6 result stands.
+- Kit finding: `orch-wait` and `orch approve` must be on the login-shell PATH, as an installed tool (for example a `uv tool` install in `~/.local/bin`), never on a PATH that only the launching shell set.
+
+P6 on Copilot CLI, first person run on 2026-11-18: the probe's `preToolUse` hook failed with exit 127 ("No such file or directory"), because the setup wrote the hook path relative to the folder where the setup ran, and Copilot runs the hook from the project folder. Copilot then denied the command ("hook errored", fail-closed). The setup now writes an absolute path. A failing hook denies the call on Copilot, which is the safe direction.
 
 ## 14. Where it is built
 
@@ -276,6 +284,7 @@ Finding from probe P8 on Copilot CLI, 2026-11-18 (its built-in `copilot help per
 
 - A shell rule matches the command name, plus the first subcommand for known tools such as git or npm. It does not match arguments. So `shell(python3 wait.py mail.flag 900)` matched nothing, and the call was denied in `-p` mode with "no interactive user response".
 - `shell(python3:*)` worked, but it allows every python3 command. That is too wide for a worker.
+- The kit installs `orch-wait` and `orch` as a tool on the login-shell PATH: Codex runs commands in a login shell (`zsh -lc`) that drops PATH changes made by the launching shell (probe P6, 2026-11-18).
 - The narrowest rule is a dedicated executable for the wait alone, allowed by its name, for example `--allow-tool=shell(orch-wait)` and no other tool. Measured: `orch-wait --timeout 5` ran under that rule.
 - Copilot checks each command in a chained shell call. A call that chained `orch-wait` with `printf` and `python3` was denied as a whole, so the rule cannot be stretched by chaining.
 - The kit therefore ships the wait as its own executable name, not as a subcommand of a general `orch` command. A rule for a general command would also allow its other subcommands.

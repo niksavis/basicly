@@ -143,7 +143,7 @@ def main() -> int:
         return 2
     report: dict[str, object] = {"vendor": vendor}
     with tempfile.TemporaryDirectory() as outside, tempfile.TemporaryDirectory() as folder:
-        root = args.root or Path(folder) / "project"
+        root = (args.root or Path(folder) / "project").resolve()
         root.mkdir(parents=True, exist_ok=True)
         execute(["git", "init", "-q", str(root)], root, None)
         hook = (root.parent if args.root else Path(outside)) / "p7_hook.py"

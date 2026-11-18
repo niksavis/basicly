@@ -32,6 +32,7 @@ def write(path: Path, text: str, executable: bool = False) -> None:
 
 
 def setup(root: Path) -> list[Path]:
+    root = root.resolve()
     probe = root / "bin" / COMMAND
     claude = root / ".claude" / "settings.json"
     codex = root / ".codex" / "rules" / "p6.rules"
