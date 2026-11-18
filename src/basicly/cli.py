@@ -2780,7 +2780,11 @@ def cmd_agents_list(_args: argparse.Namespace) -> int:
 def cmd_agents_build(_args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
-    result, pruned = agents.sync_agents(repo_root, load_technology_selection(repo_root))
+    try:
+        result, pruned = agents.sync_agents(repo_root, load_technology_selection(repo_root))
+    except agents.HandWrittenAgentError as refusal:
+        print(f"basicly agents-build: {refusal}", file=sys.stderr)
+        return 1
     for path in pruned:
         print(f"Removed {_format_path(path, repo_root)} (excluded by technology selection)")
     _report_sync(result, repo_root, noun="agent files", label="Agent")

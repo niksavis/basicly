@@ -9,9 +9,11 @@ from basicly.agents import (
     CLAUDE_AGENTS_ROOT,
     COPILOT_AGENTS_ROOT,
     GENERATED_MARKER,
+    HAND_WRITTEN_REASON,
     ORPHANED_REASON,
     SLOT_ORDER,
     AgentOutputRoot,
+    HandWrittenAgentError,
     check_synced_agents,
     compose_body,
     compose_description,
@@ -463,6 +465,24 @@ def test_orphan_pruning_spares_a_hand_written_agent(tmp_path: Path) -> None:
     assert pruned == []
     assert check_synced_agents(repo) == []
     for target in _targets(repo):
+        assert target.read_text(encoding="utf-8") == hand_written
+
+
+def test_sync_agents_refuses_to_overwrite_a_hand_written_agent(tmp_path: Path) -> None:
+
+    repo = _repo_with_agent(tmp_path)
+    hand_written = "---\nname: code-reviewer\n---\n\nMy own reviewer.\n"
+    targets = _targets(repo)
+    for target in targets:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(hand_written, encoding="utf-8")
+
+    with pytest.raises(HandWrittenAgentError, match="code-reviewer") as refusal:
+        sync_agents(repo)
+
+    assert refusal.value.paths == targets
+    assert check_synced_agents(repo) == [(target, HAND_WRITTEN_REASON) for target in targets]
+    for target in targets:
         assert target.read_text(encoding="utf-8") == hand_written
 
 

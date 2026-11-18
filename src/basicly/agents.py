@@ -331,6 +331,32 @@ def _is_generated_agent(path: Path) -> bool:
 
 
 ORPHANED_REASON = "orphaned (no agent source)"
+HAND_WRITTEN_REASON = "hand-written file with no generated marker; basicly will not overwrite it"
+
+
+class HandWrittenAgentError(Exception):
+    def __init__(self, paths: list[Path]) -> None:
+        self.paths = paths
+        names = ", ".join(path.as_posix() for path in paths)
+        super().__init__(
+            f"refusing to overwrite hand-written agent file(s): {names}. "
+            "Each has no basicly generated marker. Rename the hand-written file, "
+            "or rename the catalog agent source of the same name, then run the command again"
+        )
+
+
+def hand_written_targets(
+    repo_root: Path, sources: list[AgentDefinition], selection: frozenset[str] | None
+) -> list[Path]:
+    found: list[Path] = []
+    for agent in sources:
+        if not technology_selected(agent.technologies, selection):
+            continue
+        for out_root in AGENTS_OUTPUT_ROOTS:
+            target = out_root.target(repo_root, agent.slug)
+            if target.is_file() and not _is_generated_agent(target):
+                found.append(target)
+    return found
 
 
 def orphaned_projections(repo_root: Path, source_slugs: set[str]) -> list[Path]:
@@ -354,6 +380,9 @@ def sync_agents(
     roots = default_agent_roots(repo_root)
     blocks = discover_blocks(roots)
     sources = discover_agents(roots)
+    hand_written = hand_written_targets(repo_root, sources, selection)
+    if hand_written:
+        raise HandWrittenAgentError(hand_written)
     result = SyncResult()
     pruned: list[Path] = []
     for agent in sources:
@@ -390,6 +419,9 @@ def check_synced_agents(
                 continue
             if not target_path.exists():
                 mismatches.append((target_path, "missing"))
+                continue
+            if not _is_generated_agent(target_path):
+                mismatches.append((target_path, HAND_WRITTEN_REASON))
                 continue
             if target_path.read_bytes() != render_agent_md(agent, blocks, out_root).encode("utf-8"):
                 mismatches.append((target_path, "content mismatch"))
