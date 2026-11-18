@@ -178,7 +178,7 @@ Each probe has its own task under `basicly-qpr2xmr.3` and runs in scratch, never
 | P10 | Do the shell and Python mail tools read each other's mailboxes and locks? | Migration without a mail move | passed |
 | P11 | Do the agent-mail scripts work on Windows and macOS (`basicly-5zqycyb`)? | Landing precondition | open |
 | P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | Claude Code and Copilot passed; Codex open, with trusted hooks |
-| P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | Claude Code and Copilot measured; Codex thread ids measured with `codex exec --json` (resume keeps the id, fork gets a new one); the Codex hook side open, with trusted hooks |
+| P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | measured on all three vendors (Codex hook side 2026-11-18, section 13) |
 | P8 | Longest blocking call, background wait and wake, token cost of one empty cycle, per vendor | Idle-session wake | Codex and Copilot measured (P8, P8b, section 15); Claude Code wake turns measured from a session transcript; the Claude trust dialog run open, with a person |
 | P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | Claude Code and Codex passed; Copilot FAILED: a hook answer of "ask" removed the prompt (2026-11-18) |
 
@@ -205,6 +205,13 @@ P6 result for Copilot CLI 1.0.114, run on 2026-11-18 with the corrected setup (i
 - Control 2: with the hook answering "deny", the command was refused ("Denied by preToolUse hook").
 - So Copilot reads the hook output and honours "deny", but a hook answer of "ask" removed the prompt that the call would otherwise get. The vendor documents "ask" as a valid value, so this is a defect or an undocumented meaning on this version.
 - Consequence for the kit: on Copilot, no mechanism forces a prompt for `orch approve`. Copilot's own prompt offers "don't ask again", which saves the approval for the repository. The orchestrator role on Copilot may send and read mail but may not mint approvals (gap 2 of section 15 confirmed). A worker hook on Copilot answers "deny" for `orch approve`, which is honoured.
+
+P7 result for Codex CLI 0.170.0, hook side, 2026-11-18 (`p7-identity.py --vendor codex`, SessionStart hook trusted by the person through `/hooks`):
+
+- The SessionStart input carries `session_id`, `source`, `cwd`, `model`, `permission_mode`, `transcript_path` and `hook_event_name`.
+- start: `source` is `startup`. resume: the same `session_id`, `source` is `resume`. fork: a new `session_id`, `source` is `fork`.
+- The hook's direct parent process is the `codex` process in each run, so the vendor process id is the hook's parent process id.
+- `permission_mode` is present in the hook input, which probe P6 asked about for Codex.
 
 ## 14. Where it is built
 
