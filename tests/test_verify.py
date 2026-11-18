@@ -412,6 +412,22 @@ def test_cli_verify_refuses_to_record_gate_from_linked_worktree(
     assert "refusing to record gate" in err and "base checkout" in err
 
 
+@pytest.mark.parametrize(
+    "extra", [["--issue", "acme-x"], ["--fix"], ["--affected"], ["--mode", "fast"]]
+)
+def test_cli_verify_ci_refuses_every_tracker_write_and_partial_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    extra: list[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: pytest.fail("checks must not run"))
+
+    assert cli.main(["verify", "--mode", "full", "--ci", *extra]) == 1
+    assert "basicly verify --mode full --ci" in capsys.readouterr().err
+
+
 def test_cli_verify_returns_nonzero_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

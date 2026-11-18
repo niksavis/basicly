@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -178,3 +179,53 @@ def test_the_incident_sites_leave_a_poisoned_git_dir_target_untouched(tmp_path: 
     assert branches == before[1]
     assert worktrees == before[2]
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+OVERWRITING_KIT_LOADERS = frozenset({
+    "test_kit_board_cache.py",
+    "test_kit_board_repository.py",
+    "test_kit_board_server.py",
+    "test_kit_git_runner.py",
+    "test_kit_redact.py",
+    "test_kit_tracker_baseline.py",
+    "test_kit_tracker_holder_writes.py",
+    "test_kit_tracker_record_types.py",
+    "test_kit_vault_claim.py",
+    "test_kit_vault_clone.py",
+    "test_kit_vault_commit_hook.py",
+    "test_kit_vault_fold.py",
+    "test_kit_vault_hooks.py",
+    "test_kit_vault_migrate.py",
+    "test_kit_vault_push_guard.py",
+    "test_kit_vault_push_guard_consumer.py",
+    "test_kit_vault_queue.py",
+    "test_kit_vault_repair.py",
+    "test_kit_vault_shapes.py",
+    "test_kit_vault_share.py",
+    "test_kit_vault_view.py",
+})
+
+
+def _overwrites_a_kit_module(text: str) -> bool:
+    return (
+        "basicly_tracker_kit_" in text
+        and "spec_from_file_location" in text
+        and re.search(r"sys\.modules\[[a-z_]+\] = ", text) is not None
+        and "sys.modules.get(" not in text
+    )
+
+
+def test_no_new_test_reloads_a_kit_module_under_its_real_name() -> None:
+    tests = Path(__file__).resolve().parent
+    found = {
+        path.name
+        for path in tests.glob("test_*.py")
+        if _overwrites_a_kit_module(path.read_text(encoding="utf-8"))
+    }
+    assert found <= OVERWRITING_KIT_LOADERS, (
+        f"{sorted(found - OVERWRITING_KIT_LOADERS)} reload a kit module under its real name; "
+        "load it with tests.kit_modules.load, which reuses the cached module"
+    )
+    assert _overwrites_a_kit_module(
+        'spec_from_file_location(n, p)\nsys.modules[name] = m\n"basicly_tracker_kit_events"'
+    )

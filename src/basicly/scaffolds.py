@@ -174,7 +174,6 @@ jobs:
             msg_file="$(mktemp)"
             git log -1 --format='%B' "${sha}" > "${msg_file}"
             python3 .basicly/core/hooks/commit-msg.py "${msg_file}" || failed=1
-            python3 .basicly/core/hooks/tracker-commit-msg.py "${msg_file}" || failed=1
             rm -f "${msg_file}"
           done < "$commits_file"
           rm -f "$commits_file"
@@ -196,7 +195,7 @@ jobs:
       - name: Hook wiring drift check
         run: @UVX@ hooks-check
       - name: Configured verify checks
-        run: @UVX@ verify --mode full
+        run: @UVX@ verify --mode full --ci
 """.replace("@UVX@", UVX_COMMAND)
 
 OVERLAY_FRAGMENT_STUBS: dict[str, str] = {

@@ -1,4 +1,10 @@
 [[verify.checks]]
 name = "pytest-live-ledger"
-command = ["pytest", "-q", "-n", "{workers}", "-m", "live_ledger or fresh_runtime"]
+command = ["pytest", "-q", "-n", "{workers}", "-m", "live_ledger"]
+modes = ["full"]
+local_only = true
+
+[[verify.checks]]
+name = "pytest-fresh-runtime"
+command = ["pytest", "-q", "-n", "{workers}", "-m", "fresh_runtime and not live_ledger"]
 modes = ["full"]

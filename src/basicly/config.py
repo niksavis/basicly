@@ -304,6 +304,7 @@ _VERIFY_CHECK_TABLE = Table(
         "inputs",
         "reuse",
         "exclusive",
+        "local_only",
     })
 )
 
@@ -800,6 +801,7 @@ class VerifyCheck:
     reuse: str | None = None
     exclusive: bool = False
     inputs: tuple[str, ...] = ()
+    local_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -900,6 +902,9 @@ def _parse_verify_check(entry: object) -> VerifyCheck:
     exclusive = entry.get("exclusive", False)
     if not isinstance(exclusive, bool):
         raise ValueError(f"verify check {name!r} 'exclusive' must be true or false")
+    local_only = entry.get("local_only", False)
+    if not isinstance(local_only, bool):
+        raise ValueError(f"verify check {name!r} 'local_only' must be true or false")
 
     return VerifyCheck(
         name=name.strip(),
@@ -910,6 +915,7 @@ def _parse_verify_check(entry: object) -> VerifyCheck:
         reuse=reuse,
         exclusive=exclusive,
         inputs=affected.parse_inputs(entry.get("inputs"), f"verify check {name!r}"),
+        local_only=local_only,
     )
 
 

@@ -65,6 +65,7 @@
 name = "ledger-fsck"
 command = ["uv", "run", "python", ".scripts/check_ledger_fsck.py"]
 modes = ["fast", "full"]
+local_only = true
 
 [ratchet.module_size]
 rebaseline_reason = "the sequence-gap finding class and its regression tests, in a kit module and a test module with 0 tokens of headroom each"

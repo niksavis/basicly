@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -182,7 +183,8 @@ def record_verification(
 
 
 def before_verification(root: Path, mode: str, config: VerifyConfig) -> str:
-    if mode != "full" or not blocker(root, "", allow_owner=False):
+    in_ci = owned_store.records_guard(os.environ) == root.resolve()
+    if mode != "full" or in_ci or not blocker(root, "", allow_owner=False):
         return ""
     try:
         return destination_inputs(root, mode, config)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import io
 import json
 import os
@@ -15,6 +14,7 @@ from types import ModuleType
 import pytest
 
 from basicly import hooks, lefthook_config
+from tests import kit_modules
 
 REPO_ROOT = Path(__file__).parent.parent
 HOOK_SOURCE = REPO_ROOT / ".basicly" / "core" / "hooks" / "pre-push.py"
@@ -22,12 +22,7 @@ KIT_EVENTS = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker" / "events.py"
 
 
 def _load(path: Path, name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+    return kit_modules.load(path, name)
 
 
 hook = _load(HOOK_SOURCE, "pre_push_hook")

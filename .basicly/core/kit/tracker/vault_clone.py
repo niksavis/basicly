@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -33,6 +34,7 @@ def _load(file_name: str, module_name: str) -> Any:
 git_runner = _load("git_runner.py", "basicly_tracker_kit_git_runner")
 events = _load("events.py", "basicly_tracker_kit_events")
 vault_shapes = _load("vault_shapes.py", "basicly_tracker_kit_vault_shapes")
+vault_config = _load("vault_config.py", "basicly_tracker_kit_vault_config")
 
 STATE_NAME = "basicly-tracker"
 STATE_VARIABLE = "BASICLY_TRACKER_STATE"
@@ -104,8 +106,22 @@ def vault_source(text: str) -> tuple[str, bool]:
         ) from None
 
 
-def locate(state: Path, vault: str) -> Clone:
+def _refuse_guarded_vault(vault: str) -> None:
+    root = events.records_guard_root()
+    if root is None:
+        return
+    config = vault_config.load(root)
+    if config is None:
+        return
+    named = {config.vault}
+    with contextlib.suppress(CloneError):
+        named.add(vault_source(config.vault)[0])
+    if vault in named:
+        events.refuse_records_in_ci(root / ".basicly")
 
+
+def locate(state: Path, vault: str) -> Clone:
+    _refuse_guarded_vault(vault)
     url, allow_file = vault_source(vault)
     name = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
     return Clone(url, Path(state) / "vaults" / name, allow_file)
@@ -362,6 +378,7 @@ def _advanced_head(clone: Clone, previous: str, runner: Runner, timeout: float) 
 
 
 def fetch_with(clone: Clone, request: Fetch) -> dict[str, object]:
+    _refuse_guarded_vault(clone.url)
 
     runner, timeout, lock_wait, clock, coalesce = (
         request.runner,

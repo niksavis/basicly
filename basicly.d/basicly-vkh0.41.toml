@@ -22,3 +22,4 @@
 name = "ledger-bodies"
 command = ["uv", "run", "python", ".scripts/ledger_bodies.py"]
 modes = ["fast", "full"]
+local_only = true

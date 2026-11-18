@@ -38,7 +38,7 @@ def _history(tmp_path: Path, seed: str = "fix: seed (fx-1)") -> History:
     root = tmp_path / "consumer"
     hooks = root / HOOKS
     hooks.mkdir(parents=True)
-    for name in ("commit-msg.py", "tracker-commit-msg.py"):
+    for name in ("commit-msg.py",):
         shutil.copyfile(ROOT / HOOKS / name, hooks / f"real-{name}")
         (hooks / name).write_text(
             "import runpy\nfrom pathlib import Path\n"
@@ -138,7 +138,7 @@ def test_valid_ranges_check_only_the_selected_commits(
     )
     assert result.returncode == 0, result.stdout + result.stderr
     calls = (history.root / "calls.log").read_text().splitlines()
-    assert len(calls) == (2 if event == "push" else 4)
+    assert len(calls) == (1 if event == "push" else 2)
 
 
 @pytest.mark.parametrize("base", ["HEAD~1", "--all", "f" * 40, "0" * 40])
@@ -157,14 +157,14 @@ def test_history_audit_requires_explicit_opt_in_and_still_checks_legacy_messages
     history = _history(tmp_path, "legacy history before harness installation")
     result = _run(workflow, history, audit="true")
     assert result.returncode != 0
-    assert len((history.root / "calls.log").read_text().splitlines()) == 6
+    assert len((history.root / "calls.log").read_text().splitlines()) == 3
 
 
 def test_explicit_history_audit_can_pass(tmp_path: Path, workflow: dict) -> None:
     history = _history(tmp_path)
     result = _run(workflow, history, audit="true")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert len((history.root / "calls.log").read_text().splitlines()) == 6
+    assert len((history.root / "calls.log").read_text().splitlines()) == 3
 
 
 def test_empty_range_is_not_reported_as_success(tmp_path: Path, workflow: dict) -> None:
@@ -200,17 +200,21 @@ def test_diverged_pr_base_is_supported_but_not_accepted_as_a_manual_ancestor(
     assert not (history.root / "calls.log").exists()
     result = _run(workflow, history, event="pull_request", base=advanced)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert len((history.root / "calls.log").read_text().splitlines()) == 4
+    assert len((history.root / "calls.log").read_text().splitlines()) == 2
 
 
-@pytest.mark.parametrize("message", ["bad selected message", "fix: unknown issue (fx-999)"])
-def test_invalid_selected_messages_still_fail(tmp_path: Path, workflow: dict, message: str) -> None:
+@pytest.mark.parametrize(
+    ("message", "code"), [("bad selected message", 1), ("fix: unknown issue (fx-999)", 0)]
+)
+def test_ci_checks_message_format_and_leaves_record_ids_to_the_local_hook(
+    tmp_path: Path, workflow: dict, message: str, code: int
+) -> None:
     history = _history(tmp_path)
     _git(history.root, "commit", "--allow-empty", "-qm", message)
     history = history._replace(head=_git(history.root, "rev-parse", "HEAD"))
     result = _run(workflow, history, base=history.before)
-    assert result.returncode != 0
-    assert len((history.root / "calls.log").read_text().splitlines()) == 4
+    assert (result.returncode != 0) == bool(code), result.stdout + result.stderr
+    assert len((history.root / "calls.log").read_text().splitlines()) == 2
 
 
 def test_issue_ids_in_the_message_body_are_still_valid(tmp_path: Path, workflow: dict) -> None:

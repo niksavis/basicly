@@ -72,11 +72,6 @@ jobs:
               failed=1
             fi
 
-            if ! uv run python .basicly/core/hooks/tracker-commit-msg.py "${msg_file}"; then
-              echo "Missing/unknown beads issue id in ${commit_sha}: ${subject}" >&2
-              failed=1
-            fi
-
             rm -f "${msg_file}"
           done < "$commits_file"
           rm -f "$commits_file"
@@ -129,5 +124,5 @@ jobs:
       # Only the full (pre-push) gate runs: it is a superset of the fast
       # (pre-commit) checks — ruff, format, pyright, bandit — plus pytest, so
       # running pre-commit too just repeated that work (basicly-5uo6).
-      - name: Run full checks (ruff, format, pyright, bandit, pytest)
-        run: uv run python .basicly/core/hooks/pre-push.py
+      - name: Run full checks with no tracker read (ruff, format, pyright, bandit, pytest)
+        run: uv run python -m basicly.cli verify --mode full --ci

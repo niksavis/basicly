@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +12,18 @@ import pytest
 from tests import test_tracker_plugin
 from tests.test_tracker_mcp import BOOT
 
+FIXTURE_LEDGER = Path(__file__).resolve().parent / "fixtures/work_repo/ledger"
+
 package = test_tracker_plugin.package
+
+
+@pytest.fixture(autouse=True)
+def _outside_the_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "cwd"
+    shutil.copytree(FIXTURE_LEDGER, repo / ".basicly/ledger")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    monkeypatch.chdir(repo)
+
 
 LEAF = """import json,os,subprocess,sys
 inherited = subprocess.check_output(
