@@ -408,6 +408,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
         }
     ),
     "tracker": Table(keys=frozenset({"mode", "prefix", "fold_on_merge"})),
+    "orchestration": Table(keys=frozenset({"enabled"})),
     "privacy": Table(arrays={"denied": Table(keys=frozenset({"name", "token"}))}),
 }
 
@@ -1105,6 +1106,18 @@ def _positive_float(value: object, default: float) -> float:
     if isinstance(value, int | float) and not isinstance(value, bool) and value > 0:
         return float(value)
     return default
+
+
+def load_enabled_features(repo_root: Path) -> frozenset[str]:
+
+    data = _validated_documents(repo_root).get(CONFIG_FILE) or {}
+    section = data.get("orchestration", {})
+    if not isinstance(section, dict) or "enabled" not in section:
+        return frozenset()
+    enabled = section["enabled"]
+    if not isinstance(enabled, bool):
+        raise ValueError("[orchestration] enabled must be true or false")
+    return frozenset({"orchestration"}) if enabled else frozenset()
 
 
 def load_technology_selection(repo_root: Path) -> frozenset[str] | None:

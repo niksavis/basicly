@@ -317,6 +317,16 @@ Measured on 2026-11-18 with `claude -p` in a scratch project:
 - Hooks in a main session started with `--agent orchestrator` receive `agent_type: "orchestrator"` and no `agent_id`. Inside a subagent of that type, hooks receive both. The orchestrator write guard therefore acts when `agent_type` is the orchestrator member and `agent_id` is absent.
 - Agent frontmatter cannot scope tools by path: `tools` and `disallowedTools` take tool names only (Claude Code documentation, hooks and sub-agents pages, read 2026-11-18). Path rules belong in a PreToolUse hook.
 
+### 15.5 Projection and launch (task .3.16)
+
+- The catalog agent `orchestrator` declares `requires: [orchestration]`, `codex_role: true` and `tools: ["*"]`. It is projected only when the workspace sets `[orchestration] enabled = true` in `basicly.toml`. One selection rule (technologies and enabled features) decides the projection, its check, and the hand-written-file guard.
+- With the feature on: `.claude/agents/orchestrator.md`, `.github/agents/orchestrator.agent.md`, the Codex role file `.agents/roles/orchestrator.md`, and the Claude deny rule `Agent(orchestrator)` in the projected settings.
+- `tools: ["*"]` grants every tool and is rendered by leaving out the `tools` key, because a listed set would also restrict a main session started with `--agent`. It stands alone, and an agent with a read-only posture may not declare it.
+- Launch lines until `orch start` exists (task .3.17):
+  - Claude Code: `claude --agent orchestrator`
+  - Copilot CLI: `copilot --agent orchestrator`
+  - Codex CLI: `codex -c "developer_instructions=$(python3 -c 'import json,sys;print(json.dumps(open(sys.argv[1]).read()))' .agents/roles/orchestrator.md)"` (the role file escaped as one TOML string, the form measured in section 15.3)
+
 ## 16. Lessons
 
 The orchestrator learns from each worker and each job, and its agent instructions and skills improve inside the harness.

@@ -503,3 +503,39 @@ def test_projected_read_only_agent_grants_no_write_tool(
     assert [name for name in projected if resolve_copilot_tool(name) == "edit"] == []
     folded_writes = {tool.casefold() for tool in WRITE_TOOLS}
     assert [name for name in projected if name.casefold() in folded_writes] == []
+
+
+def test_a_feature_gated_agent_projects_only_when_the_workspace_enables_it(tmp_path: Path) -> None:
+
+    repo = _repo_with_agent(tmp_path)
+    extra = "requires: [orchestration]\ncodex_role: true\n"
+    _write_agent(
+        repo / ".basicly/core/agents",
+        "orchestrator",
+        _agent_yaml("orchestrator", tools='["*"]', posture="Coordinates.", extra=extra),
+    )
+    hand_written = repo / ".claude/agents/orchestrator.md"
+    hand_written.parent.mkdir(parents=True)
+    hand_written.write_text("---\nname: orchestrator\n---\n\nMine.\n", encoding="utf-8")
+
+    sync_agents(repo)
+
+    assert hand_written.read_text(encoding="utf-8") == "---\nname: orchestrator\n---\n\nMine.\n"
+    assert not (repo / ".agents/roles/orchestrator.md").exists()
+    assert check_synced_agents(repo) == []
+
+    hand_written.unlink()
+    enabled = frozenset({"orchestration"})
+    sync_agents(repo, features=enabled)
+
+    projected = [
+        repo / ".claude/agents/orchestrator.md",
+        repo / ".github/agents/orchestrator.agent.md",
+        repo / ".agents/roles/orchestrator.md",
+    ]
+    assert all(GENERATED_MARKER in path.read_text(encoding="utf-8") for path in projected)
+    assert all("\ntools:" not in path.read_text(encoding="utf-8") for path in projected)
+    assert check_synced_agents(repo, features=enabled) == []
+    assert check_synced_agents(repo) == [
+        (path, "excluded by technology selection") for path in projected
+    ]

@@ -98,6 +98,7 @@ from .config import (
     ProjectPaths,
     SizingConfig,
     legacy_tracker_prefix,
+    load_enabled_features,
     load_policy_config,
     load_project_paths,
     load_runner_config,
@@ -451,7 +452,13 @@ def _stale_projections(repo_root: Path) -> list[tuple[str, str]]:
                 repo_root, resolve_skill_roots(repo_root=repo_root, roots=None), selection=selection
             ),
         ),
-        ("Agents", "agents-build", lambda: agents.check_synced_agents(repo_root, selection)),
+        (
+            "Agents",
+            "agents-build",
+            lambda: agents.check_synced_agents(
+                repo_root, selection, load_enabled_features(repo_root)
+            ),
+        ),
         ("Hooks", "hooks-build", lambda: _hook_mismatches(repo_root)),
         ("Permissions", "permissions-build", lambda: _permission_mismatches(repo_root)),
     )
@@ -635,7 +642,9 @@ def _status_report(repo_root: Path, paths: ProjectPaths) -> dict[str, Any]:
 
     stages = hook_stages(selected)
 
-    managed_permissions = permissions.load_claude_permissions()
+    managed_permissions = permissions.load_claude_permissions(
+        features=load_enabled_features(repo_root)
+    )
     permission_mismatches = claude_settings.permission_mismatches(repo_root, managed_permissions)
 
     fragment_overlays = sum(1 for fragment in fragments if fragment.source == "user")
@@ -1733,7 +1742,8 @@ def _preflight_install(
 
 def _hand_written_agents_refused(repo_root: Path, selection: frozenset[str] | None) -> bool:
     sources = agents.discover_agents(agents.default_agent_roots(repo_root))
-    hand_written = agents.hand_written_targets(repo_root, sources, selection)
+    features = load_enabled_features(repo_root)
+    hand_written = agents.hand_written_targets(repo_root, sources, selection, features)
     if hand_written:
         print(f"basicly install: {agents.HandWrittenAgentError(hand_written)}", file=sys.stderr)
     return bool(hand_written)
@@ -2287,7 +2297,7 @@ def _permission_mismatches(
     repo_root: Path, *, user_config: Path | None = None
 ) -> list[tuple[Path, str]]:
     settings_path = repo_root / claude_settings.CLAUDE_SETTINGS_PATH
-    managed = permissions.load_claude_permissions()
+    managed = permissions.load_claude_permissions(features=load_enabled_features(repo_root))
     return [
         (settings_path, reason)
         for reason in claude_settings.permission_mismatches(repo_root, managed)
@@ -2345,7 +2355,7 @@ def cmd_permissions_build(_args: argparse.Namespace) -> int:
         else:
             relative = changed.relative_to(repo_root).as_posix()
             print(f"Removed the generated basicly policy from {relative}; Codex defaults apply.")
-    managed = permissions.load_claude_permissions()
+    managed = permissions.load_claude_permissions(features=load_enabled_features(repo_root))
     if claude_settings.sync_permissions(repo_root, managed):
         print(f"Wrote {claude_settings.CLAUDE_SETTINGS_PATH} (managed permissions allow and deny)")
     else:
@@ -2789,7 +2799,9 @@ def cmd_agents_build(_args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
     try:
-        result, pruned = agents.sync_agents(repo_root, load_technology_selection(repo_root))
+        result, pruned = agents.sync_agents(
+            repo_root, load_technology_selection(repo_root), load_enabled_features(repo_root)
+        )
     except agents.HandWrittenAgentError as refusal:
         print(f"basicly agents-build: {refusal}", file=sys.stderr)
         return 1
@@ -2801,7 +2813,9 @@ def cmd_agents_build(_args: argparse.Namespace) -> int:
 
 def cmd_agents_check(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
-    mismatches = agents.check_synced_agents(repo_root, load_technology_selection(repo_root))
+    mismatches = agents.check_synced_agents(
+        repo_root, load_technology_selection(repo_root), load_enabled_features(repo_root)
+    )
     stale = "Stale agent projection detected. Run `basicly agents-build` to sync agent files."
     if _report_mismatches(mismatches, repo_root, stale_message=stale):
         return 1

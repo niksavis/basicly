@@ -127,6 +127,11 @@ allow:
       - "Bash(basicly verify --mode full)"
       - "Bash(basicly verify --mode staged)"
 deny:
+  - id: orchestrator-not-a-subagent
+    description: the orchestrator runs only as a main session; refuse spawning it as a subagent
+    requires: [orchestration]
+    claude:
+      - "Agent(orchestrator)"
   - id: destructive-rm
     description: block recursive force-remove of files
     claude:
