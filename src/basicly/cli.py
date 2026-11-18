@@ -1731,6 +1731,14 @@ def _preflight_install(
     write_preflight.require_writable(destinations, command=command)
 
 
+def _hand_written_agents_refused(repo_root: Path, selection: frozenset[str] | None) -> bool:
+    sources = agents.discover_agents(agents.default_agent_roots(repo_root))
+    hand_written = agents.hand_written_targets(repo_root, sources, selection)
+    if hand_written:
+        print(f"basicly install: {agents.HandWrittenAgentError(hand_written)}", file=sys.stderr)
+    return bool(hand_written)
+
+
 def cmd_install(args: argparse.Namespace) -> int:
 
     technologies = _validate_install_technologies(getattr(args, "technologies", None))
@@ -1768,7 +1776,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         technologies,
         overwrite_scaffolds=bool(getattr(args, "overwrite_scaffolds", False)),
         dry_run=dry_run,
-    ):
+    ) or _hand_written_agents_refused(repo_root, selection):
         return 1
 
     steps: list[tuple[str, Any, argparse.Namespace]] = [
