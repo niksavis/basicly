@@ -59,6 +59,23 @@ def copilot_setup(root: Path, hook: Path) -> None:
     (folder / "p7.json").write_text(json.dumps(document), encoding="utf-8")
 
 
+def codex_setup(root: Path, hook: Path) -> None:
+    entry = [{"hooks": [{"type": "command", "command": f'python3 "{hook}"'}]}]
+    (root / ".codex").mkdir(exist_ok=True)
+    document = {"hooks": {"SessionStart": entry}}
+    (root / ".codex" / "hooks.json").write_text(json.dumps(document), encoding="utf-8")
+
+
+def codex_runs(first: str | None) -> list[tuple[str, list[str]]]:
+    model = ["--json", "--skip-git-repo-check", "-m", "gpt-6-luna"]
+    if first is None:
+        return [("start", ["codex", "exec", *model, "Reply with the word ok."])]
+    return [
+        ("resume", ["codex", "exec", "resume", *model, first, "Reply with the word ok."]),
+        ("fork", ["codex", "exec", "fork", *model, first, "Reply with the word ok."]),
+    ]
+
+
 def claude_runs(first: str | None) -> list[tuple[str, list[str]]]:
     base = ["claude", "-p", "Reply with the word ok."]
     if first is None:
@@ -77,8 +94,8 @@ def copilot_runs(first: str | None) -> list[tuple[str, list[str]]]:
     return [("resume", resume)]
 
 
-SETUPS = {"claude": claude_setup, "copilot": copilot_setup}
-RUNS = {"claude": claude_runs, "copilot": copilot_runs}
+SETUPS = {"claude": claude_setup, "copilot": copilot_setup, "codex": codex_setup}
+RUNS = {"claude": claude_runs, "copilot": copilot_runs, "codex": codex_runs}
 
 
 def entries(log: Path) -> list[dict[str, object]]:
@@ -111,19 +128,29 @@ def session_id(record: dict[str, object]) -> str | None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--vendor", choices=tuple(SETUPS), required=True)
-    vendor = parser.parse_args().vendor
+    parser.add_argument("--root", type=Path)
+    args = parser.parse_args()
+    vendor = args.vendor
+    if vendor == "codex" and args.root is None:
+        print(
+            "refused: codex runs a project hook only after its hash is trusted. Run this once "
+            "with --root <fixed folder>, trust its hook in codex /hooks, then run it again",
+            file=sys.stderr,
+        )
+        return 2
     if shutil.which(vendor) is None:
         print(f"refused: {vendor} is not on PATH", file=sys.stderr)
         return 2
     report: dict[str, object] = {"vendor": vendor}
     with tempfile.TemporaryDirectory() as outside, tempfile.TemporaryDirectory() as folder:
-        root = Path(folder) / "project"
-        root.mkdir()
+        root = args.root or Path(folder) / "project"
+        root.mkdir(parents=True, exist_ok=True)
         execute(["git", "init", "-q", str(root)], root, None)
-        hook = Path(outside) / "p7_hook.py"
+        hook = (root.parent if args.root else Path(outside)) / "p7_hook.py"
         hook.write_text(HOOK, encoding="utf-8")
         SETUPS[vendor](root, hook)
         log = Path(outside) / "p7.jsonl"
+        log.unlink(missing_ok=True)
         report["version"] = (
             execute([vendor, "--version"], root, None).stdout.strip().splitlines()[0]
         )

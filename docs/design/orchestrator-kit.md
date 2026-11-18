@@ -94,7 +94,7 @@ The move changes three behaviours. Each change has its own tests (task "store an
   - Codex CLI 0.169.0: pending probe P7 in a folder whose hooks are trusted.
   - Copilot loads repository hooks in a resumed prompt-mode session only with `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true`, because `--trust-folder` cannot be combined with `--resume`.
 - `orch join` refuses by name when another live session holds the name, and names it.
-- Session start and herdr tabs (lesson L9): the kit's session start command takes one name and uses it for the session name and the herdr tab label (`herdr tab create --label`, `herdr tab rename <tab> <label>`, herdr 0.9.5). A tab that holds several session panes is labelled with all their names joined by ` + `, and the command renames it when a pane is added or closed. `orch doctor` reports a tab whose label differs from the sessions in it.
+- Session start and window names (lesson L9, herdr adapter only): the kit's session start command takes one name and uses it for the session name and, with the herdr adapter, the herdr tab label (`herdr tab create --label`, `herdr tab rename <tab> <label>`, herdr 0.9.5). A tab that holds several session panes is labelled with all their names joined by ` + `, and the command renames it when a pane is added or closed. `orch doctor` reports a tab whose label differs from the sessions in it.
 - Names follow `[a-z][a-z0-9-]{1,30}`. Any other name is refused with a normalized suggestion.
 
 ## 7. Vendor adapters
@@ -178,8 +178,8 @@ Each probe has its own task under `basicly-qpr2xmr.3` and runs in scratch, never
 | P10 | Do the shell and Python mail tools read each other's mailboxes and locks? | Migration without a mail move | passed |
 | P11 | Do the agent-mail scripts work on Windows and macOS (`basicly-5zqycyb`)? | Landing precondition | open |
 | P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | Claude Code and Copilot passed; Codex open, with trusted hooks |
-| P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | Claude Code and Copilot measured; Codex open, with trusted hooks |
-| P8 | Longest blocking call, background wait and wake, token cost of one empty cycle, per vendor | Idle-session wake | open |
+| P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | Claude Code and Copilot measured; Codex thread ids measured with `codex exec --json` (resume keeps the id, fork gets a new one); the Codex hook side open, with trusted hooks |
+| P8 | Longest blocking call, background wait and wake, token cost of one empty cycle, per vendor | Idle-session wake | Codex and Copilot measured (P8, P8b, section 15); Claude Code wake turns measured from a session transcript; the Claude trust dialog run open, with a person |
 | P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | open, runs last |
 
 ## 14. Where it is built
@@ -200,6 +200,37 @@ The orchestrator role must run from Claude Code, Codex CLI or GitHub Copilot CLI
 | Role lock and identity | The `role-orchestrator` lock and the member registry, the same for every vendor (section 6) | Codex ids on resume and fork pending probe P7 |
 | Minting an approval | `orch approve` under the vendor's own ask prompt (section 5.2) | Claude Code has ask rules. Copilot has no ask rule in settings; the kit would need a `preToolUse` hook that answers `ask`. Codex has prompt rules only as an experimental rules file. Whether each hook reports the permission mode is pending probe P6. Until P6 passes on a vendor, the orchestrator role on that vendor can send and read mail but cannot mint approvals |
 | The orchestrator's own instructions | One catalog source, projected per vendor | Claude Code reads an agent file; Copilot reads `.github/agents/*.agent.md`; Codex has no agent file, so the role prompt ships as a skill and an `AGENTS.md` block. The projection for Copilot and Codex is not built |
+
+### 15.1 Core and adapters (lesson L10)
+
+The kit depends on no terminal program. A developer may use any terminal, an editor terminal, or an editor extension with no terminal.
+
+1. Core, required, terminal-free:
+   - the file mail store (section 8);
+   - vendor hooks that deliver mail at turn boundaries: UserPromptSubmit and PostToolUse context lines (probe P9), with zero tokens while idle;
+   - headless resume per message for a worker with no live interface: `codex exec resume`, `copilot --resume`, `claude -p --resume`;
+   - Claude Code's native wake (a background task, or an async hook that wakes the session) where available.
+   - Codex CLI's own queue: `codex queue --thread <id> --message` wakes an idle Codex session (probe P8c).
+2. Wake adapters, optional and detected at run time: herdr (`herdr agent prompt`, probe P8b), tmux, and later others. `orch doctor` reports the active adapter per member, and what is lost without one: an idle interactive session then gets its mail at its next turn, and the person is told.
+3. The session-state reporter is the herdr adapter. With no herdr present it exits 0 and prints nothing (unit test `test_no_herdr_env_runs_no_process`, and the installed hook measured on 2026-11-18).
+4. Session naming (L9, restated): a session and its window or tab share one name where the host allows naming. With the herdr adapter, the session start command sets the herdr tab label.
+5. Editor extensions (Claude Code, Codex and Copilot in VS Code): what each supports is listed in the gap table below, from vendor documentation.
+
+Editor extensions, from vendor documentation read on 2026-11-18 (code.claude.com vs-code and hooks pages; learn.chatgpt.com hooks, developer-commands and app-server pages; code.visualstudio.com hooks and manage-sessions pages). Not probed.
+
+| Extension | Hooks run | Same session from the CLI |
+| --- | --- | --- |
+| Claude Code for VS Code | yes, all events, settings shared with the CLI | yes, `claude --resume` lists extension sessions |
+| Codex IDE extension | not documented for the IDE | not documented; `codex resume <id>` exists |
+| Copilot in VS Code | yes, "agent hooks" (preview), and it also reads `.claude/settings.json` | yes, "Resume in Terminal", and `copilot --resume` |
+
+- Waking an idle extension session from an outside process is not documented for any of the three.
+- Claude Code: an async hook that exits with code 2 "wakes Claude immediately even when the session is idle", but a hook in the session must start it.
+- Codex CLI: `codex queue --thread <id> --message` queues a message for an existing thread, with no terminal. Measured on 2026-11-18 (probe P8c): it reached an idle interactive Codex CLI session as a user turn within 15 s, with no `--resume` and no terminal input; the turn cost 15,352 input tokens (15,104 cached) and 5 output. It is the core wake for Codex CLI sessions. The kit reads the thread id from the SessionStart hook (`session_id`).
+- Codex safety, an argument and not a measurement: `codex queue` adds a message to the thread, it types no keys, so it cannot answer an approval dialog. Whether a message queued during a dialog waits for the dialog to close is not measured.
+- Whether `codex queue` reaches an IDE extension thread is not documented and not measured.
+- A hook can read a session id on Claude Code (`session_id`) and on Codex (`session_id`, `turn_id`). For Copilot in VS Code the field name is not documented on the VS Code page.
+- Gap: an idle extension session gets mail only at its next turn, unless a later probe shows `codex queue` reaching an IDE thread. `orch doctor` reports this per member.
 
 Result of probe P8 for Codex CLI and Copilot CLI, 2026-11-18 (`orchestrator-kit-probes/p8-vendor.py`, cheapest model, a blocking wait on a flag file):
 
@@ -265,4 +296,5 @@ The first lessons, from operating the workspace orchestrator, are requirements f
 | L6 | A rehearsal includes the consumer environment: CI without credentials and a fresh clone | the orchestrator skill's rehearsal checklist |
 | L7 | A read-only fact is measured before a worker or the person is asked | the orchestrator skill's checklist |
 | L8 | The transport is vendor-neutral and the role runs from any vendor | sections 8 and 15 |
-| L9 | A session and its herdr tab share one name; a tab with several sessions shows all their names | the session start command sets both and renames shared tabs; `orch doctor` reports a mismatch (section 6) |
+| L9 | A session and its window or tab share one name where the host allows naming; a tab with several sessions shows all their names | with the herdr adapter, the session start command sets both and renames shared tabs; `orch doctor` reports a mismatch (section 6) |
+| L10 | The core has no terminal dependency; terminal wake is an optional, detected adapter | `orch doctor` reports the active adapter and what is lost without one; the kit tests run with no adapter installed (section 15.1) |
