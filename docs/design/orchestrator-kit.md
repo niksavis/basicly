@@ -180,7 +180,14 @@ Each probe has its own task under `basicly-qpr2xmr.3` and runs in scratch, never
 | P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | Claude Code and Copilot passed; Codex open, with trusted hooks |
 | P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | Claude Code and Copilot measured; Codex thread ids measured with `codex exec --json` (resume keeps the id, fork gets a new one); the Codex hook side open, with trusted hooks |
 | P8 | Longest blocking call, background wait and wake, token cost of one empty cycle, per vendor | Idle-session wake | Codex and Copilot measured (P8, P8b, section 15); Claude Code wake turns measured from a session transcript; the Claude trust dialog run open, with a person |
-| P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | open, runs last |
+| P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | Claude Code passed (person-run, 2026-11-18); Copilot and Codex open |
+
+P6 result for Claude Code, run by a person on 2026-11-18 with `p6-ask-setup.py` (project rule `permissions.ask: Bash(orch-approve-probe *)`, model claude-haiku-5-5, auto mode on):
+
+- The first run of `orch-approve-probe one` showed a prompt with only "Yes" and "No". No "don't ask again" option was offered.
+- The prompt carried the banner "Rule Bash(orch-approve-probe *) from shared project settings overrides auto mode."
+- The second run, `orch-approve-probe two`, prompted again with the same options.
+- So on Claude Code a project ask rule prompts every time, cannot be saved away by the person, and overrides auto mode. `orch approve` may run there behind such a rule.
 
 ## 14. Where it is built
 
