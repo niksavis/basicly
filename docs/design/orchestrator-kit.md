@@ -351,3 +351,4 @@ The first lessons, from operating the workspace orchestrator, are requirements f
 | L8 | The transport is vendor-neutral and the role runs from any vendor | sections 8 and 15 |
 | L9 | A session and its window or tab share one name where the host allows naming; a tab with several sessions shows all their names | with the herdr adapter, the session start command sets both and renames shared tabs; `orch doctor` reports a mismatch (section 6) |
 | L10 | The core has no terminal dependency; terminal wake is an optional, detected adapter | `orch doctor` reports the active adapter and what is lost without one; the kit tests run with no adapter installed (section 15.1) |
+| L11 | Every risk the orchestrator names to the person becomes a check in the relayed action | `orch approve` and `orch decide` take a risk list; each risk maps to a check line in the action, or the tool refuses by name |
