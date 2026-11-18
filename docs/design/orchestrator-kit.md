@@ -306,7 +306,16 @@ Measured on 2026-11-18 with `codex exec` (Codex CLI 0.170, gpt-6-luna):
 
 - `-c model_instructions_file=<file>` loads a role file, but it replaces Codex's built-in instructions: the input dropped from 15,007 to 11,575 tokens. The kit does not use it.
 - `-c developer_instructions="<text>"` adds the role to Codex's own instructions (15,026 tokens) and the model followed it. The kit's session start command passes the projected role file this way, so no always-on line in `AGENTS.md` and no skill entry is needed.
-- The Codex skill listing is already over its budget (6,760 of 5,168 characters), so a new skill entry would push other skills out.
+- The Codex skill-listing budget is already exceeded (6,760 of 5,168 characters, `basicly catalog lint`), so a new skill entry would push other skills out. The always-on `AGENTS.md` has room (9,035 of 24,576 bytes and 166 of 320 lines, `.scripts/check_always_on_size.py`), but it reaches every Codex session, so the orchestrator side does not go there.
+- The role persists: Codex stores it once in the thread as a developer message, and a resume without `-c` still followed it. A role file with quotes, backslashes and several lines, escaped as a JSON string, passed intact.
+
+### 15.4 The orchestrator role on Claude Code
+
+Measured on 2026-11-18 with `claude -p` in a scratch project:
+
+- A project deny rule `Agent(orchestrator)` refuses to spawn the orchestrator as a subagent ("Agent type 'orchestrator' has been denied by permission rule"), and `claude --agent orchestrator` still starts. A control without the rule spawned it. So the projected settings carry this deny rule wherever the orchestration kit is enabled, and the orchestrator cannot become a subagent.
+- Hooks in a main session started with `--agent orchestrator` receive `agent_type: "orchestrator"` and no `agent_id`. Inside a subagent of that type, hooks receive both. The orchestrator write guard therefore acts when `agent_type` is the orchestrator member and `agent_id` is absent.
+- Agent frontmatter cannot scope tools by path: `tools` and `disallowedTools` take tool names only (Claude Code documentation, hooks and sub-agents pages, read 2026-11-18). Path rules belong in a PreToolUse hook.
 
 ## 16. Lessons
 
