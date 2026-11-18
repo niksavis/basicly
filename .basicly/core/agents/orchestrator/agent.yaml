@@ -9,6 +9,13 @@ tier: high
 tools: ["*"]
 requires: [orchestration]
 codex_role: true
+claude:
+  hooks:
+    PreToolUse:
+      - matcher: "Edit|Write|MultiEdit|NotebookEdit"
+        hooks:
+          - type: command
+            command: orch-guard-hook
 slots:
   role:
     - text: |
