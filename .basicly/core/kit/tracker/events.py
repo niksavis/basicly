@@ -30,6 +30,10 @@ class LockUnavailableError(LedgerError):
     retryable = True
 
 
+class RecordsInCIError(LedgerError, ValueError):
+    pass
+
+
 _HERE = Path(__file__).resolve().parent
 _IDS_MODULE_NAME = "basicly_tracker_kit_ids"
 
@@ -51,6 +55,25 @@ def _load_sibling(file_name: str, module_name: str) -> ModuleType:
 ids = _load_sibling("ids.py", _IDS_MODULE_NAME)
 locking = _load_sibling("locking.py", "basicly_tracker_kit_locking")
 ledger_files = _load_sibling("ledger_files.py", "basicly_tracker_kit_ledger_files")
+RECORDS_GUARD = "BASICLY_CI_NO_RECORDS"
+_GUARD_SOURCE = (
+    _load_sibling("git_runner.py", "basicly_tracker_kit_git_runner")
+    if (_HERE / "git_runner.py").is_file()
+    else None
+)
+
+
+def records_guard_root() -> Path | None:
+    named = "" if _GUARD_SOURCE is None else _GUARD_SOURCE.environment_value(RECORDS_GUARD)
+    return Path(named).resolve() if named else None
+
+
+def refuse_records_in_ci(path: Path | str) -> None:
+    root = records_guard_root()
+    if root is not None and Path(path).resolve().is_relative_to(root / ".basicly"):
+        raise RecordsInCIError(
+            "CI never reads tracker records; run this check in the local landing verify"
+        )
 
 
 LOG_GLOB = ledger_files.LOG_GLOB
@@ -878,6 +901,7 @@ _PARSED = StampedFiles(PARSED_LOGS)
 
 def read_log(path: Path | str) -> tuple[list[Event], list[Quarantine]]:
 
+    refuse_records_in_ci(path)
     file_path = Path(path)
     stamp = file_stamp(file_path)
     if stamp is None:
@@ -922,6 +946,7 @@ def read_events_from(paths: Sequence[Path]) -> tuple[list[Event], list[Quarantin
 
 
 def read_events(directory: Path | str) -> tuple[list[Event], list[Quarantine]]:
+    refuse_records_in_ci(directory)
     return read_events_from(ledger_paths(directory))
 
 

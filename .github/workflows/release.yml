@@ -48,7 +48,7 @@ jobs:
         if: steps.reuse.outputs.reuse != 'true'
         env:
           CI: "true"
-        run: uv run python .basicly/core/hooks/pre-push.py < /dev/null
+        run: uv run python -m basicly.cli verify --mode full --ci < /dev/null
 
   smoke-install:
     name: Fresh-repo install smoke test

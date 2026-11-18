@@ -288,9 +288,10 @@ modes = ["full"]
 
 Its repository-copy fixture uses a fixed ledger under `tests/fixtures/work_repo/ledger`.
 Tests that read the current ledger carry `live_ledger` and run in the separate,
-uncached `pytest-live-ledger` check. Packaging tests carry `fresh_runtime` and
-run in that same mandatory fresh group, with inherited proxy settings. The test guard refuses a live-ledger file
-open by an unmarked test. The union of both commands retains the entire suite.
+uncached `pytest-live-ledger` check, which is `local_only` because CI never reads tracker
+records. Packaging tests carry `fresh_runtime` and run in the `pytest-fresh-runtime` check,
+with inherited proxy settings. The test guard refuses a live-ledger file
+open by an unmarked test. The union of the three commands retains the entire suite.
 Run the ordinary `pytest` command to execute both groups together.
 
 The pytest proof includes tracked and nonignored untracked files outside the

@@ -62,6 +62,10 @@ class GitCommandError(GitRunnerError):
         self.stderr = stderr
 
 
+def environment_value(name: str) -> str:
+    return os.environ.get(name, "")
+
+
 def _refuse(kind: str, value: object, rule: str) -> GitValueError:
     shown = value[:80] if isinstance(value, str) else type(value).__name__
     return GitValueError(f"refused {kind} {shown!r}: {rule}")

@@ -276,3 +276,23 @@ def test_fetch_refuses_an_unreadable_vault_name_through_the_cli(
     assert code == cli.EXIT_REFUSED
     assert "neither a local repository folder" in shown["refused"]
     assert not (tmp_path / "s").exists()
+
+
+def test_the_ci_guard_refuses_only_the_guarded_repository_s_vault_and_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events = vault_clone.events
+    config = vault_clone._load("vault_config.py", "basicly_tracker_kit_vault_config")
+    guarded = tmp_path / "repo"
+    (guarded / ".basicly/ledger").mkdir(parents=True)
+    (guarded / ".basicly-tracker.toml").write_text(
+        config.text("https://example.invalid/vault.git", "acme"), encoding="utf-8"
+    )
+    monkeypatch.setenv(events.RECORDS_GUARD, str(guarded))
+
+    with pytest.raises(events.RecordsInCIError, match="CI never reads tracker records"):
+        vault_clone.locate(tmp_path / "state", "https://example.invalid/vault.git")
+    with pytest.raises(events.RecordsInCIError):
+        events.read_events(guarded / ".basicly/ledger")
+    assert vault_clone.locate(tmp_path / "state", "https://example.invalid/other.git")
+    assert events.read_events(tmp_path / "elsewhere") == ([], [])

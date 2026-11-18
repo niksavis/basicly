@@ -4,7 +4,7 @@ import ast
 import inspect
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -183,6 +183,11 @@ def packaged_constant(module_name: str, name: str) -> str:
         ):
             return node.value.value
     raise TrackerDivergenceError(f"the packaged tracker kit's {source.name} declares no {name}")
+
+
+def records_guard(environ: Mapping[str, str]) -> Path | None:
+    named = environ.get(packaged_constant("events", "RECORDS_GUARD"), "")
+    return Path(named).resolve() if named else None
 
 
 def packaged_kit(module_name: str = DEFAULT_KIT_MODULE) -> Any:

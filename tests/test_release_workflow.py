@@ -45,7 +45,7 @@ def test_ci_prepares_pinned_artifacts_and_runtime_before_hook_verification() -> 
             None,
         )
         verification = next(
-            index for index, value in enumerate(commands) if ".basicly/core/hooks/pre-" in value
+            index for index, value in enumerate(commands) if "verify --mode full --ci" in value
         )
         assert preparation is not None and runtime is not None, name
         assert preparation <= runtime < verification, name

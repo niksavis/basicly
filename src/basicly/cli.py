@@ -3306,11 +3306,16 @@ def _cmd_policy_rework(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
+    if getattr(args, "ci", False):
+        if refusal := _ci_refusal(args):
+            ui.fail(refusal)
+            return 1
+        return _verify_report(repo_root, args, _verify_ci(repo_root, args))
     scoped = getattr(args, "affected", False) or args.mode == "staged"
     if scoped and (args.fix or args.issue):
         ui.fail(
             "Staged checks cannot repair files or record full gate evidence. "
-            "Use --mode fast --fix for repairs. In CI, use --mode full --issue ID."
+            "Use --mode fast --fix for repairs. In CI, use --mode full --ci."
         )
         return 1
     if args.issue:
@@ -3331,7 +3336,30 @@ def cmd_verify(args: argparse.Namespace) -> int:
             report = verify.run_verify(tree, args.mode, config)
     else:
         report = _verify_working_tree(repo_root, args)
+    return _verify_report(repo_root, args, report)
 
+
+def _ci_refusal(args: argparse.Namespace) -> str:
+    if args.mode != "full" or args.issue or args.fix or getattr(args, "affected", False):
+        return (
+            "--ci runs only as `basicly verify --mode full --ci`: CI never records a gate "
+            "with --issue, repairs files with --fix or selects --affected checks. "
+            "Run those in the local landing verify."
+        )
+    return ""
+
+
+def _verify_ci(repo_root: Path, args: argparse.Namespace) -> verify.VerifyReport:
+    os.environ[owned_store.packaged_constant("events", "RECORDS_GUARD")] = str(repo_root)
+    config = load_verify_config(repo_root)
+    for check in config.for_mode(args.mode):
+        if check.local_only:
+            print(f"[verify] {check.name}: local only (reads tracker records); not run in CI")
+    kept = tuple(check for check in config.checks if not check.local_only)
+    return verify.run_verify(repo_root, args.mode, replace(config, checks=kept))
+
+
+def _verify_report(repo_root: Path, args: argparse.Namespace, report: verify.VerifyReport) -> int:
     print("\n" + "=" * 60)
     if report.selection:
         print(f"[staged] files: {', '.join(report.selection.get('paths', [])) or '(none)'}")
@@ -4951,6 +4979,11 @@ def _add_verify_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Apply each check's declared fix_command (mechanical repairs only) before checking",
     )
     verify_parser.add_argument("--issue", help="Record the verdict as a br gate on this issue id")
+    verify_parser.add_argument(
+        "--ci",
+        action="store_true",
+        help="CI mode: read no tracker record, skip local_only checks and the landing guard",
+    )
     verify_parser.add_argument(
         "--gate",
         default=verify.DEFAULT_GATE,

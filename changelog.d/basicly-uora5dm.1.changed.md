@@ -1,0 +1,1 @@
+- CI never reads tracker records. The CI scaffold checks commit message format only and runs `basicly verify --mode full --ci`, which skips checks marked `local_only = true` and refuses by name any read of the repository's ledger or vault. Local hooks keep the record-id check. A frozen repository now passes CI with no vault token.

@@ -145,6 +145,7 @@ uv run basicly permissions-check
 - While editing, run the tests affected by the change. Continuous integration runs the full suite.
 - Keep all required gates enabled. Report what ran, what failed and what did not run.
 - After a failed check, or for a release candidate, read the `harness-loop` skill's verification reference.
+- CI never reads tracker records, because the tracker is agent memory and a work list, not the product. Mark a check that reads records `local_only = true`; CI runs `basicly verify --mode full --ci`.
 
 ### Rendered Surfaces
 

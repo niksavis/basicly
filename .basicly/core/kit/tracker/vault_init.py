@@ -43,6 +43,8 @@ PERMISSIONS = [
     "On GitHub Free that means a private vault cannot be protected on the host and a public one "
     "can; you choose.",
     "The tracker checks the vault history itself and stops on a rewrite, with or without that.",
+    "CI needs no access to the vault: CI never reads tracker records, and the local commit "
+    "hook checks record ids.",
 ]
 
 _README = """# Backlog vault
