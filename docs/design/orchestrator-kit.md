@@ -94,6 +94,7 @@ The move changes three behaviours. Each change has its own tests (task "store an
   - Codex CLI 0.169.0: pending probe P7 in a folder whose hooks are trusted.
   - Copilot loads repository hooks in a resumed prompt-mode session only with `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true`, because `--trust-folder` cannot be combined with `--resume`.
 - `orch join` refuses by name when another live session holds the name, and names it.
+- Session start and herdr tabs (lesson L9): the kit's session start command takes one name and uses it for the session name and the herdr tab label (`herdr tab create --label`, `herdr tab rename <tab> <label>`, herdr 0.9.5). A tab that holds several session panes is labelled with all their names joined by ` + `, and the command renames it when a pane is added or closed. `orch doctor` reports a tab whose label differs from the sessions in it.
 - Names follow `[a-z][a-z0-9-]{1,30}`. Any other name is refused with a normalized suggestion.
 
 ## 7. Vendor adapters
@@ -200,6 +201,32 @@ The orchestrator role must run from Claude Code, Codex CLI or GitHub Copilot CLI
 | Minting an approval | `orch approve` under the vendor's own ask prompt (section 5.2) | Claude Code has ask rules. Copilot has no ask rule in settings; the kit would need a `preToolUse` hook that answers `ask`. Codex has prompt rules only as an experimental rules file. Whether each hook reports the permission mode is pending probe P6. Until P6 passes on a vendor, the orchestrator role on that vendor can send and read mail but cannot mint approvals |
 | The orchestrator's own instructions | One catalog source, projected per vendor | Claude Code reads an agent file; Copilot reads `.github/agents/*.agent.md`; Codex has no agent file, so the role prompt ships as a skill and an `AGENTS.md` block. The projection for Copilot and Codex is not built |
 
+Result of probe P8 for Codex CLI and Copilot CLI, 2026-11-18 (`orchestrator-kit-probes/p8-vendor.py`, cheapest model, a blocking wait on a flag file):
+
+| Vendor | Wake on mail | Longest single wait |
+| --- | --- | --- |
+| Codex CLI (gpt-6-luna, `codex exec`) | woke after 16 s | 900 s held, no vendor timeout |
+| Copilot CLI (`-p`, auto picked gpt-6-luna) | woke after about 20 s | 900 s held, no vendor timeout |
+
+| Vendor | Model calls while idle | Input tokens per idle hour |
+| --- | --- | --- |
+| Codex CLI | about one per 25 to 30 s (5 in 120 s, about 33 in 900 s) | about 2 million, about 97 % cached |
+| Copilot CLI | one per 120 s ("Read shell output, waiting up to 120 seconds") | about 310,000, about 93 % cached |
+
+- Neither vendor ends a long shell call. Both return control to the model while the command runs, and the model checks it again. Each check is a model call that resends the context, so an idle wait is not free on either vendor. Copilot billed a 900 s wait as 1 premium request.
+- The design target "no token cost while idle" holds only for Claude Code, where a background task wakes the session with no model call in between. On Codex and Copilot the cost is per idle hour, as measured above, and grows with the context size. The kit reports it in `orch doctor`, and the person chooses per vendor between a waiting worker and a worker started per message.
+- The interval between checks is chosen by the vendor, not by the command. Whether a configuration setting can lengthen it is not established.
+- The wait itself polled the flag every 2 s in this probe. The kit's `orch-wait` uses inotify on Linux, with a 2 s poll fallback, so it uses no CPU between messages.
+
+Finding from probe P8 on Copilot CLI, 2026-11-18 (its built-in `copilot help permissions` and three runs):
+
+- A shell rule matches the command name, plus the first subcommand for known tools such as git or npm. It does not match arguments. So `shell(python3 wait.py mail.flag 900)` matched nothing, and the call was denied in `-p` mode with "no interactive user response".
+- `shell(python3:*)` worked, but it allows every python3 command. That is too wide for a worker.
+- The narrowest rule is a dedicated executable for the wait alone, allowed by its name, for example `--allow-tool=shell(orch-wait)` and no other tool. Measured: `orch-wait --timeout 5` ran under that rule.
+- Copilot checks each command in a chained shell call. A call that chained `orch-wait` with `printf` and `python3` was denied as a whole, so the rule cannot be stretched by chaining.
+- The kit therefore ships the wait as its own executable name, not as a subcommand of a general `orch` command. A rule for a general command would also allow its other subcommands.
+- A worker is allowed `orch-wait` alone, by name. A worker never gets an allow for `orch` or `orch:*`, because that would also allow `orch approve`. `orch doctor` refuses a worker configuration that allows `orch` or `orch:*`, and names the file and the rule.
+
 ## 16. Lessons
 
 The orchestrator learns from each worker and each job, and its agent instructions and skills improve inside the harness.
@@ -222,3 +249,4 @@ The first lessons, from operating the workspace orchestrator, are requirements f
 | L6 | A rehearsal includes the consumer environment: CI without credentials and a fresh clone | the orchestrator skill's rehearsal checklist |
 | L7 | A read-only fact is measured before a worker or the person is asked | the orchestrator skill's checklist |
 | L8 | The transport is vendor-neutral and the role runs from any vendor | sections 8 and 15 |
+| L9 | A session and its herdr tab share one name; a tab with several sessions shows all their names | the session start command sets both and renames shared tabs; `orch doctor` reports a mismatch (section 6) |
