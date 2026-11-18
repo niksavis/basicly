@@ -505,7 +505,9 @@ def test_projected_read_only_agent_grants_no_write_tool(
     assert [name for name in projected if name.casefold() in folded_writes] == []
 
 
-def test_a_feature_gated_agent_projects_only_when_the_workspace_enables_it(tmp_path: Path) -> None:
+def test_the_orchestrator_agent_projects_only_when_the_workspace_enables_orchestration(
+    tmp_path: Path,
+) -> None:
 
     repo = _repo_with_agent(tmp_path)
     extra = "requires: [orchestration]\ncodex_role: true\n"
