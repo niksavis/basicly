@@ -180,7 +180,7 @@ Each probe has its own task under `basicly-qpr2xmr.3` and runs in scratch, never
 | P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | Claude Code and Copilot passed; Codex open, with trusted hooks |
 | P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | Claude Code and Copilot measured; Codex thread ids measured with `codex exec --json` (resume keeps the id, fork gets a new one); the Codex hook side open, with trusted hooks |
 | P8 | Longest blocking call, background wait and wake, token cost of one empty cycle, per vendor | Idle-session wake | Codex and Copilot measured (P8, P8b, section 15); Claude Code wake turns measured from a session transcript; the Claude trust dialog run open, with a person |
-| P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | Claude Code and Codex passed (person-run, 2026-11-18); Copilot open |
+| P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | Claude Code and Codex passed; Copilot FAILED: a hook answer of "ask" removed the prompt (2026-11-18) |
 
 P6 result for Claude Code, run by a person on 2026-11-18 with `p6-ask-setup.py` (project rule `permissions.ask: Bash(orch-approve-probe *)`, model claude-haiku-5-5, auto mode on):
 
@@ -196,6 +196,15 @@ P6 result for Codex CLI, run by a person on 2026-11-18 (project rule `prefix_rul
 - Kit finding: `orch-wait` and `orch approve` must be on the login-shell PATH, as an installed tool (for example a `uv tool` install in `~/.local/bin`), never on a PATH that only the launching shell set.
 
 P6 on Copilot CLI, first person run on 2026-11-18: the probe's `preToolUse` hook failed with exit 127 ("No such file or directory"), because the setup wrote the hook path relative to the folder where the setup ran, and Copilot runs the hook from the project folder. Copilot then denied the command ("hook errored", fail-closed). The setup now writes an absolute path. A failing hook denies the call on Copilot, which is the safe direction.
+
+P6 result for Copilot CLI 1.0.114, run on 2026-11-18 with the corrected setup (interactive, "Manual Approval", auto picked gpt-6-luna; run by dev at the person's request):
+
+- The `preToolUse` hook ran for each call: its log holds the input `{"toolName":"bash","toolArgs":{"command":"./bin/orch-approve-probe two",...}}`, and it answered `{"permissionDecision":"ask",...}`.
+- Both `orch-approve-probe one` and `two` then ran with NO prompt.
+- Control 1: `./bin/plain-probe three`, which the hook does not match, got the normal prompt ("Yes", "Yes, and don't ask again for `./bin/plain-probe` in this repo", "No"). It was declined, and nothing was saved.
+- Control 2: with the hook answering "deny", the command was refused ("Denied by preToolUse hook").
+- So Copilot reads the hook output and honours "deny", but a hook answer of "ask" removed the prompt that the call would otherwise get. The vendor documents "ask" as a valid value, so this is a defect or an undocumented meaning on this version.
+- Consequence for the kit: on Copilot, no mechanism forces a prompt for `orch approve`. Copilot's own prompt offers "don't ask again", which saves the approval for the repository. The orchestrator role on Copilot may send and read mail but may not mint approvals (gap 2 of section 15 confirmed). A worker hook on Copilot answers "deny" for `orch approve`, which is honoured.
 
 ## 14. Where it is built
 
