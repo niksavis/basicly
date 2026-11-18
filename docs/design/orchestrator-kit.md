@@ -112,7 +112,12 @@ One interface, one module per vendor. Core code calls only the interface.
 - Kinds: `order`, `question`, `answer`, `approval-notice`. Reports go to the tracker.
 - Envelope: `id`, `from` (the member name bound to the caller's session, set by the tool), `to`, `kind`, `record`, `reply_to`, `sent_at`, `host`.
 - `orch send` refuses an unknown recipient, or one not seen within `MISSING_AFTER`, by name, unless `--queue` is given.
-- Busy session: a hook adds one context line, "N unread from <name>: run orch read", at UserPromptSubmit and Stop, and at PostToolUse at most once per new message id. Whether each vendor delivers that line to the model is pending probe P9.
+- Busy session: a hook adds one context line, "N unread from <name>: run orch read", at UserPromptSubmit, and at PostToolUse at most once per new message id. Probe P9 (2026-11-17, `orchestrator-kit-probes/p9-context.py`) measured that both reach the model in the same turn:
+  - Claude Code 2.1.326: `hookSpecificOutput.additionalContext` with `hookEventName`, exit 0, at both events.
+  - GitHub Copilot CLI 1.0.112: top-level `additionalContext`, exit 0, at `userPromptSubmitted` and `postToolUse`. The hooks reference says command-hook output at `userPromptSubmitted` is dropped; the probe shows that it reaches the model.
+  - Codex CLI 0.169.0: the same nested format as Claude at both events, per its hooks documentation and source; pending probe P9 in a folder whose hooks are trusted, because Codex runs a project hook only after its hash is trusted.
+  - A control run with silent hooks reported none of the tokens on either measured vendor.
+- No context line at Stop. On all three vendors the only way a Stop hook reaches the model is to block the stop with a reason, which forces another model turn (Claude Code and Copilot cap this at 8 in a row; for Codex no cap was found). A notice there would cost a turn every time a turn ends.
 - Idle session: the session keeps one blocking `orch wait --until-mail --max <seconds>` running as a background or long-running shell call. While it blocks, the model spends no tokens. Polling is done by the `orch wait` process (file stat every 2 seconds), never by the model. On timeout the wait restarts as one short tool call. The longest blocking call per vendor, whether a background wait keeps the session alive and wakes it, and the token cost of one empty cycle are pending probe P8.
 - A message moves to `cur` only on `orch read`. `orch who` lists, per member: unread count, oldest unread age, last seen, a missing wait, and vendor version.
 - An `order` unread for `ESCALATE_AFTER` is flagged by `orch who` as overdue.
@@ -167,7 +172,7 @@ Each probe has its own task under `basicly-qpr2xmr.3` and runs in scratch, never
 | --- | --- | --- | --- |
 | P10 | Do the shell and Python mail tools read each other's mailboxes and locks? | Migration without a mail move | passed |
 | P11 | Do the agent-mail scripts work on Windows and macOS (`basicly-5zqycyb`)? | Landing precondition | open |
-| P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | open |
+| P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | Claude Code and Copilot passed; Codex open, with trusted hooks |
 | P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | open |
 | P8 | Longest blocking call, background wait and wake, token cost of one empty cycle, per vendor | Idle-session wake | open |
 | P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | open, runs last |
