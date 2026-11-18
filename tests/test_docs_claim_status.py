@@ -79,7 +79,7 @@ def test_check_names_the_view_when_a_source_row_moves_and_fix_repairs_it(
     _edit_source(
         work_repo,
         "- name: Projection drift gate run by CI\n    status: shipped",
-        "- name: Projection drift gate run by CI\n    status: building\n    record: basicly-a3ab",
+        "- name: Projection drift gate run by CI\n    status: building\n    record: basicly-ctdz",
     )
 
     assert _run(work_repo, "--check") == 1
@@ -88,7 +88,7 @@ def test_check_names_the_view_when_a_source_row_moves_and_fix_repairs_it(
     assert "[status-view]" in err
 
     assert _run(work_repo, "--fix") == 0
-    assert "| Projection drift gate run by CI | building | basicly-a3ab |" in (
+    assert "| Projection drift gate run by CI | building | basicly-ctdz |" in (
         work_repo / STATUS_MD
     ).read_text(encoding="utf-8")
     assert _run(work_repo, "--check") == 0

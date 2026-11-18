@@ -13,7 +13,7 @@ from tests.test_board_render import TEMPLATES
 from tests.test_board_wall import REPO_ROOT, document
 
 UNANSWERED = {
-    "when the work will be done": "basicly-hymq99",
+    "when the work will be done": "basicly-dierrdg",
 }
 
 
