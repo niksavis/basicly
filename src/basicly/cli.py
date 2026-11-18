@@ -29,6 +29,7 @@ from . import (
     catalog_lint,
     catalog_verify,
     checkout,
+    ci_records,
     claude_settings,
     claude_user_settings,
     codex_hooks,
@@ -3351,7 +3352,9 @@ def _ci_refusal(args: argparse.Namespace) -> str:
 
 
 def _verify_ci(repo_root: Path, args: argparse.Namespace) -> verify.VerifyReport:
-    os.environ[owned_store.packaged_constant("events", "RECORDS_GUARD")] = str(repo_root)
+    os.environ[owned_store.packaged_constant("events", "RECORDS_GUARD")] = ci_records.guard_value(
+        repo_root
+    )
     config = load_verify_config(repo_root)
     for check in config.for_mode(args.mode):
         if check.local_only:

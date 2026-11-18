@@ -107,17 +107,15 @@ def vault_source(text: str) -> tuple[str, bool]:
 
 
 def _refuse_guarded_vault(vault: str) -> None:
-    root = events.records_guard_root()
-    if root is None:
-        return
-    config = vault_config.load(root)
-    if config is None:
-        return
-    named = {config.vault}
-    with contextlib.suppress(CloneError):
-        named.add(vault_source(config.vault)[0])
-    if vault in named:
-        events.refuse_records_in_ci(root / ".basicly")
+    for root in events.records_guard_roots():
+        config = vault_config.load(root)
+        if config is None:
+            continue
+        named = {config.vault}
+        with contextlib.suppress(CloneError):
+            named.add(vault_source(config.vault)[0])
+        if vault in named:
+            events.refuse_records_in_ci(root / ".basicly")
 
 
 def locate(state: Path, vault: str) -> Clone:

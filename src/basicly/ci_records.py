@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
+
+from . import tracker_paths
 
 READERS = (
     (re.compile(r"tracker-commit-msg\.py"), "runs the record-existence hook"),
@@ -11,6 +14,13 @@ READERS = (
     (re.compile(r"hooks/pre-push\.py"), "runs the local full checks without --ci"),
     (re.compile(r"\bverify\b(?!.*\s--ci\b).*\s--mode\b"), "runs verify without --ci"),
 )
+
+
+def guard_value(repo_root: Path) -> str:
+    roots = dict.fromkeys(
+        str(path.resolve()) for path in (repo_root, tracker_paths.tracker_root(repo_root))
+    )
+    return os.pathsep.join(roots)
 
 
 def violations(text: str) -> list[tuple[int, str]]:

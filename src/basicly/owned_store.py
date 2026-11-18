@@ -185,9 +185,9 @@ def packaged_constant(module_name: str, name: str) -> str:
     raise TrackerDivergenceError(f"the packaged tracker kit's {source.name} declares no {name}")
 
 
-def records_guard(environ: Mapping[str, str]) -> Path | None:
+def records_guard(environ: Mapping[str, str]) -> tuple[Path, ...]:
     named = environ.get(packaged_constant("events", "RECORDS_GUARD"), "")
-    return Path(named).resolve() if named else None
+    return tuple(Path(part).resolve() for part in named.split(os.pathsep) if part)
 
 
 def packaged_kit(module_name: str = DEFAULT_KIT_MODULE) -> Any:

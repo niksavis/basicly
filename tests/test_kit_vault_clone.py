@@ -296,3 +296,11 @@ def test_the_ci_guard_refuses_only_the_guarded_repository_s_vault_and_ledger(
         events.read_events(guarded / ".basicly/ledger")
     assert vault_clone.locate(tmp_path / "state", "https://example.invalid/other.git")
     assert events.read_events(tmp_path / "elsewhere") == ([], [])
+    main = tmp_path / "main"
+    (main / ".basicly/ledger").mkdir(parents=True)
+    monkeypatch.setenv(events.RECORDS_GUARD, str(guarded))
+    assert events.read_events(main / ".basicly/ledger") == ([], [])
+    monkeypatch.setenv(events.RECORDS_GUARD, os.pathsep.join((str(guarded), str(main))))
+    with pytest.raises(events.RecordsInCIError):
+        events.read_events(main / ".basicly/ledger")
+    assert not issubclass(events.RecordsInCIError, ValueError)
