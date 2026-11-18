@@ -88,7 +88,11 @@ The move changes three behaviours. Each change has its own tests (task "store an
 
 - Every session is a worker by default. `orch join --role orchestrator` takes the `role-orchestrator` lock when it is free.
 - `--takeover` breaks the lock only under the ask prompt in the new orchestrator session, so the person confirms every takeover. The audit records it.
-- Identity is the member name. A name holds a list of session ids. A new session id binds to an existing name only when the old session is not alive, checked by the vendor process id and its start time from the session-start hook. A fork of a live session joins a new name. Which ids each vendor exposes on start, resume and fork is pending probe P7.
+- Identity is the member name. A name holds a list of session ids. A new session id binds to an existing name only when the old session is not alive, checked by the vendor process id and its start time from the session-start hook. A fork of a live session joins a new name. Probe P7 (2026-11-18, `orchestrator-kit-probes/p7-identity.py`) measured the SessionStart hook input:
+  - Claude Code 2.1.327: `session_id`, `source` (`startup`, `resume`, `fork`) and, when the session has a name, `session_title`. A resume keeps the session id; a fork gets a new id and keeps the parent's `session_title`. The kit therefore treats `source: fork` as a new member and never re-binds a name from it. The vendor process is the parent of the hook's `sh` wrapper.
+  - GitHub Copilot CLI 1.0.112: `sessionId` and `source` (`new`, `resume`), no session name and no fork. A resume keeps the id. The vendor process is the hook's direct parent. A launcher may pass `--session-id` to choose the id.
+  - Codex CLI 0.169.0: pending probe P7 in a folder whose hooks are trusted.
+  - Copilot loads repository hooks in a resumed prompt-mode session only with `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true`, because `--trust-folder` cannot be combined with `--resume`.
 - `orch join` refuses by name when another live session holds the name, and names it.
 - Names follow `[a-z][a-z0-9-]{1,30}`. Any other name is refused with a normalized suggestion.
 
@@ -173,7 +177,7 @@ Each probe has its own task under `basicly-qpr2xmr.3` and runs in scratch, never
 | P10 | Do the shell and Python mail tools read each other's mailboxes and locks? | Migration without a mail move | passed |
 | P11 | Do the agent-mail scripts work on Windows and macOS (`basicly-5zqycyb`)? | Landing precondition | open |
 | P9 | Do UserPromptSubmit, PostToolUse and Stop context lines reach the model on each vendor? | Busy-session delivery | Claude Code and Copilot passed; Codex open, with trusted hooks |
-| P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | open |
+| P7 | Which ids and custom names does each vendor give on start, resume and fork, and where is the vendor process id? | Identity and re-bind | Claude Code and Copilot measured; Codex open, with trusted hooks |
 | P8 | Longest blocking call, background wait and wake, token cost of one empty cycle, per vendor | Idle-session wake | open |
 | P6 | In each vendor's normal ask modes, does an ask rule on `orch approve` always prompt, also after "don't ask again"? | Whether `orch approve` may run on that vendor | open, runs last |
 
