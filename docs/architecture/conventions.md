@@ -233,6 +233,10 @@ herdr panes from vendor hooks, with its probes and known gaps.
 The [value pilot](../research/harness-value-pilot.md) and its JSON record the measured comparison.
 They leave monetary cost and broader reliability unresolved.
 
+The [Opus 5.5 prompting pass](../research/opus-5-5-prompting-pass.md) checks the catalog against the
+Opus 5.5 prompting guide, rule by rule, with a known-match control (basicly-3i052o2). It is evidence
+for the best-practices audit, not a specification.
+
 **Three companion files sit beside the architecture document, and none is reference
 material.**
 
