@@ -1,1 +1,0 @@
-- `basicly-orch` gains `orch record`, `orch decide`, `orch approve`, `orch send --order`, `orch report` and `orch start`. Each refuses incomplete input by name, a risk needs a check line in the action, and approve takes only items the person approves through the orchestrator.

@@ -1,1 +1,0 @@
-- An `orchestrator` agent for the main session of a workspace that directs several project sessions. It is off by default; `[orchestration] enabled = true` in `basicly.toml` projects it for Claude Code and Copilot, writes a Codex role file to `.agents/roles/orchestrator.md`, and denies spawning it as a Claude subagent.

@@ -1,1 +1,0 @@
-- `orch doctor` refuses a Claude Code allow rule that lets a session run `orch`, and checks that each owner rule in the rules file named by `ORCH_RULES_DOC` has a kit entry. The orchestrator agent, fragment and skill carry the full orchestration ruleset, and `orch lessons end-session` refuses a session that wrote no lesson.

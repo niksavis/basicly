@@ -1,1 +1,0 @@
-- The `kit-boundary` pre-commit hook judges only the kit files in the commit's index. An untracked kit file, such as one from an unstaged kit update, no longer refuses an unrelated commit.

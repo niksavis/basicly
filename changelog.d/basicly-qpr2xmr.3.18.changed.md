@@ -1,1 +1,0 @@
-- `orch doctor` passes a broad allow rule when a deny rule covers `orch approve`, and names that deny rule as the fix. It also refuses Codex rules files that allow `orch approve` (checked with `codex execpolicy check`) and a saved Copilot approval for `orch`.

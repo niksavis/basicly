@@ -6,11 +6,39 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.46.5 - 2026-11-19
+
+Delta: v0.46.4..v0.46.5
+
 This patch fixes two false refusals from 0.46.4, ships the orchestrator kit and splits CI into 12 parallel shards. `basicly check` reads a pre-push hook script before it flags the workflow line that runs it, so a pytest-only script is no longer reported (basicly-c6yppoz). The `kit-boundary` hook judges only the kit files in the commit (basicly-7lrvz5e). A workspace can turn on an `orchestrator` agent with its rule fragment, skill and `orch` commands (basicly-qpr2xmr.3.16, basicly-qpr2xmr.3.17, basicly-qpr2xmr.3.18). `basicly verify --ci --shard K/N` cuts basicly's own CI from about 30 minutes to about 5 (basicly-svtn4op).
 
 - Fixes: `basicly check` and `kit-boundary` refuse only what the commit or the workflow actually does (basicly-c6yppoz, basicly-7lrvz5e).
 - Orchestration: off by default; `[orchestration] enabled = true` projects the agent, fragment and skill (basicly-qpr2xmr.3.16, basicly-qpr2xmr.3.17).
 - CI: one check per shard, tests split by measured time (basicly-svtn4op).
+
+### Added
+
+- An `orchestrator` agent for the main session of a workspace that directs several project sessions. It is off by default; `[orchestration] enabled = true` in `basicly.toml` projects it for Claude Code and Copilot, writes a Codex role file to `.agents/roles/orchestrator.md`, and denies spawning it as a Claude subagent. (basicly-qpr2xmr.3.16)
+
+- Workspaces with `[orchestration] enabled = true` get an `orchestrated-session` rule fragment (how orders, relayed approvals and orchestrator decisions count, what stays with the person, how to report) and an `orchestration` skill of orchestrator checklists. Fragments and skills can now declare `requires` like agents. (basicly-qpr2xmr.3.17)
+
+- `basicly-orch` gains `orch record`, `orch decide`, `orch approve`, `orch send --order`, `orch report` and `orch start`. Each refuses incomplete input by name, a risk needs a check line in the action, and approve takes only items the person approves through the orchestrator. (basicly-qpr2xmr.3.18)
+
+- Add `basicly verify --mode full --ci --shard K/N`, which runs one of N parts of the CI checks: each pytest check runs only its share of the tests, split by measured test time, and every other check runs in exactly one part. Outside CI the flag is refused. The large-history dispatch brief test now uses the smallest history over its 16 KiB bound and takes seconds instead of minutes. (basicly-svtn4op)
+
+### Changed
+
+- `orch doctor` refuses a Claude Code allow rule that lets a session run `orch`, and checks that each owner rule in the rules file named by `ORCH_RULES_DOC` has a kit entry. The orchestrator agent, fragment and skill carry the full orchestration ruleset, and `orch lessons end-session` refuses a session that wrote no lesson. (basicly-qpr2xmr.3.17)
+
+- `orch doctor` passes a broad allow rule when a deny rule covers `orch approve`, and names that deny rule as the fix. It also refuses Codex rules files that allow `orch approve` (checked with `codex execpolicy check`) and a saved Copilot approval for `orch`. (basicly-qpr2xmr.3.18)
+
+### Fixed
+
+- The `kit-boundary` pre-commit hook judges only the kit files in the commit's index. An untracked kit file, such as one from an unstaged kit update, no longer refuses an unrelated commit. (basicly-7lrvz5e)
+
+- `basicly check` no longer flags a workflow line that runs a pre-push hook script unless that script runs the full checks without `--ci`. It reads the script and names it in the message, so a script that only runs pytest, as in terminal, is not flagged. (basicly-c6yppoz)
+
+- `basicly install` and `basicly agents-build` now refuse, by name and before writing anything, to overwrite an agent file that has no basicly generated marker; rename the hand-written file or the catalog agent of the same name, then run the command again. (basicly-qpr2xmr.3.16)
 
 ## v0.46.4 - 2026-11-19
 

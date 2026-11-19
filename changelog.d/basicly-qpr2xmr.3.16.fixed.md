@@ -1,1 +1,0 @@
-- `basicly install` and `basicly agents-build` now refuse, by name and before writing anything, to overwrite an agent file that has no basicly generated marker; rename the hand-written file or the catalog agent of the same name, then run the command again.
