@@ -238,8 +238,9 @@ def test_doctor_names_the_file_and_rule_and_reports_no_wake_adapter(
         f"{path}: allow rule 'Bash(orch:*)' lets a session run orch approve; add the deny rule "
         "'Bash(orch approve *)', which wins over every allow rule"
     )
-    assert report.lines[1].startswith("wake adapter: none")
-    assert report.lines[2].startswith("lessons: not checked")
+    assert report.lines[1].startswith("rule parity: not checked")
+    assert report.lines[2].startswith("wake adapter: none")
+    assert report.lines[3].startswith("lessons: not checked")
 
 
 def test_doctor_passes_a_blanket_allow_when_a_deny_rule_covers_orch_approve(
@@ -293,3 +294,30 @@ def test_doctor_refuses_a_saved_copilot_approval_for_orch(
 def test_doctor_reports_herdr_as_the_wake_adapter_inside_a_herdr_pane() -> None:
     environ = {"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p2", "HERDR_BIN_PATH": sys.executable}
     assert doctor.wake_adapter_line(environ) == "wake adapter: herdr (pane w1:p2)"
+
+
+def test_doctor_rule_parity_fails_on_an_owner_rule_with_no_kit_entry(tmp_path: Path) -> None:
+    ruleset = tmp_path / "ruleset.json"
+    owner = [
+        {"date": "2026-01-02", "phrase": "keep the gate on"},
+        {"date": None, "phrase": "plain"},
+    ]
+    ruleset.write_text(json.dumps({"rules": [{"id": "a", "owner": owner}]}), encoding="utf-8")
+    doc = tmp_path / "rules.md"
+    doc.write_text(
+        '- Owner rule, 2026-01-02: "keep the gate on".\n- Owner rule. A plain rule.\n'
+        'Only the person changes an "Owner rule".\n',
+        encoding="utf-8",
+    )
+    environ = {"ORCH_RULES_DOC": str(doc), "ORCH_RULESET": str(ruleset)}
+    assert doctor.rule_parity_lines(environ) == (
+        ["rule parity: 2 of 2 owner rules have a kit entry"],
+        False,
+    )
+    doc.write_text(
+        doc.read_text(encoding="utf-8") + "- Owner rule, 2026-01-03: new.\n", encoding="utf-8"
+    )
+    lines, failed = doctor.rule_parity_lines(environ)
+    assert failed
+    assert lines[0] == f"{doc}:4: owner rule (2026-01-03) has no entry in {ruleset}"
+    assert doctor.rule_parity_lines({})[1] is False

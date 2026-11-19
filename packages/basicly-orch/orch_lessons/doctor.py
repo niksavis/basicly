@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 import shutil
 import subprocess  # nosec B404
 from collections.abc import Callable
@@ -18,6 +19,10 @@ PROBE_TEXT = " ".join(PROBE)
 CLAUDE_DENY_FIX = "Bash(orch approve *)"
 CODEX_DENY_FIX = 'prefix_rule(pattern=["orch", "approve"], decision="forbidden")'
 COPILOT_PERMISSIONS = Path(".copilot/permissions-config.json")
+RULES_DOC_ENV = "ORCH_RULES_DOC"
+RULESET_ENV = "ORCH_RULESET"
+BUNDLED_RULESET = Path(__file__).with_name("ruleset.json")
+OWNER_LINE = re.compile(r'(?<!")\bOwner (?:rule|answer|addition)\b(?:[^.:"]*?(\d{4}-\d{2}-\d{2}))?')
 
 Runner = Callable[[list[str]], str]
 
@@ -152,6 +157,48 @@ def copilot_lines(repo: Path, environ: dict[str, str]) -> tuple[list[str], bool]
     return lines, bool(lines)
 
 
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def owner_claims(ruleset: Path) -> list[tuple[str | None, str]]:
+    data = _read_json(ruleset)
+    rules = data.get("rules") if isinstance(data, dict) else None
+    if not isinstance(rules, list):
+        raise log.RefusedError(f"{ruleset} holds no rules list")
+    return [
+        (claim.get("date"), _flat(str(claim.get("phrase", ""))))
+        for rule in rules
+        if isinstance(rule, dict)
+        for claim in rule.get("owner") or []
+        if isinstance(claim, dict) and claim.get("phrase")
+    ]
+
+
+def rule_parity_lines(environ: dict[str, str]) -> tuple[list[str], bool]:
+    named = environ.get(RULES_DOC_ENV, "")
+    if not named:
+        return [f"rule parity: not checked, set {RULES_DOC_ENV} to the workspace rules file"], False
+    doc = Path(named)
+    if not doc.is_file():
+        return [f"rule parity: {RULES_DOC_ENV} names {doc}, which is not a file"], True
+    ruleset = Path(environ.get(RULESET_ENV, "") or BUNDLED_RULESET)
+    claims = owner_claims(ruleset)
+    missing: list[str] = []
+    seen = 0
+    for number, text in enumerate(doc.read_text(encoding="utf-8").splitlines(), start=1):
+        found = OWNER_LINE.search(text)
+        if found is None:
+            continue
+        seen += 1
+        flat = _flat(text)
+        if not any(date == found.group(1) and phrase in flat for date, phrase in claims):
+            when = found.group(1) or "no date"
+            missing.append(f"{doc}:{number}: owner rule ({when}) has no entry in {ruleset}")
+    summary = f"rule parity: {seen - len(missing)} of {seen} owner rules have a kit entry"
+    return [*missing, summary], bool(missing)
+
+
 def wake_adapter_line(environ: dict[str, str]) -> str:
     pane = herdr.pane_id(environ)
     if environ.get("HERDR_ENV") and pane and herdr.binary(environ):
@@ -187,6 +234,7 @@ def run(cwd: Path, environ: dict[str, str], runner: Runner = run_codex) -> Repor
         claude_lines(settings_files(repo, environ)),
         codex_lines(repo, environ, runner),
         copilot_lines(repo, environ),
+        rule_parity_lines(environ),
     ]
     unchecked = [] if environ.get("HOME") else ["user settings: not checked, HOME is not set"]
     lessons, stale = lesson_lines(cwd, environ)
