@@ -44,6 +44,7 @@ from . import (
     health,
     integration_record,
     kit_load,
+    landing_lock,
     lane_log,
     lane_split,
     lefthook_binary,
@@ -4739,14 +4740,30 @@ def cmd_worktree(args: argparse.Namespace) -> int:
         "bg-isolation": _cmd_worktree_bg_isolation,
         "merge": _cmd_worktree_merge,
         "merge-queue": _cmd_worktree_merge_queue,
+        "unlock": _cmd_worktree_unlock,
     }
     return _dispatch(args, "worktree_command", handlers, group="worktree")
 
 
 def _cmd_worktree_merge(args: argparse.Namespace) -> int:
-    result = merge.merge_worktree(_repo_root(), args.name, bead=args.bead, verify_mode=args.mode)
+    root = _repo_root()
+    try:
+        with landing_lock.hold(root, lane=args.name, record=args.bead, wait_s=args.wait * 60):
+            result = merge.merge_worktree(root, args.name, bead=args.bead, verify_mode=args.mode)
+    except landing_lock.LandingLockedError as error:
+        ui.fail(str(error))
+        return 1
     print(f"  {result.name}: {result.status.upper()} — {result.detail}")
     return 0 if result.merged else 1
+
+
+def _cmd_worktree_unlock(args: argparse.Namespace) -> int:
+    try:
+        print(landing_lock.unlock(_repo_root(), args.lane))
+    except landing_lock.LandingLockedError as error:
+        ui.fail(str(error))
+        return 1
+    return 0
 
 
 def _cmd_worktree_merge_queue(args: argparse.Namespace) -> int:
@@ -4758,7 +4775,13 @@ def _cmd_worktree_merge_queue(args: argparse.Namespace) -> int:
             return 1
         items.append((name, bead))
 
-    results = merge.merge_queue(_repo_root(), items, verify_mode=args.mode)
+    root = _repo_root()
+    try:
+        with landing_lock.hold(root, lane="merge-queue", record=items[0][1], wait_s=args.wait * 60):
+            results = merge.merge_queue(root, items, verify_mode=args.mode)
+    except landing_lock.LandingLockedError as error:
+        ui.fail(str(error))
+        return 1
     for queued in results:
         outcome = queued.result
         line = f"  {outcome.name}: {outcome.status.upper()} — {outcome.detail}"
@@ -5060,11 +5083,29 @@ def _add_worktree_parser(subparsers: argparse._SubParsersAction) -> None:
     wt_merge.add_argument(
         "--mode", choices=VERIFY_MODES, default="full", help="Verify mode to re-run before merge"
     )
+    wt_merge.add_argument(
+        "--wait",
+        type=float,
+        default=0.0,
+        metavar="MINUTES",
+        help="Wait up to this long for another landing to release the landing lock",
+    )
+    wt_unlock = worktree_sub.add_parser(
+        "unlock", help="Remove a stale landing lock held by the named lane"
+    )
+    wt_unlock.add_argument("--lane", required=True)
     wt_queue = worktree_sub.add_parser(
         "merge-queue", help="Merge several worktrees serially in the given (topological) order"
     )
     wt_queue.add_argument("items", nargs="+", metavar="NAME:BEAD", help="e.g. feat-x:basicly-onb.5")
     wt_queue.add_argument("--mode", choices=VERIFY_MODES, default="full")
+    wt_queue.add_argument(
+        "--wait",
+        type=float,
+        default=0.0,
+        metavar="MINUTES",
+        help="Wait up to this long for another landing to release the landing lock",
+    )
 
 
 def _add_verify_parser(subparsers: argparse._SubParsersAction) -> None:

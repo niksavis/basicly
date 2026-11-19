@@ -56,6 +56,13 @@ For an already-authorized upgrade or landing, request task-scoped execution revi
 The CLI cannot escalate itself. Preserve dotenv denials, normal hooks, signing and loop checkpoints; do not broaden a machine profile.
 Read the retry result and verify the repository state before continuing the loop.
 
+## Landing lock
+
+`basicly worktree merge` and `merge-queue` hold `.basicly/usage/landing.lock` in the main checkout while they land.
+A second landing is refused with the holder's lane, record, pid and lock age; pass `--wait MINUTES` to wait for it instead.
+A lock older than its 60 minute limit is reported by name and never taken.
+When no landing of that lane runs any more, remove it with `basicly worktree unlock --lane LANE`; the command refuses a lock held by another lane.
+
 ## Merge several
 
 ```sh
