@@ -1,0 +1,1 @@
+- `swarm.py tally` and `swarm.py check` print one Mermaid diagram of their result, drawn from the result files: the question, each voter or lens, each vote or finding, the decision and the dissent. A voter or lens that did not run shows as not run. The swarm and council skills put it in the final report only.
