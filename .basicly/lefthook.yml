@@ -37,15 +37,18 @@ basicly-claude-pretooluse:
           "technologies": [], "matcher": "Bash"}, {"id": "pipe-status-guard", "script":
           ".basicly/core/hooks/pipe-status-guard.py", "stage": "pretooluse", "pass_filenames":
           false, "always_run": false, "files": "", "manager": "claude", "technologies":
-          [], "matcher": "Bash"}, {"id": "bare-var-guard", "script": ".basicly/core/hooks/bare-var-guard.py",
+          [], "matcher": "Bash"}, {"id": "pkill-self-match", "script": ".basicly/core/hooks/pkill-self-match.py",
           "stage": "pretooluse", "pass_filenames": false, "always_run": false, "files":
           "", "manager": "claude", "technologies": [], "matcher": "Bash"}, {"id":
-          "rg-replace-guard", "script": ".basicly/core/hooks/rg-replace-guard.py",
-          "stage": "pretooluse", "pass_filenames": false, "always_run": false, "files":
-          "", "manager": "claude", "technologies": [], "matcher": "Bash"}, {"id":
-          "headroom-guard", "script": ".basicly/core/hooks/headroom-guard.py", "stage":
+          "bare-var-guard", "script": ".basicly/core/hooks/bare-var-guard.py", "stage":
           "pretooluse", "pass_filenames": false, "always_run": false, "files": "",
-          "manager": "claude", "technologies": [], "matcher": ""}]'
+          "manager": "claude", "technologies": [], "matcher": "Bash"}, {"id": "rg-replace-guard",
+          "script": ".basicly/core/hooks/rg-replace-guard.py", "stage": "pretooluse",
+          "pass_filenames": false, "always_run": false, "files": "", "manager": "claude",
+          "technologies": [], "matcher": "Bash"}, {"id": "headroom-guard", "script":
+          ".basicly/core/hooks/headroom-guard.py", "stage": "pretooluse", "pass_filenames":
+          false, "always_run": false, "files": "", "manager": "claude", "technologies":
+          [], "matcher": ""}]'
         BASICLY_FOLD_COMMAND: '["uvx", "--from", "https://github.com/niksavis/basicly/releases/download/v0.46.6/basicly-0.46.6-py3-none-any.whl",
           "basicly", "tracker", "fold"]'
 basicly-codex-pretooluse:

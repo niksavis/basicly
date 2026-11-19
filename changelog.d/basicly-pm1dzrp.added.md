@@ -1,0 +1,1 @@
+- A new Claude hook, `pkill-self-match`, refuses `pkill -f` or `pgrep -f` with a plain pattern, which would match and kill the command's own shell. It names the bracket form (`'[m]argin'`) and kill by PID. The cli-tools skill gains four Code Mode lines: Read before edit, no self-matching pkill, a new scratch folder, and Poll instead of sleep loops.
