@@ -1,0 +1,1 @@
+- `basicly install` migrates a `basicly-gates.yml` that runs `tracker-commit-msg.py` or `verify --mode full` without `--ci`, keeps a backup, and refuses by name a workflow it cannot migrate. `basicly check` names each workflow line that reads tracker records, with its fix.

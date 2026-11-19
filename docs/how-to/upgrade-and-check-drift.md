@@ -175,7 +175,13 @@ Synced core catalog at .basicly/core: 0 new, 0 updated, 0 removed, 147 unchanged
 
 Your overlay is not in that count. `.basicly-local/`, `basicly.toml`, and any
 scaffolded file you have edited are left alone — install reports
-`already exists; left unchanged` for each. A file you added to the *managed*
+`already exists; left unchanged` for each. One exception keeps CI away from tracker
+records: in `.github/workflows/basicly-gates.yml`, install removes the
+`tracker-commit-msg.py` step and adds `--ci` to `verify --mode full`, prints
+`Migrated` for each change and keeps your previous copy as `.basicly-bak`. When the
+workflow still reads records in a shape install does not know, install changes nothing,
+names the line and the fix, and exits 1. `basicly check` names every such line in
+`.github/workflows` and exits 1. A file you added to the *managed*
 tree is kept but warned about on every run:
 
 ```text

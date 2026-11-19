@@ -461,6 +461,8 @@ def cmd_check(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     for line in docstring_contradictions(repo_root):
         print(line, file=sys.stderr)
+    workflow_problems = ci_records.workflow_problems(repo_root)
+    sys.stderr.write("".join(f"{problem}\n" for problem in workflow_problems))
     paths = load_project_paths(repo_root)
     if _report_provenance_notes(repo_root, paths):
         return 1
@@ -508,16 +510,22 @@ def cmd_check(_args: argparse.Namespace) -> int:
         ))
 
     if mismatches:
-        print("Stale generated files detected. Run `basicly build` to fix.", file=sys.stderr)
-        for path, expected, actual in mismatches:
-            print(
-                f"  {path.relative_to(repo_root)}: expected {expected}, found {actual}",
-                file=sys.stderr,
-            )
+        _report_stale(repo_root, mismatches)
+        return 1
+    if workflow_problems:
         return 1
 
     ui.say("All generated files and manifest are up to date.", style="ok")
     return 0
+
+
+def _report_stale(repo_root: Path, mismatches: list[tuple[Path, str, str]]) -> None:
+    print("Stale generated files detected. Run `basicly build` to fix.", file=sys.stderr)
+    for path, expected, actual in mismatches:
+        print(
+            f"  {path.relative_to(repo_root)}: expected {expected}, found {actual}",
+            file=sys.stderr,
+        )
 
 
 def _manifest_digest(outputs: object) -> str:
@@ -1376,19 +1384,26 @@ SCAFFOLD_BACKUP_SUFFIX = ".basicly-bak"
 
 def _write_scaffold(
     path: Path, content: str, label: str, *, force: bool, dry_run: bool = False
-) -> None:
+) -> bool:
 
     if path.exists():
         if not force:
             existing = path.read_text(encoding="utf-8")
             repinned, moved = repin(existing)
+            migrated: list[str] = []
             if content == CONSUMER_CI_WORKFLOW:
-                repinned = prepare_ci_runtime(repinned)
+                repinned, migrated = ci_records.migrate(prepare_ci_runtime(repinned))
+                if refusals := _ci_refusals(label, repinned):
+                    for refusal in refusals:
+                        print(refusal, file=sys.stderr)
+                    return False
             if repinned != existing:
                 backup = path.with_suffix(path.suffix + SCAFFOLD_BACKUP_SUFFIX)
                 if not dry_run:
                     backup.write_text(existing, encoding="utf-8")
                     path.write_text(repinned, encoding="utf-8")
+                for change in migrated:
+                    print(f"{'Would migrate' if dry_run else 'Migrated'} {label}: {change}")
                 print(
                     f"{'Would re-pin' if dry_run else 'Re-pinned'} {moved} basicly "
                     f"reference(s) in {label} to v{__version__}; your previous copy "
@@ -1396,11 +1411,11 @@ def _write_scaffold(
                 )
             else:
                 print(f"{label} already exists; left unchanged (--overwrite-scaffolds replaces it)")
-            return
+            return True
         existing = path.read_text(encoding="utf-8")
         if existing == content:
             print(f"{label} already current")
-            return
+            return True
         backup = path.with_suffix(path.suffix + SCAFFOLD_BACKUP_SUFFIX)
         if not dry_run:
             backup.write_text(existing, encoding="utf-8")
@@ -1409,15 +1424,37 @@ def _write_scaffold(
             f"{'Would replace' if dry_run else 'Replaced'} {label}; your previous copy "
             f"{'would be' if dry_run else 'is'} at {backup.name}"
         )
-        return
+        return True
     if not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
     print(f"{'Would write' if dry_run else 'Wrote'} {label}")
+    return True
 
 
-def _scaffold_vscode_tasks(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> None:
-    _write_scaffold(
+CI_WORKFLOW_LABEL = ".github/workflows/basicly-gates.yml"
+
+
+def _ci_refusals(label: str, migrated: str) -> list[str]:
+    return [
+        f"{label}:{number}: {reason}; CI never reads tracker records, so install changes "
+        f"nothing; fix: {ci_records.FIX}, then rerun basicly install"
+        for number, reason in ci_records.violations(migrated)
+    ]
+
+
+def _ci_workflow_refusals(repo_root: Path) -> list[str]:
+    path = repo_root / CI_WORKFLOW_LABEL
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8")
+    return _ci_refusals(
+        CI_WORKFLOW_LABEL, ci_records.migrate(prepare_ci_runtime(repin(text)[0]))[0]
+    )
+
+
+def _scaffold_vscode_tasks(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> bool:
+    return _write_scaffold(
         repo_root / ".vscode" / "tasks.json",
         VSCODE_TASKS_JSON,
         ".vscode/tasks.json",
@@ -1426,8 +1463,8 @@ def _scaffold_vscode_tasks(repo_root: Path, *, force: bool = False, dry_run: boo
     )
 
 
-def _scaffold_ci_workflow(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> None:
-    _write_scaffold(
+def _scaffold_ci_workflow(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> bool:
+    return _write_scaffold(
         repo_root / ".github" / "workflows" / "basicly-gates.yml",
         CONSUMER_CI_WORKFLOW,
         ".github/workflows/basicly-gates.yml",
@@ -1436,9 +1473,9 @@ def _scaffold_ci_workflow(repo_root: Path, *, force: bool = False, dry_run: bool
     )
 
 
-def _scaffold_consumer_files(repo_root: Path, *, force: bool, dry_run: bool = False) -> None:
-    _scaffold_vscode_tasks(repo_root, force=force, dry_run=dry_run)
-    _scaffold_ci_workflow(repo_root, force=force, dry_run=dry_run)
+def _scaffold_consumer_files(repo_root: Path, *, force: bool, dry_run: bool = False) -> bool:
+    tasks = _scaffold_vscode_tasks(repo_root, force=force, dry_run=dry_run)
+    return _scaffold_ci_workflow(repo_root, force=force, dry_run=dry_run) and tasks
 
 
 def _report_missing_config_sections(repo_root: Path) -> None:
@@ -1604,8 +1641,7 @@ def _scaffold_repo(
 
     _setup_tracker(repo_root, dry_run=dry_run)
     _scaffold_ledger_attributes(repo_root, dry_run=dry_run)
-    _scaffold_consumer_files(repo_root, force=overwrite_scaffolds, dry_run=dry_run)
-    return True
+    return _scaffold_consumer_files(repo_root, force=overwrite_scaffolds, dry_run=dry_run)
 
 
 def _preflight_install(
@@ -1709,6 +1745,10 @@ def cmd_install(args: argparse.Namespace) -> int:
     refuse_ignored_tracker_prefix(repo_root)
     _has_vault_tracker(repo_root)
     selection = frozenset(technologies) if technologies else load_technology_selection(repo_root)
+    if not getattr(args, "overwrite_scaffolds", False) and (
+        refusals := _ci_workflow_refusals(repo_root)
+    ):
+        raise ValueError("\n".join(refusals))
     markdownlint.require_prerequisites(repo_root, selection)
     if not dry_run:
         try:
