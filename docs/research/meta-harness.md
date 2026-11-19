@@ -10,9 +10,9 @@ Section C lists the deepseek concepts that are placed but not built.
 
 ## Result
 
-- Three records in progress are past the 2-day limit of the Agentic Kanban rules: basicly-qpr2xmr.3.4, basicly-qpr2xmr.3.10 and basicly-qpr2xmr.3.13. Each must go back to the queue or close with a reason today.
-- 13 children of basicly-qpr2xmr.3 are in progress at the same time, all held by one person. The limit is 2 per agent. Finish them before any new record in this plan starts. The Orchestrator decides which 2 stay in progress.
-- The acceptance of the meta harness is requirement R11: daily use over 14 days, counted from run records. No record before stage basicly-qpr2xmr.4.2 lets the owner run a real session through the harness. So the R11 count cannot start before that stage. The cuts below lead to it by the shortest path.
+- The acceptance of the meta harness is requirement R11: daily use over 14 days, counted from run records. Stage basicly-qpr2xmr.4.2 is the first record that lets the owner run a real session through the harness. It is blocked by basicly-qpr2xmr.4.1 and basicly-qpr2xmr.1, and basicly-qpr2xmr.4.1 is blocked by all of basicly-qpr2xmr.3. So every open child of basicly-qpr2xmr.3 stands between the owner and R11.
+- 13 children of basicly-qpr2xmr.3 are in progress at the same time. The holder field shows one name for all of them, because every session writes the same holder. So the field cannot count work in progress per agent, and the Agentic Kanban limit of 2 per agent cannot be checked from the ledger.
+- Three of those records had no change for more than 2 days at the time of measurement: basicly-qpr2xmr.3.4, basicly-qpr2xmr.3.10 and basicly-qpr2xmr.3.13.
 - The self-improving loop has every command it needs except a verified close. The lessons log holds 27 lessons and none is closed. No export has become a landed catalog change.
 - T3 Code stays a reference (decision D2). See `docs/research/t3-code.md`.
 
@@ -32,7 +32,8 @@ Measured with `basicly tracker show <id> --view current`, counting parent-child 
 - The children of the epic include basicly-qpr2xmr.6, which this review filed.
 - The current cut is the orchestrator kit under basicly-qpr2xmr.3 (owner triage 2026-11-17, shape agreed on 2026-11-18).
 - basicly-qpr2xmr.3.4, basicly-qpr2xmr.3.10 and basicly-qpr2xmr.3.13 were last changed on 2026-11-17 between 20:02Z and 20:22Z.
-- basicly-qpr2xmr.1 (unpaid probes) and basicly-qpr2xmr.2 (written vendor permission) have not changed since 2026-11-04.
+- basicly-qpr2xmr.1 (unpaid probes) and basicly-qpr2xmr.2 (written vendor permission) have not changed since 2026-11-04. The owner approved the unpaid probes on 2026-11-04, so basicly-qpr2xmr.1 can start.
+- Dependencies, from `basicly tracker show`: basicly-qpr2xmr.4.1 is blocked by basicly-qpr2xmr.3, and basicly-qpr2xmr.4.2 is blocked by basicly-qpr2xmr.4.1 and basicly-qpr2xmr.1.
 - Stages basicly-qpr2xmr.4.2 to basicly-qpr2xmr.4.6 move to the tracker of the new meta harness project when basicly-qpr2xmr.4.1 creates it (comment on the epic, 2026-11-04).
 
 ### Owner decisions that set the order
@@ -50,27 +51,42 @@ No new owner decision is needed for the order below.
 `docs/research/t3-code.md` holds the evidence.
 
 - T3 Code fails the terminal-first goal and requirements R5 and R8, so decision D2 stays.
-- Three patterns go into requirement R1 through basicly-qpr2xmr.6: capability flags, replay fixtures recorded from the real vendor client, and a permission ceiling that refuses a turn by name.
+- Three patterns go into the requirements through basicly-qpr2xmr.6 (R1, and R2 or R7 for the ceiling): capability flags, replay fixtures recorded from the real vendor client, and a permission ceiling that refuses a turn by name.
 - T3 Code runs Claude through the Claude Agent SDK. Whether the SDK may run on a subscription login is part of Q1.
 
 ### Next cuts in delivery order
 
 | Order | Record | Done when |
 | --- | --- | --- |
-| 1 | the 13 children in progress under basicly-qpr2xmr.3 | at most 2 are in progress per holder |
+| 1 | the 13 children in progress under basicly-qpr2xmr.3 | each is landed, or back in the queue with a reason |
 | 2 | basicly-qpr2xmr.6 | a requirements v5 comment holds the three T3 Code patterns |
-| 3 | basicly-qpr2xmr.3.1, .3.2, .3.3 | the note class, the private vendor home and store format version 2 are landed |
-| 4 | basicly-qpr2xmr.4.1 | the meta harness repository exists as a basicly consumer |
-| 5 | basicly-qpr2xmr.4.2 | the owner runs one Claude session through it, and the R11 count starts |
+| 3 | the 8 open children of basicly-qpr2xmr.3 | each is landed, or closed with a reason |
+| 4 | basicly-qpr2xmr.1 | each unpaid probe has a recorded result |
+| 5 | basicly-qpr2xmr.4.1 | the meta harness repository exists as a basicly consumer |
+| 6 | basicly-qpr2xmr.4.2 | the owner runs one Claude session through it, and the R11 count starts |
 
-- **Order 1.** The check is a count of in-progress children of basicly-qpr2xmr.3 per holder from `basicly tracker show`.
-- **Order 5.** This is the first point at which R11 can be measured. It needs the Claude path cleared under R0.
-- **Owner-blocked.** basicly-qpr2xmr.2 waits for vendor text. basicly-qpr2xmr.1 needs probes that the owner approves. Neither is a lane. Both block order 5 for the paths they cover.
-- **Not in this order.** basicly-qpr2xmr.3.7, .3.8, .3.12 and .3.14 (probes and herdr hooks) and stages basicly-qpr2xmr.4.3 to basicly-qpr2xmr.4.6 come after order 5. v1 is one engine, so they do not block it.
+- **Order 3.** basicly-qpr2xmr.3.12 needs a booked session with the owner. basicly-qpr2xmr.3.14 needs the owner to approve a user settings diff.
+- **Order 4.** It can run beside orders 1 to 3, because it does not touch basicly-qpr2xmr.3.
+- **Order 6.** This is the first point at which R11 can be measured. The Claude path must have its vendor citation under R0 first.
+- **Owner-blocked.** basicly-qpr2xmr.2 waits for vendor text. It is not a lane. Requirement R0 makes it block order 6 for the Claude path. The ledger has no edge for this, because basicly-qpr2xmr.2 blocks only basicly-qpr2xmr.4.4.
+- **After order 6.** Stages basicly-qpr2xmr.4.3 to basicly-qpr2xmr.4.6 add engines and views. v1 is one engine, so they do not block R11.
 
 ## Section B: the self-improving loop, basicly-1dpggot
 
 The owner's intent (2026-11-17, relayed by the Orchestrator): "basicly must be able to learn and self-improve - if it is happening in a client repo, then it must know how to bring back the learning to the main basilcy repo, for example by creating a PR."
+
+### What exists
+
+| Part | Where | Count |
+| --- | --- | --- |
+| Skills | `.basicly/core/skills` | 31 |
+| Hook files | `.basicly/core/hooks` | 41 |
+| Agent definitions | `.basicly/core/agents` | 13 |
+| Decision by vote | the `council` skill | 1 |
+| Review by lenses | the `swarm` and `hill-climb` skills | 2 |
+| Orchestrator kit | `.basicly/core/kit/orch` | 4 packages |
+
+Counted on main: skill folders with `ls -d`, tracked hook files with `git ls-files`, and `agent.yaml` files at the measurement time. The councils and swarms decide and review. They do not write lessons, so their findings reach the loop only when a session adds a lesson by hand.
 
 ### The loop
 
@@ -89,7 +105,7 @@ A learning passes five steps.
 - **Step 3.** `orch lessons export --target FILE --out FILE` appends each open lesson to one target file and prints a diff. It is not a patch against catalog sources. It refuses a target outside the current repository (`target.relative_to(repo)` in `.basicly/core/kit/orch/orch_lessons/cli.py`).
 - **Step 5.** `orch lesson close` accepts any text as the change. It does not check that a commit exists. `orch doctor` reports only lessons open longer than 14 days.
 - **No close.** All 27 lessons are `add` events and none has a `close` event. `git log --grep lesson` on main finds the export feature commit ab1ead7b and no commit that came from an export.
-- **Outside the loop.** Each agent also keeps a per-user memory. For this repository it holds 160 entries (`ls` of the memory folder). That memory never returns to the repository.
+- **Outside the loop.** Each agent also keeps a per-user memory. For this repository it holds 157 memory files, not counting the index files. That memory never returns to the repository.
 - **Consumer to basicly.** No command takes a lesson from a consumer repository back to basicly. This is the missing part of the owner's intent.
 
 ### How Section B feeds Section A
@@ -101,7 +117,7 @@ A learning passes five steps.
 
 ### Cut plan
 
-Each cut is one lane under basicly-1dpggot.
+Each cut is one lane. Cuts L0 to L4 are filed as basicly-1dpggot.1 to basicly-1dpggot.5, in that order. L3 is blocked by L0, and L4 by L3.
 
 | Cut | Change | Acceptance test |
 | --- | --- | --- |
@@ -139,7 +155,7 @@ Source: `docs/research/deepseek-harness-plugin-review.md`, "Dispositions". Only 
 | B10 limitations field | basicly-j52rncv | open, P3 |
 | B11 run a document's commands | basicly-n57j7ex | open, P3 |
 | B12 positive control as a gate | basicly-rj1bbse | open, P3 |
-| B18 durable inbox | basicly-qpr2xmr.3 | in progress |
+| B18 durable inbox | basicly-qpr2xmr.3 | not established |
 | B22 advisory scopes declared | basicly-omtfx6t | open, no priority |
 
 - **A7.** A `.basicly-local` root overrides core in `basicly catalog dump`.
@@ -147,10 +163,11 @@ Source: `docs/research/deepseek-harness-plugin-review.md`, "Dispositions". Only 
 - **A14, B20.** These are built, so they are not listed.
 - **B3.** The review placed B3 on the epic. basicly-qpr2xmr.6 now carries it as "a missing operation is refused by name".
 - **No child record.** A17, B1 and B17 point at an epic, and no child record carries them.
+- **B18.** `orch send` exists. Whether its store keeps one file per message, as design section 8 says, was not checked.
 - **No priority.** basicly-3ghjmmg and basicly-omtfx6t carry no priority, so the ready ranking cannot place them.
 
 ## Not established
 
-- Whether the 13 children in progress under basicly-qpr2xmr.3 are all active work. The holder field shows one name for all of them.
+- Which session works each of the 13 children in progress under basicly-qpr2xmr.3. The holder field shows one name for all of them.
 - Whether a lesson maps to exactly one catalog source. L3 must find this out.
 - Whether basicly-gtb19bg.30.2 will remove the headless loop. The record names it as a candidate only.
