@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import tempfile
 import unicodedata
 from collections.abc import Callable
@@ -11,6 +12,9 @@ from pathlib import Path
 
 from orch_lessons.log import MARKER
 
+FORMAT = 1
+PROCESS_PLATFORM = "linux"
+PROCESS_FIELDS = ("pid", "pid_start")
 ROOT_ENV = "ORCH_STATE_ROOT"
 SESSIONS = "sessions"
 ASKS = "asks"
@@ -121,11 +125,24 @@ def stamp(clock: Clock) -> str:
     return clock().isoformat(timespec="seconds")
 
 
-def save(base: Path, session: str, changes: dict[str, object], clock: Clock) -> dict[str, object]:
+def _process_pair(record: dict[str, object], platform: str) -> dict[str, object]:
+    pair = [record.get(k) for k in PROCESS_FIELDS]
+    if platform == PROCESS_PLATFORM and all(isinstance(v, int) for v in pair):
+        return record
+    return {k: v for k, v in record.items() if k not in PROCESS_FIELDS}
+
+
+def save(
+    base: Path,
+    session: str,
+    changes: dict[str, object],
+    clock: Clock,
+    platform: str = sys.platform,
+) -> dict[str, object]:
     path = _path(base / SESSIONS, session)
     record = {**read(path), **{k: v for k, v in changes.items() if v is not None}}
-    record["id"] = session
-    record["updated_at"] = stamp(clock)
+    record.update({"v": FORMAT, "id": session, "platform": platform, "updated_at": stamp(clock)})
+    record = _process_pair(record, platform)
     _replace(path, record)
     return record
 
@@ -139,6 +156,7 @@ def sessions(base: Path) -> list[dict[str, object]]:
 
 def ask(base: Path, record: str, question: str, options: str | None, clock: Clock) -> None:
     value: dict[str, object] = {
+        "v": FORMAT,
         "record": record,
         "question": clean(question),
         "opened_at": stamp(clock),
@@ -153,7 +171,7 @@ def close_ask(base: Path, record: str, how: str, clock: Clock) -> bool:
     value = read(path)
     if not value or "closed_at" in value:
         return False
-    _replace(path, {**value, "closed_at": stamp(clock), "closed_by": how})
+    _replace(path, {**value, "v": FORMAT, "closed_at": stamp(clock), "closed_by": how})
     return True
 
 

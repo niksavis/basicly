@@ -86,7 +86,7 @@ herdr's own badge and state colour stay the primary signal. The reporter adds on
 `orch status` shows every session in one list, with or without herdr (record `basicly-qpr2xmr.3.22`).
 
 - Store: one JSON file per session in `.orchestrator/sessions/`, beside the lessons folder that `orch lessons init` made, or in `ORCH_STATE_ROOT`. Each write replaces the file in one rename. Without a store nothing is written.
-- Fields: `name`, `project` (a name, never a path), `now` with `now_at`, `next`, `waiting_on`, `state` with `state_at`, `updated_at` (UTC), and the vendor process id with its start time.
+- Fields: `v` (the format version, now 1, in every session and ask file), `platform` (Python's `sys.platform`), `name`, `project` (a name, never a path), `now` with `now_at`, `next`, `waiting_on`, `state` with `state_at`, `updated_at` (UTC), and the vendor process id with its start time (`pid` and `pid_start`, written only on `linux` and only as a pair).
 - Writers store only what an event proves: `working`, `needs-you` or `idle`. `orch state set --now --next --waiting --state` writes by hand, keyed by `CLAUDE_CODE_SESSION_ID` or `ORCH_SESSION_ID`. `orch report`, `orch decide` and `orch approve` also update `now`.
 - Hooks, keyed by the hook's `session_id` (Claude Code and Codex): SessionStart writes `idle` and the session title; UserPromptSubmit, PreToolUse and PostToolUse write `working`; PermissionRequest, and a Notification of type `permission_prompt` or `elicitation_dialog`, write `needs-you`; Stop writes `idle`.
 - Copilot CLI is not wired: its documentation does not state that the hook input arrives on standard input (checked 2026-11-19 against Copilot CLI 1.0.114). A recorded payload decides it.

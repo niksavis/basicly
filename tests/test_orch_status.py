@@ -206,3 +206,35 @@ def test_a_report_updates_now_and_an_approval_closes_its_ask(tmp_path: Path) -> 
     assert record["now"] == "relayed approval dev-9"
     assert record["waiting_on"] == "orchestrator"
     assert store.asks(base)[0]["closed_by"] == "approved"
+
+
+def test_every_file_carries_the_format_version_and_the_platform(tmp_path: Path) -> None:
+    base, _repo = workspace(tmp_path)
+    record = store.save(base, "s1", {"name": "dev"}, lambda: at(0), "linux")
+    store.ask(base, "r1", "Ship?", None, lambda: at(0))
+    store.close_ask(base, "r1", "approved", lambda: at(1))
+
+    assert record["v"] == store.FORMAT
+    assert record["platform"] == "linux"
+    assert store.asks(base)[0]["v"] == store.FORMAT
+
+
+@pytest.mark.parametrize(
+    ("platform", "fields", "kept"),
+    [
+        ("linux", {"pid": 7, "pid_start": 9}, True),
+        ("linux", {"pid": 7}, False),
+        ("darwin", {"pid": 7, "pid_start": 9}, False),
+        ("win32", {"pid": 7, "pid_start": 9}, False),
+    ],
+)
+def test_pid_and_its_start_come_as_a_pair_and_only_on_linux(
+    tmp_path: Path, platform: str, fields: dict[str, int], kept: bool
+) -> None:
+    base, _repo = workspace(tmp_path)
+
+    record = store.save(base, "s1", dict(fields), lambda: at(0), platform)
+
+    assert ("pid" in record and "pid_start" in record) is kept
+    assert ("pid" in record) == ("pid_start" in record)
+    assert record["platform"] == platform
