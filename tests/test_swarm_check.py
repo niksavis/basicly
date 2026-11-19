@@ -12,7 +12,7 @@ def _quiet(directory: Path, *lenses: str) -> None:
         _reply(directory, lens, {"findings": []})
 
 
-def test_a_missing_reply_is_not_run_and_fails_the_check(
+def test_a_missing_reply_is_not_run_and_fails_the_check_and_its_mermaid(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _reply(tmp_path, "correctness", {"findings": []})
@@ -22,6 +22,9 @@ def test_a_missing_reply_is_not_run_and_fails_the_check(
     out = capsys.readouterr().out
     assert "| security | not run: no security.md |" in out
     assert "incomplete: security not run or malformed" in out
+    assert out.count("```mermaid") == 1
+    assert 'q --> l1["security: not run"]' in out
+    assert 'r["result: incomplete, a lens did not run"]' in out
 
 
 def test_a_reply_without_a_json_block_is_malformed(tmp_path: Path) -> None:
@@ -85,13 +88,18 @@ def test_the_verdict_is_shown_in_the_table(
     assert "| a | ok | fail |" in capsys.readouterr().out
 
 
-def test_an_unverified_finding_is_marked_in_the_report(
+def test_an_unverified_finding_is_marked_in_the_report_and_drawn_in_mermaid(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _reply(tmp_path, "a", {"findings": [_finding("important", "trust me", claim="bad")]})
+    _reply(tmp_path, "a", {"findings": [_finding("important", "trust me", claim='say "x"')]})
     _quiet(tmp_path, "b", "c")
+    (tmp_path / "question.txt").write_text("# the plan\n", encoding="utf-8")
     assert swarm.main(["check", "--lenses", "a,b,c", "--dir", str(tmp_path)]) == 0
-    assert "- [important UNCITED] a: bad" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert '- [important UNCITED] a: say "x"' in out
+    assert 'q["the plan"]' in out
+    assert 'l0 --> f0_0["important: say #quot;x#quot;"]' in out
+    assert 'r["result: every lens ran"]' in out
 
 
 def test_a_reply_naming_another_lens_is_malformed(tmp_path: Path) -> None:

@@ -11,7 +11,7 @@ def _vote(directory: Path, voter: str, vote: str) -> None:
     _reply(directory, voter, {"vote": vote, "reason": "r", "strongest_counter": f"against {vote}"})
 
 
-def test_a_majority_of_all_voters_decides_and_shows_the_dissent(
+def test_a_majority_of_all_voters_decides_and_shows_the_dissent_in_text_and_mermaid(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _vote(tmp_path, "user", "a")
@@ -32,9 +32,14 @@ def test_a_majority_of_all_voters_decides_and_shows_the_dissent(
     out = capsys.readouterr().out
     assert "decision: a" in out
     assert "dissent (skeptic, b): r" in out
+    assert out.count("```mermaid") == 1
+    assert 'o0["a: 2 of 3"]' in out
+    assert 'q --> v2["skeptic: b"]' in out
+    assert "o0 ==> d" in out
+    assert "v2 -. dissent .-> d" in out
 
 
-def test_a_missing_vote_counts_against_every_option(
+def test_a_missing_vote_counts_against_every_option_and_shows_not_run_in_mermaid(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _vote(tmp_path, "user", "a")
@@ -54,6 +59,9 @@ def test_a_missing_vote_counts_against_every_option(
     out = capsys.readouterr().out
     assert "skeptic: not run (no skeptic.md); counts against every option" in out
     assert "the user decides" in out
+    assert 'q --> v2["skeptic: not run"]' in out
+    assert "v2 --> nr" in out
+    assert 'd["decision: none, the user decides"]' in out
 
 
 def test_a_vote_outside_the_options_is_refused_by_name(
