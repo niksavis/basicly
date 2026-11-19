@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from orch_relay import classes, messages, record, start
+from orch_state import commands
 
 from orch_lessons import doctor, log
 
@@ -57,6 +58,7 @@ def parser() -> argparse.ArgumentParser:
     launch.add_argument("--vendor", choices=start.VENDORS, required=True)
     launch.add_argument("--name", required=True)
     launch.add_argument("--role", default="orchestrator")
+    commands.add_parsers(groups)
     return top
 
 
@@ -81,7 +83,7 @@ def relay(args: argparse.Namespace, writer: messages.Writer) -> str:
     return writer.decide(act, why)
 
 
-def run_relay(args: argparse.Namespace, cwd: Path) -> int | None:
+def run_relay(args: argparse.Namespace, cwd: Path, environ: dict[str, str]) -> int | None:
     if args.group == "send":
         print(messages.order(args.to, args.record, args.goal, args.limits, args.proof))
         return 0
@@ -99,8 +101,9 @@ def run_relay(args: argparse.Namespace, cwd: Path) -> int | None:
     writer = messages.Writer(tracker, log.scanner(repo))
     if args.group == "report":
         print(writer.report(args.record, args.state, args.summary, args.recommend))
-        return 0
-    print(relay(args, writer))
+    else:
+        print(relay(args, writer))
+    commands.after_relay(args, cwd, environ)
     return 0
 
 
@@ -129,9 +132,13 @@ def run(argv: list[str], cwd: Path, environ: dict[str, str]) -> int:
     if args.group == "lessons" and args.action == "init":
         print(f"lessons folder ready: {log.init(args.folder)}")
         return 0
-    relayed = run_relay(args, cwd)
+    relayed = run_relay(args, cwd, environ)
     if relayed is not None:
         return relayed
+    shown = commands.run(args, cwd, environ)
+    if shown is not None:
+        print(shown)
+        return 0
     if args.group == "doctor":
         report = doctor.run(cwd, environ)
         print("\n".join(report.lines))

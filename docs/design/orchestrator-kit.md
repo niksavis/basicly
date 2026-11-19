@@ -257,7 +257,7 @@ The kit depends on no terminal program. A developer may use any terminal, an edi
    - Claude Code's native wake (a background task, or an async hook that wakes the session) where available.
    - Codex CLI's own queue: `codex queue --thread <id> --message` wakes an idle Codex session (probe P8c).
 2. Wake adapters, optional and detected at run time: herdr (`herdr agent prompt`, probe P8b), tmux, and later others. `orch doctor` reports the active adapter per member, and what is lost without one: an idle interactive session then gets its mail at its next turn, and the person is told.
-3. The session-state reporter is the herdr adapter. With no herdr present it exits 0 and prints nothing (unit test `test_no_herdr_env_runs_no_process`, and the installed hook measured on 2026-11-18).
+3. The session-state reporter is the herdr adapter and the session state writer. With no herdr present it starts no process, exits 0 and prints nothing (unit test `test_no_herdr_env_runs_no_process`, and the installed hook measured on 2026-11-18).
 4. Session naming (L9, restated): a session and its window or tab share one name where the host allows naming. With the herdr adapter, the session start command sets the herdr tab label.
 5. Editor extensions (Claude Code, Codex and Copilot in VS Code): what each supports is listed in the gap table below, from vendor documentation.
 

@@ -2,17 +2,28 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import runner
 
-from orch_state import herdr
+from orch_state import commands, herdr, store
 
 INPUT_MAX = 1_000_000
 BLOCKED_TTL_MS = 600_000
 PAUSED_TTL_MS = 1_800_000
 CLEAR_EVENTS = frozenset({"SessionStart", "UserPromptSubmit", "PostToolUse"})
+EVENT_STATES = {
+    "SessionStart": "idle",
+    "UserPromptSubmit": "working",
+    "PreToolUse": "working",
+    "PostToolUse": "working",
+    "PermissionRequest": "needs-you",
+    "Stop": "idle",
+}
+ASKING = frozenset({"permission_prompt", "elicitation_dialog"})
 
 
 @dataclass(frozen=True)
@@ -61,14 +72,45 @@ def plan(event: dict[str, object]) -> Action | None:
     return None
 
 
-def run(raw: str, environ: dict[str, str]) -> None:
+def session_state(event: dict[str, object]) -> str | None:
+    name = event.get("hook_event_name")
+    if name == "Notification":
+        return "needs-you" if event.get("notification_type") in ASKING else None
+    return EVENT_STATES.get(name) if isinstance(name, str) else None
+
+
+def write_state(event: dict[str, object], environ: dict[str, str], clock: store.Clock) -> None:
+    state = session_state(event)
+    session = event.get("session_id")
+    if state is None or not isinstance(session, str) or not session:
+        return
+    where = event.get("cwd")
+    cwd = Path(where) if isinstance(where, str) and where else Path.cwd()
+    root = store.find(cwd, environ)
+    if root is None:
+        return
+    changes: dict[str, object] = {
+        "state": state,
+        "state_at": store.stamp(clock),
+        "project": store.project(cwd),
+        **commands.process_fields(os.getppid()),
+    }
+    title = event.get("session_title")
+    if isinstance(title, str) and title.strip():
+        changes["name"] = store.clean(title, 40)
+    store.save(root, session, changes, clock)
+
+
+def run(raw: str, environ: dict[str, str], clock: store.Clock = store.utc_now) -> None:
+    event = json.loads(raw[:INPUT_MAX])
+    if not isinstance(event, dict):
+        return
+    with contextlib.suppress(Exception):
+        write_state(event, environ, clock)
     if environ.get("HERDR_ENV") != "1":
         return
     pane = herdr.pane_id(environ)
     if pane is None:
-        return
-    event = json.loads(raw[:INPUT_MAX])
-    if not isinstance(event, dict):
         return
     action = plan(event)
     if action is None:
