@@ -66,6 +66,11 @@ def test_a_run_with_foreign_cpu_above_the_limit_is_not_counted() -> None:
     assert claim_load.counted(quiet) is None
 
 
+def test_the_claim_deadline_scales_only_the_io_part() -> None:
+    assert claim_load.claim_deadline(1.0) == claim_load.CLAIM_DEADLINE_S
+    assert claim_load.claim_deadline(8.0) == 30.0 / 8 + 5.0 * (1 - 1 / 8)
+
+
 def test_a_small_real_load_makes_claims_in_every_session_and_one_holder_per_record(
     tmp_path: Path,
 ) -> None:
