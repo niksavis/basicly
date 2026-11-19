@@ -83,7 +83,7 @@ base_branch = ""
 # Raised 5 -> 10 on 2026-08-20 by owner decision: lanes scale by isolation, not by
 # permission, and at 5 the cap was the only thing bounding fan-out. See the pytest
 # check's `concurrency x workers` note below, which this raise deliberately breaks.
-concurrency = 10
+concurrency = 14
 # Paths this repo's own conventions have every lane append its own entry to, and
 # which therefore appear in no bead's `## Scope` (basicly-o8p0). Declaring one here
 # makes `decompose` serialize the children that would collide on it and makes
