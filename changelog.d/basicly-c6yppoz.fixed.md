@@ -1,0 +1,1 @@
+- `basicly check` no longer flags a workflow line that runs a pre-push hook script unless that script runs the full checks without `--ci`. It reads the script and names it in the message, so a script that only runs pytest, as in terminal, is not flagged.

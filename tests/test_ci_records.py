@@ -7,7 +7,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+
+import pytest
 
 from basicly import ci_records, scaffolds
 from basicly.cli import cmd_check
@@ -15,9 +16,6 @@ from basicly.scaffolds import CONSUMER_CI_WORKFLOW
 from tests.test_kit_vault_cli_wiring import _environment
 from tests.test_kit_vault_share import bare
 from tests.test_vault_harness_hooks import _frozen
-
-if TYPE_CHECKING:
-    import pytest
 
 __all__ = ["_environment", "bare"]
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +95,67 @@ def test_basicly_check_names_workflow_lines_even_when_it_refuses_for_version_ske
     assert code == 1
     assert "Version skew" in err
     assert ".github/workflows/gates.yml:1: runs verify without --ci" in err
+
+
+TERMINAL_PRE_PUSH = (
+    'import subprocess\nsubprocess.run(["uv", "run", "pytest", "tests/"], check=True)\n'
+)
+
+
+@pytest.mark.parametrize(
+    ("script", "flagged"),
+    [
+        (TERMINAL_PRE_PUSH, False),
+        ((ROOT / ".basicly/core/hooks/pre-push.py").read_text(encoding="utf-8"), True),
+        (
+            'CMD = ["basicly", "verify", "--mode", "full"]\nrun("basicly verify --mode full")\n',
+            True,
+        ),
+        ("run('basicly verify --mode full --ci')\n", False),
+    ],
+    ids=["terminal-pytest-only", "basicly-own-pre-push", "verify-full", "verify-full-ci"],
+)
+def test_basicly_check_flags_a_hook_script_line_only_when_the_script_runs_full_checks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: str,
+    flagged: bool,
+) -> None:
+    hook = tmp_path / ".scripts" / "git-hooks" / "pre-push.py"
+    hook.parent.mkdir(parents=True)
+    hook.write_text(script, encoding="utf-8")
+    folder = tmp_path / ".github" / "workflows"
+    folder.mkdir(parents=True)
+    (folder / "quality-gates.yml").write_text(
+        "        run: uv run python .scripts/git-hooks/pre-push.py\n", encoding="utf-8"
+    )
+
+    code = _check(tmp_path, monkeypatch)
+
+    err = capsys.readouterr().err
+    expected = (
+        ".github/workflows/quality-gates.yml:1: runs .scripts/git-hooks/pre-push.py, "
+        "which runs the local full checks without --ci"
+    )
+    assert (code, expected in err) == ((1, True) if flagged else (0, False)), err
+
+
+def test_basicly_check_still_flags_a_direct_verify_line_without_ci(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = tmp_path / ".github" / "workflows"
+    folder.mkdir(parents=True)
+    (folder / "gates.yml").write_text(
+        "        run: uv run basicly verify --mode full\n"
+        "        run: uv run basicly verify --mode full --ci\n",
+        encoding="utf-8",
+    )
+
+    assert _check(tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert ".github/workflows/gates.yml:1: runs verify without --ci" in err
+    assert "gates.yml:2:" not in err
 
 
 def test_basicly_check_passes_a_repo_whose_workflows_read_no_records(
