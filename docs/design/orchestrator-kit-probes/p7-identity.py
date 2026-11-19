@@ -113,7 +113,7 @@ def summary(record: dict[str, object]) -> dict[str, object]:
         "input_keys": sorted(data),
         "ids": {k: data[k] for k in KEYS if k in data},
         "parents": [f"{p['name']}:{p['pid']}" for p in parents if isinstance(p, dict)],
-        "env_keys": sorted(record.get("env", {})),
+        "env_keys": sorted(env) if isinstance(env := record.get("env"), dict) else [],
     }
 
 

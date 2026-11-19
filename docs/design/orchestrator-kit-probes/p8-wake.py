@@ -145,7 +145,7 @@ def main() -> int:
             report["woke"] = woke
             if woke:
                 second = stops(log)[1]
-                report["wake_latency_s"] = round(float(second["t"]) - mailed, 1)
+                report["wake_latency_s"] = round(float(str(second["t"])) - mailed, 1)
                 transcript = Path(str(first["transcript"]))
                 report["wake_turn_usage"] = usage_after(transcript, mailed)
             report["screen_tail"] = tmux("capture-pane", "-p", "-t", SESSION).stdout.strip()[-600:]
