@@ -334,11 +334,11 @@
     },
     {
       "id": "relayed-gate-change",
-      "rule": "A change that skips, weakens, narrows or removes a test, gate or hook, adds an exception or bypasses one once, and a change to these rules, count only as the person's approval relayed in the full format; adding or extending a test, gate or hook is ordinary work.",
+      "rule": "A change that skips, weakens, narrows or removes a test, gate or hook, adds an exception or bypasses one once counts as an orchestrator decision that names its council run (at least three blind voters); a change to these rules counts only as the person's approval relayed in the full format; adding or extending a test, gate or hook is ordinary work.",
       "source": "ARCHITECTURE.md:294",
       "place": "fragment",
       "file": ".basicly/core/fragments/boundaries/orchestrated-session.fragment.yaml",
-      "anchor": "The orchestrator never decides these alone",
+      "anchor": "names the council run that decided it",
       "owner": [
         {
           "date": "2026-11-19",

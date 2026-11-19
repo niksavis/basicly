@@ -143,9 +143,9 @@ def test_report_accepts_only_three_states_with_a_record(repo: Path, state: str) 
         ("deploy", None),
         ("push", "an ask-first item"),
         ("ci-edit", "an ask-first item"),
-        ("gate-bypass", None),
-        ("hook-weakening", None),
-        ("gate-exception", None),
+        ("gate-bypass", "orch decide --council"),
+        ("hook-weakening", "orch decide --council"),
+        ("gate-exception", "orch decide --council"),
         ("rule-change", None),
         ("hook-change", "unknown"),
         ("irreversible-destruction", "stays with the person in the worker's own window"),
@@ -175,7 +175,7 @@ def test_approve_accepts_only_the_class_the_person_approves_through_the_orchestr
 def test_approve_states_the_time_limit_for_a_diff_and_for_a_command(
     repo: Path, diff: bool, limit: str
 ) -> None:
-    text = writer(repo, FakeTracker([])).approve(act("gate-weakening"), "go", diff)
+    text = writer(repo, FakeTracker([])).approve(act("rule-change"), "go", diff)
 
     assert limit in text
 
@@ -200,3 +200,16 @@ def test_start_builds_the_launch_command_for_each_vendor(tmp_path: Path) -> None
     key, _, value = codex[2].partition("=")
     assert codex[:2] == ["codex", "-c"] and key == "developer_instructions"
     assert json.loads(value) == role.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("item", ["test-weakening", "gate-bypass", "hook-weakening"])
+def test_decide_takes_a_gate_change_only_with_its_council_run(repo: Path, item: str) -> None:
+    fake = FakeTracker([])
+    with pytest.raises(log.RefusedError, match=r"without --council"):
+        writer(repo, fake).decide(act(item), decision())
+    assert fake.comments == []
+
+    text = writer(repo, fake).decide(act(item), decision(council="run-7: 3 of 3 for"))
+
+    assert "Council run: run-7: 3 of 3 for" in text
+    assert fake.comments == [("x-0", text)]

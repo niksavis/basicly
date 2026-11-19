@@ -48,7 +48,7 @@ The move changes three behaviours. Each change has its own tests (task "store an
 
 - Off by default. A workspace enables approvals by committed configuration that names its orchestrator member. Without it, `orch approve` and `orch use` refuse by name.
 - The workspace's own approval rule is the source. The kit enforces it mechanically and may be stricter, never looser.
-- A change that skips, weakens, narrows or removes a test, gate or hook, adds an exception to one or bypasses one once, and a change to the approval rule with its exact new text: only the person's own approval, relayed in the full format; `orch decide` refuses it by name. Adding or extending a test, gate or hook is ordinary work.
+- A change that skips, weakens, narrows or removes a test, gate or hook, adds an exception to one or bypasses one once: an orchestrator decision that names the council run that decided it (at least three blind voters) and its result; `orch decide --council` takes it and `orch approve` refuses it by name (owner rule 2026-11-19 18:07 UTC). A change to the approval rule with its exact new text: only the person's own approval, relayed in the full format. Adding or extending a test, gate or hook is ordinary work.
 - Never covered, refused by `orch approve` by name: a harness permission prompt or classifier refusal; an action that destroys work and cannot be undone (force-push, history rewrite, deleting unmerged work or work the worker did not create, making a repository public).
 
 ### 5.2 Minting

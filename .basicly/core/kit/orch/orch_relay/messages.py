@@ -56,6 +56,7 @@ class Decision:
     condition: str
     proof: str
     if_proof_fails: str
+    council: str = ""
 
 
 @dataclass(frozen=True)
@@ -87,7 +88,17 @@ class Writer:
         fields.require(given, "orch decide")
         if not RULE_DATE.fullmatch(rule_date.strip()):
             raise RefusedError("orch decide refuses --rule-date: write it as YYYY-MM-DD")
-        classes.require_class(act.item, classes.ASK_FIRST, "orch decide")
+        classes.require_class(
+            act.item, frozenset({classes.ASK_FIRST, classes.COUNCIL_DECIDES}), "orch decide"
+        )
+        council = why.council.strip()
+        if classes.item_class(act.item) == classes.COUNCIL_DECIDES and not council:
+            raise RefusedError(
+                f"orch decide refuses {act.item!r} without --council: name the council run "
+                'that decided it (at least three blind voters) and its result, "<run id>: <result>"'
+            )
+        if council:
+            given["council"] = council
         fields.no_placeholder(given, "orch decide")
         parsed = fields.risks(act.risks, act.action)
         now = stamp(self.clock)
@@ -100,6 +111,7 @@ class Writer:
             f"Condition: {condition}",
             f"Proof command: {proof}",
             f"If the proof fails: {if_proof_fails}",
+            *([f"Council run: {council}"] if council else []),
             f"Good for one use, within {VALID_FOR_MINUTES} minutes of {now}.",
         ])
         return self._record_and_send(act.record, text)
