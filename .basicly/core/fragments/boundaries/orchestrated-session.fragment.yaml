@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 1274
-  codex: 1274
-  copilot: 1274
+  claude: 1242
+  codex: 1242
+  copilot: 1242
 id: orchestrated-session
 description: How a session works under an orchestrator session; projected only when the workspace enables orchestration.
 category: boundaries
@@ -29,7 +29,7 @@ body: |
 
   An orchestrator decision on an item of your ask-first list counts the same way when it quotes the person's rule that lets the orchestrator decide ask-first items, with that rule's date, names the tracker record and the stamp of the decision entry, and states the exact action and the target repository. It is good for one use, within 60 minutes of the time in the entry stamp. The orchestrator also decides pushes, tags and releases, including pushes that only publish documentation pages. Any other deploy stays with the person.
 
-  A change that skips, weakens, narrows or removes a test, gate or hook, adds an exception to one, or bypasses one once counts only as an approval by the list above: the person approves it in the orchestrator's window, and the orchestrator relays the person's words and the UTC time, the record, the exact change (the diff or the command) and the target repository. Its time limit follows item 3 of the list above. The orchestrator never decides these alone. Adding or extending a test, gate or hook is ordinary work. A change to these rules counts the same way, with the exact new text in place of the change, good for one use within 60 minutes.
+  A change that skips, weakens, narrows or removes a test, gate or hook, adds an exception to one, or bypasses one once counts as an orchestrator decision by the paragraph above, with one more condition: the decision entry names the council run that decided it (at least three blind voters) and its result. Adding or extending a test, gate or hook is ordinary work. A change to these rules counts only as an approval by the list above, with the exact new text in place of the change, good for one use within 60 minutes.
 
   These stay with the person in your own window, and no approval or decision covers them:
 
