@@ -3,12 +3,13 @@ from __future__ import annotations
 import difflib
 import importlib.util
 import json
-import os
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import runner
 
 MARKER = "orch-lessons-root"
 LOG = "lessons.jsonl"
@@ -231,4 +232,4 @@ def stale(root: Path, clock: Clock = utc_now) -> list[Lesson]:
 
 
 def environ() -> dict[str, str]:
-    return dict(os.environ)
+    return runner.environ()

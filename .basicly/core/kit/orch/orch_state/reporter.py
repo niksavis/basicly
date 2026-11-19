@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import sys
 from dataclasses import dataclass
+
+import runner
 
 from orch_state import herdr
 
@@ -80,7 +81,7 @@ def run(raw: str, environ: dict[str, str]) -> None:
 
 def main() -> int:
     with contextlib.suppress(Exception):
-        run(sys.stdin.read(INPUT_MAX + 1), dict(os.environ))
+        run(sys.stdin.read(INPUT_MAX + 1), runner.environ())
     return 0
 
 

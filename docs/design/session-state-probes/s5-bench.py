@@ -11,7 +11,7 @@ from pathlib import Path
 
 BUDGET_MS = 50.0
 RUNS = 20
-PACKAGE = Path(__file__).resolve().parents[3] / "packages/basicly-orch"
+PACKAGE = Path(__file__).resolve().parents[3] / ".basicly/core/kit/orch"
 EVENTS = {
     "SessionStart": {"hook_event_name": "SessionStart"},
     "UserPromptSubmit": {"hook_event_name": "UserPromptSubmit"},

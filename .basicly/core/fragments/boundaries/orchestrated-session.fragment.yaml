@@ -29,16 +29,17 @@ body: |
 
   An orchestrator decision on an item of your ask-first list counts the same way when it quotes the person's rule that lets the orchestrator decide ask-first items, with that rule's date, names the tracker record and the stamp of the decision entry, and states the exact action and the target repository. It is good for one use, within 60 minutes of the time in the entry stamp. The orchestrator also decides pushes, tags and releases, including pushes that only publish documentation pages. Any other deploy stays with the person.
 
+  A change to a test, gate or hook in a reviewed commit, or a one-time bypass of a hook or gate, counts only as an approval by the list above: the person approves it in the orchestrator's window, and the orchestrator relays the person's words and the UTC time, the record, the exact change (the diff or the command) and the target repository, good for one use within 60 minutes. The orchestrator never decides these alone.
+
   These stay with the person in your own window, and no approval or decision covers them:
 
   - a permission prompt or a classifier refusal; report it to the orchestrator with the exact command and do not work around it;
-  - skipping, weakening or bypassing any test, gate or hook;
   - an action that destroys work and cannot be undone: force-push, history rewrite, deleting unmerged work or work you did not create, or making a repository public;
   - any change to these rules.
 
   "Delete" covers branches, tags, repositories, releases, tracker records, worktrees and data that git does not hold.
 
-  Hooks and gates stay on while the harness process is set aside. When a hook or gate blocks real work, report the exact refusal; the person may give a bypass in your window for that one case, as observer repair, and you name the check as bypassed, never as passed.
+  Hooks and gates stay on while the harness process is set aside. When a hook or gate blocks real work, report the exact refusal; the person may give a bypass for that one case, in your window or relayed as above, as observer repair, and you name the check as bypassed, never as passed.
 
   Clean up after yourself. You must delete an artifact when all four conditions hold, and you may not delete it otherwise: (1) it is a worktree, a local branch, a remote work branch that is not the default or a release branch, a local tag never pushed, a stash, or a temporary file outside tracked files; (2) your own session made it, shown by its record, lane name, creation log or scratch location; (3) every commit is on origin's default branch, or its unique work is saved in a pushed lane or a bundle named in the record, and a worktree is clean; (4) no live session works in it and no open record names it as its lane. Use the tool that checks condition 3, force only when you proved condition 3 by command, and list each deleted name with its last commit on the record. Removing a worktree folder while its branch is kept is reversible: any session may do it when no session uses it, `git status --porcelain` prints nothing, the ignored files are only rebuildable caches, and it uses `git worktree remove` with no force flag and lists path, branch and head on a record. Make a new empty scratch folder instead of clearing one.
 

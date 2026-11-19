@@ -123,7 +123,7 @@
       "rule": "Each order states goal, limits and expected proof.",
       "source": "ARCHITECTURE.md:160",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/messages.py",
+      "file": ".basicly/core/kit/orch/orch_relay/messages.py",
       "anchor": "Expected proof"
     },
     {
@@ -240,7 +240,7 @@
       "rule": "orch report accepts only three states with a record id.",
       "source": "ARCHITECTURE.md:210",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/messages.py",
+      "file": ".basicly/core/kit/orch/orch_relay/messages.py",
       "anchor": "REPORT_STATES"
     },
     {
@@ -299,7 +299,7 @@
       "rule": "Each decision states reason, condition, proof and response if the proof fails.",
       "source": "ARCHITECTURE.md:255",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/messages.py",
+      "file": ".basicly/core/kit/orch/orch_relay/messages.py",
       "anchor": "If the proof fails"
     },
     {
@@ -320,7 +320,7 @@
     },
     {
       "id": "person-items",
-      "rule": "Permission prompts, bypasses, irreversible destruction and rule changes stay with the person.",
+      "rule": "Permission prompts, irreversible destruction and rule changes stay with the person in the worker's window.",
       "source": "ARCHITECTURE.md:264",
       "place": "fragment",
       "file": ".basicly/core/fragments/boundaries/orchestrated-session.fragment.yaml",
@@ -333,11 +333,25 @@
       ]
     },
     {
+      "id": "relayed-gate-change",
+      "rule": "A test, gate or hook change or a one-time bypass counts only as the person's approval relayed in the full format; the orchestrator never decides it alone.",
+      "source": "ARCHITECTURE.md:294",
+      "place": "fragment",
+      "file": ".basicly/core/fragments/boundaries/orchestrated-session.fragment.yaml",
+      "anchor": "The orchestrator never decides these alone",
+      "owner": [
+        {
+          "date": "2026-11-19",
+          "phrase": "a change to a test, gate or hook in a reviewed commit"
+        }
+      ]
+    },
+    {
       "id": "person-items-classes",
       "rule": "orch approve refuses items that stay in the worker window.",
       "source": "ARCHITECTURE.md:264",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/classes.py",
+      "file": ".basicly/core/kit/orch/orch_relay/classes.py",
       "anchor": "PERSON_WINDOW"
     },
     {
@@ -359,7 +373,7 @@
       "rule": "Push, tag, release and documentation deploys are orchestrator decisions in orch.",
       "source": "ARCHITECTURE.md:270",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/classes.py",
+      "file": ".basicly/core/kit/orch/orch_relay/classes.py",
       "anchor": "\"docs-deploy\": ASK_FIRST"
     },
     {
@@ -433,7 +447,7 @@
       "rule": "orch approve builds the relayed approval.",
       "source": "ARCHITECTURE.md:289",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/messages.py",
+      "file": ".basicly/core/kit/orch/orch_relay/messages.py",
       "anchor": "relayed by the orchestrator"
     },
     {
@@ -503,7 +517,7 @@
       "rule": "orch decide writes the decision entry and builds the message.",
       "source": "ARCHITECTURE.md:319",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/messages.py",
+      "file": ".basicly/core/kit/orch/orch_relay/messages.py",
       "anchor": "Rule that lets the orchestrator decide ask-first items"
     },
     {
@@ -525,7 +539,7 @@
       "rule": "A session ends only after its lessons are written; the doctor flags one with none.",
       "source": "ARCHITECTURE.md:318",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_lessons/log.py",
+      "file": ".basicly/core/kit/orch/orch_lessons/log.py",
       "anchor": "wrote no lesson in this session"
     },
     {
@@ -533,7 +547,7 @@
       "rule": "orch doctor flags a session that ended with no lesson.",
       "source": "ARCHITECTURE.md:318",
       "place": "doctor",
-      "file": "packages/basicly-orch/orch_lessons/doctor.py",
+      "file": ".basicly/core/kit/orch/orch_lessons/doctor.py",
       "anchor": "with no lesson"
     },
     {
@@ -541,7 +555,7 @@
       "rule": "The orchestrator runs from Claude Code, Codex or Copilot.",
       "source": "ARCHITECTURE.md:322",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/start.py",
+      "file": ".basicly/core/kit/orch/orch_relay/start.py",
       "anchor": "\"copilot\"",
       "owner": [
         {
@@ -555,7 +569,7 @@
       "rule": "No terminal tool dependency; a wake adapter is optional and detected.",
       "source": "ARCHITECTURE.md:324",
       "place": "doctor",
-      "file": "packages/basicly-orch/orch_lessons/doctor.py",
+      "file": ".basicly/core/kit/orch/orch_lessons/doctor.py",
       "anchor": "wake adapter: none",
       "owner": [
         {
@@ -757,7 +771,7 @@
       "rule": "Exactly one active record whose title starts with the prefix.",
       "source": "ARCHITECTURE.md:408",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/record.py",
+      "file": ".basicly/core/kit/orch/orch_relay/record.py",
       "anchor": "exactly one must match"
     },
     {
@@ -773,7 +787,7 @@
       "rule": "Never put secrets in a record or message; the writer scans first.",
       "source": "ARCHITECTURE.md:434",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/messages.py",
+      "file": ".basicly/core/kit/orch/orch_relay/messages.py",
       "anchor": "check_text(self.scan"
     },
     {
@@ -797,7 +811,7 @@
       "rule": "Show the person only complete checked commands.",
       "source": "ARCHITECTURE.md:331",
       "place": "orch",
-      "file": "packages/basicly-orch/orch_relay/fields.py",
+      "file": ".basicly/core/kit/orch/orch_relay/fields.py",
       "anchor": "PLACEHOLDER"
     },
     {

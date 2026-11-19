@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-RULESET = REPO / "packages" / "basicly-orch" / "orch_lessons" / "ruleset.json"
+RULESET = REPO / ".basicly" / "core" / "kit" / "orch" / "orch_lessons" / "ruleset.json"
 DATA = json.loads(RULESET.read_text(encoding="utf-8"))
 RULES = DATA["rules"]
 

@@ -24,8 +24,8 @@ def launch(vendor: str, role: str, name: str, repo: Path) -> list[str]:
         role_file = repo / ROLE_FILES / f"{role}.md"
         if not role_file.is_file():
             raise RefusedError(
-                f"{ROLE_FILES / (role + '.md')} is missing in {repo}; enable [orchestration] "
-                "in basicly.toml and run basicly install"
+                f"{ROLE_FILES / (role + '.md')} is missing in {repo}; turn on the "
+                "orchestration feature of basicly and run basicly install"
             )
         text = role_file.read_text(encoding="utf-8")
         return ["codex", "-c", f"developer_instructions={json.dumps(text)}"]

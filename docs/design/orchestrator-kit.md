@@ -48,7 +48,8 @@ The move changes three behaviours. Each change has its own tests (task "store an
 
 - Off by default. A workspace enables approvals by committed configuration that names its orchestrator member. Without it, `orch approve` and `orch use` refuse by name.
 - The workspace's own approval rule is the source. The kit enforces it mechanically and may be stricter, never looser.
-- Never covered, refused by `orch approve` by name: a harness permission prompt or classifier refusal; skipping, weakening or bypassing a test, gate or hook; an action that destroys work and cannot be undone (force-push, history rewrite, deleting unmerged work or work the worker did not create, making a repository public); any change to the approval rule.
+- A test, gate or hook change or a one-time bypass: only the person's own approval, relayed in the full format; `orch decide` refuses it by name.
+- Never covered, refused by `orch approve` by name: a harness permission prompt or classifier refusal; an action that destroys work and cannot be undone (force-push, history rewrite, deleting unmerged work or work the worker did not create, making a repository public); any change to the approval rule.
 
 ### 5.2 Minting
 
@@ -144,7 +145,7 @@ One interface, one module per vendor. Core code calls only the interface.
 
 ## 10. Packaging and installation
 
-- Kit: `.basicly/core/kit/orch/`. Package: `packages/basicly-orch`. Version pin like the tracker's. Python floor: the kits' floor, 3.14, which is higher than the agent-mail skill's 3.12. The migration keeps the skill available for consumers on older Python until they move.
+- Kit: `.basicly/core/kit/orch/`. Package: `packages/basicly-orch`, built from the kit tree by force-include like the tracker's. Every process start and environment read goes through `.basicly/core/kit/orch/runner.py`, the one exception the kit-boundary gate names for orch (owner approval 2026-11-19). Version pin like the tracker's. Python floor: the kits' floor, 3.14, which is higher than the agent-mail skill's 3.12. The migration keeps the skill available for consumers on older Python until they move.
 - Git ignore checks, vendor version checks and the doctor canary live in the package, where the installer already runs subprocesses.
 - In a repository that basicly manages, `hooks.yaml` projects the kit's hooks for all three clients, and `orch init` refuses by name.
 - In a standalone repository, `orch init` writes the hook entries and deny rules from `adapter.hook_entries()`, records each written entry in a manifest after it succeeds, and shows the diff. Re-running `orch init` resumes from the manifest. `orch uninstall` removes exactly the manifest entries.

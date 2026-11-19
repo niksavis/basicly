@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "packages" / "basicly-orch"))
+sys.path.insert(0, str(REPO / ".basicly" / "core" / "kit" / "orch"))
 
 log = importlib.import_module("orch_lessons.log")
 messages = importlib.import_module("orch_relay.messages")
@@ -143,7 +143,10 @@ def test_report_accepts_only_three_states_with_a_record(repo: Path, state: str) 
         ("deploy", None),
         ("push", "an ask-first item"),
         ("ci-edit", "an ask-first item"),
-        ("gate-bypass", "stays with the person in the worker's own window"),
+        ("gate-bypass", None),
+        ("hook-change", None),
+        ("rule-change", "stays with the person in the worker's own window"),
+        ("classifier-refusal", "stays with the person in the worker's own window"),
     ],
 )
 def test_approve_accepts_only_the_class_the_person_approves_through_the_orchestrator(

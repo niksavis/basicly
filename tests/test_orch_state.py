@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-PACKAGE = Path(__file__).resolve().parent.parent / "packages" / "basicly-orch"
+PACKAGE = Path(__file__).resolve().parent.parent / ".basicly" / "core" / "kit" / "orch"
 sys.path.insert(0, str(PACKAGE))
 
 herdr = importlib.import_module("orch_state.herdr")

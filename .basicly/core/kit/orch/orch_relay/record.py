@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import subprocess  # nosec B404
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
+import runner
 from orch_lessons.log import RefusedError
 
 RECORD_PREFIX = "orchestration-record:"
@@ -17,12 +17,10 @@ Runner = Callable[[list[str]], str]
 
 
 def run_tracker(argv: list[str]) -> str:
-    done = subprocess.run(  # noqa: S603 # nosec B603 - list argv, no shell, the repository's own tracker kit
-        argv, capture_output=True, text=True, check=False, timeout=60
-    )
-    if done.returncode != 0:
-        raise RefusedError(f"the tracker refused: {done.stderr.strip() or done.stdout.strip()}")
-    return done.stdout
+    done = runner.capture(argv, 60)
+    if done.code != 0:
+        raise RefusedError(f"the tracker refused: {done.err.strip() or done.out.strip()}")
+    return done.out
 
 
 class Tracker:

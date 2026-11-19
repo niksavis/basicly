@@ -303,6 +303,11 @@ def test_only_the_board_kit_may_listen_and_only_through_http_server(
         (("tracker", "nested", "git_runner.py"), "import subprocess\n", ["reaches-outside"]),
         (("board", "git_runner.py"), "import subprocess\n", ["reaches-outside"]),
         (("tier", "git_runner.py"), "import subprocess\n", ["reaches-outside"]),
+        (("orch", "runner.py"), "import subprocess\n", []),
+        (("orch", "runner.py"), "import socket\n", ["reaches-outside"]),
+        (("orch", "orch_state", "herdr.py"), "import subprocess\n", ["reaches-outside"]),
+        (("orch", "orch_state", "runner.py"), "import subprocess\n", ["reaches-outside"]),
+        (("tracker", "runner.py"), "import subprocess\n", ["reaches-outside"]),
     ],
 )
 def test_only_the_tracker_git_runner_may_spawn_and_only_through_subprocess(
@@ -334,6 +339,17 @@ def test_only_the_tracker_adapters_may_read_the_environment(
     _seed(tmp_path.joinpath("kit", *folders), name, source)
 
     assert _rules(tmp_path / "kit") == expected
+
+
+def test_the_shipped_orch_kit_starts_processes_only_in_its_runner() -> None:
+    orch = KIT_ROOT / "orch"
+    spawning = sorted(
+        path.relative_to(orch).as_posix()
+        for path in orch.rglob("*.py")
+        if "__pycache__" not in path.parts and "subprocess" in path.read_text(encoding="utf-8")
+    )
+    assert spawning == ["runner.py"]
+    assert [f for f in gate.scan(KIT_ROOT) if f.path.startswith("orch/")] == []
 
 
 def test_the_shipped_tracker_kit_reads_the_environment_only_in_its_adapters() -> None:

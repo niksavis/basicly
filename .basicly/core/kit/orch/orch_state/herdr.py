@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
-import subprocess  # nosec B404
 import time
 import unicodedata
 from pathlib import Path
+
+import runner
 
 SOURCE = "basicly-orch"
 LABEL_MAX = 80
@@ -28,7 +28,7 @@ def binary(environ: dict[str, str]) -> str | None:
     named = environ.get("HERDR_BIN_PATH", "")
     if named and Path(named).is_absolute() and os.access(named, os.X_OK):
         return named
-    return shutil.which("herdr", path=environ.get("PATH"))
+    return runner.which("herdr", environ.get("PATH"))
 
 
 def argv(
@@ -51,12 +51,4 @@ def argv(
 
 
 def report(command: list[str], environ: dict[str, str]) -> None:
-    subprocess.run(  # noqa: S603 # nosec B603 - herdr resolved by absolute path or which(), list argv, no shell
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=TIMEOUT_SECONDS,
-        check=False,
-        env=environ,
-    )
+    runner.quiet(command, environ, TIMEOUT_SECONDS)

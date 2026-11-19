@@ -3,12 +3,11 @@ from __future__ import annotations
 import fnmatch
 import json
 import re
-import shutil
-import subprocess  # nosec B404
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+import runner as kit_runner
 from orch_state import herdr
 
 from orch_lessons import log
@@ -93,17 +92,14 @@ def claude_lines(files: list[Path]) -> tuple[list[str], bool]:
 
 
 def run_codex(argv: list[str]) -> str:
-    done = subprocess.run(  # noqa: S603 # nosec B603 - list argv, no shell, codex resolved by which()
-        argv, capture_output=True, text=True, check=False, timeout=30
-    )
-    return done.stdout
+    return kit_runner.capture(argv, 30).out
 
 
 def codex_lines(
     repo: Path,
     environ: dict[str, str],
     runner: Runner = run_codex,
-    find: Callable[[str, str | None], str | None] = lambda name, path: shutil.which(
+    find: Callable[[str, str | None], str | None] = lambda name, path: kit_runner.which(
         name, path=path
     ),
 ) -> tuple[list[str], bool]:

@@ -59,7 +59,7 @@ herdr's own badge and state colour stay the primary signal. The reporter adds on
 
 ## 6. Where it lives
 
-- Package `packages/basicly-orch`, module `orch_state`: `reporter.py` (hook entry point, command `orch-state-hook`) and `herdr.py` (the herdr adapter). It is a package, not a kit, because it runs a process.
+- Kit `.basicly/core/kit/orch/`, module `orch_state`: `reporter.py` (hook entry point, command `orch-state-hook`) and `herdr.py` (the herdr adapter), packaged as `packages/basicly-orch`. It runs herdr only through `.basicly/core/kit/orch/runner.py`, the one orch module that the kit-boundary gate lets start a process (owner approval 2026-11-19).
 - herdr is an optional adapter of the package. Without herdr there is no working or idle view; the orchestrator kit's `orch who` shows mail and liveness only.
 - Installation: separate hook entries beside herdr's own hook file, never inside it, because herdr rewrites its file on update. Before a basicly release carries the package, it is installed as a uv tool, and a person sees and approves the exact settings diff before it is written.
 
