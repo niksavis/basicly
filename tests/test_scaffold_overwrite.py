@@ -69,6 +69,96 @@ def test_the_ci_workflow_scaffold_honours_the_flag_too(tmp_path: Path) -> None:
 
 
 OLD_PIN = "git+https://github.com/niksavis/basicly@v0.0.1"
+RECORD_HOOK = (
+    '            python3 .basicly/core/hooks/tracker-commit-msg.py "${msg_file}" || failed=1\n'
+)
+OLD_SCAFFOLD = (
+    CONSUMER_CI_WORKFLOW
+    .replace(DIST_SOURCE, OLD_PIN)
+    .replace(" --mode full --ci\n", " --mode full\n")
+    .replace('"${msg_file}" || failed=1\n', '"${msg_file}" || failed=1\n' + RECORD_HOOK, 1)
+)
+
+
+def test_an_upgrade_migrates_the_0_46_3_steps_that_read_records(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(OLD_SCAFFOLD, encoding="utf-8")
+
+    assert cli._scaffold_ci_workflow(tmp_path) is True
+
+    said = capsys.readouterr().out
+    assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW
+    assert (
+        workflow.with_suffix(workflow.suffix + BACKUP).read_text(encoding="utf-8") == OLD_SCAFFOLD
+    )
+    assert (
+        "Migrated .github/workflows/basicly-gates.yml: removed the tracker-commit-msg.py step"
+        in said
+    )
+    assert "Migrated .github/workflows/basicly-gates.yml: added --ci to verify --mode full" in said
+
+
+def test_a_migration_keeps_the_consumer_own_steps_and_a_second_run_changes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(OLD_SCAFFOLD + "\n# my own step\n", encoding="utf-8")
+
+    cli._scaffold_ci_workflow(tmp_path)
+    capsys.readouterr()
+    cli._scaffold_ci_workflow(tmp_path)
+
+    assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW + "\n# my own step\n"
+    assert "left unchanged" in capsys.readouterr().out
+
+
+def test_a_dry_run_migration_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(OLD_SCAFFOLD, encoding="utf-8")
+
+    cli._scaffold_ci_workflow(tmp_path, dry_run=True)
+
+    assert workflow.read_text(encoding="utf-8") == OLD_SCAFFOLD
+    assert "Would migrate" in capsys.readouterr().out
+
+
+def test_install_refuses_a_workflow_that_reads_records_in_a_shape_it_cannot_migrate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    workflow.parent.mkdir(parents=True)
+    odd = OLD_SCAFFOLD.replace(
+        '"${msg_file}" || failed=1\n' + RECORD_HOOK,
+        '"${msg_file}" || failed=1\n' + RECORD_HOOK.replace("|| failed=1", "|| exit 1"),
+    )
+    workflow.write_text(odd, encoding="utf-8")
+
+    assert cli._scaffold_consumer_files(tmp_path, force=False) is False
+
+    err = capsys.readouterr().err
+    assert workflow.read_text(encoding="utf-8") == odd
+    assert not workflow.with_suffix(workflow.suffix + BACKUP).exists()
+    assert ".github/workflows/basicly-gates.yml:" in err
+    assert "runs the record-existence hook" in err
+    assert "fix: remove the line" in err
+
+
+def test_the_overwrite_flag_still_replaces_a_workflow_that_refuses_migration(
+    tmp_path: Path,
+) -> None:
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("        run: uvx basicly tracker ready\n", encoding="utf-8")
+
+    assert cli._scaffold_ci_workflow(tmp_path, force=True) is True
+    assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW
 
 
 def test_an_upgrade_moves_a_stale_pin_without_the_flag(
@@ -173,3 +263,23 @@ def test_upgrade_adds_runtime_setup_without_replacing_consumer_ci_steps(tmp_path
     assert workflow.with_suffix(".yml.basicly-bak").read_text(encoding="utf-8") == original
     cli._scaffold_ci_workflow(tmp_path)
     assert workflow.read_text(encoding="utf-8") == updated
+
+
+def test_install_refuses_before_any_write_when_the_workflow_cannot_be_migrated(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("        run: uvx basicly tracker ready\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    code = cli.main(["install"])
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*")) == [
+        ".github",
+        ".github/workflows",
+        ".github/workflows/basicly-gates.yml",
+    ]
+    assert ".github/workflows/basicly-gates.yml:1: runs a tracker command" in err

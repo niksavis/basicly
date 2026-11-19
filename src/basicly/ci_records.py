@@ -32,6 +32,44 @@ def violations(text: str) -> list[tuple[int, str]]:
     return found
 
 
+OLD_RECORD_HOOK = re.compile(
+    r'^ *python3 \.basicly/core/hooks/tracker-commit-msg\.py "\$\{msg_file\}" \|\| failed=1$'
+)
+OLD_VERIFY = re.compile(r"^(?P<step> *run: .*\sverify --mode full)$")
+FIX = "remove the line, or add --ci to verify --mode full"
+
+
+def migrate(text: str) -> tuple[str, list[str]]:
+    kept = []
+    changes = []
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        ending = line[len(body) :]
+        if OLD_RECORD_HOOK.match(body):
+            changes.append("removed the tracker-commit-msg.py step")
+            continue
+        if found := OLD_VERIFY.match(body):
+            kept.append(f"{found['step']} --ci{ending}")
+            changes.append("added --ci to verify --mode full")
+            continue
+        kept.append(line)
+    return "".join(kept), changes
+
+
+def workflow_files(repo_root: Path) -> list[Path]:
+    folder = repo_root / ".github" / "workflows"
+    return sorted([*folder.glob("*.yml"), *folder.glob("*.yaml")])
+
+
+def workflow_problems(repo_root: Path) -> list[str]:
+    return [
+        f"{path.relative_to(repo_root).as_posix()}:{number}: {reason}; "
+        f"CI never reads tracker records; fix: {FIX}"
+        for path in workflow_files(repo_root)
+        for number, reason in violations(path.read_text(encoding="utf-8"))
+    ]
+
+
 def main(argv: list[str]) -> int:
     paths = [Path(arg) for arg in argv] or sorted(Path(".github/workflows").glob("*.yml"))
     failed = 0

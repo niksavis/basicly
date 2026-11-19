@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shutil
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from basicly import ci_records, scaffolds
+from basicly.cli import cmd_check
 from basicly.scaffolds import CONSUMER_CI_WORKFLOW
 from tests.test_kit_vault_cli_wiring import _environment
 from tests.test_kit_vault_share import bare
@@ -41,6 +43,56 @@ def test_the_records_gate_names_each_line_of_the_0_46_3_scaffold(
     said = capsys.readouterr().out
     assert f"{old}:1: runs the record-existence hook" in said
     assert f"{old}:2: runs verify without --ci" in said
+
+
+def _check(root: Path, monkeypatch: pytest.MonkeyPatch) -> int:
+    (root / "basicly.toml").write_text("", encoding="utf-8")
+    (root / ".basicly").mkdir(exist_ok=True)
+    (root / ".basicly/generated-manifest.json").write_text('{"outputs": {}}', encoding="utf-8")
+    monkeypatch.chdir(root)
+    return cmd_check(argparse.Namespace())
+
+
+def test_basicly_check_names_each_workflow_line_that_reads_records_and_its_fix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = tmp_path / ".github" / "workflows"
+    folder.mkdir(parents=True)
+    (folder / "gates.yml").write_text(
+        '            python3 .basicly/core/hooks/tracker-commit-msg.py "${msg_file}" || failed=1\n',
+        encoding="utf-8",
+    )
+    (folder / "other.yaml").write_text(
+        "        run: uvx basicly verify --mode full\n", encoding="utf-8"
+    )
+
+    code = _check(tmp_path, monkeypatch)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert ".github/workflows/gates.yml:1: runs the record-existence hook" in err
+    assert ".github/workflows/other.yaml:1: runs verify without --ci" in err
+    assert err.count("fix: remove the line, or add --ci to verify --mode full") == 2
+
+
+def test_basicly_check_passes_a_repo_whose_workflows_read_no_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = tmp_path / ".github" / "workflows"
+    folder.mkdir(parents=True)
+    (folder / "gates.yml").write_text(CONSUMER_CI_WORKFLOW, encoding="utf-8")
+
+    code = _check(tmp_path, monkeypatch)
+
+    assert code == 0, capsys.readouterr().err
+
+
+def test_basicly_check_passes_a_repo_with_no_workflows_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = _check(tmp_path, monkeypatch)
+
+    assert code == 0, capsys.readouterr().err
 
 
 def _unreachable(tmp_path: Path, bare: Path) -> Path:
