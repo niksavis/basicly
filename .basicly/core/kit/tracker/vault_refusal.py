@@ -3,6 +3,8 @@ from __future__ import annotations
 import shlex
 from collections.abc import Mapping
 
+REFUSED_FORMS = frozenset({"assign", "resolve", "acknowledge-loss", "delete", "mark-ready"})
+
 
 def _plain(value: object) -> str:
     return " ".join(str(value or "").split())
@@ -49,6 +51,9 @@ def ledger_form(verb: str, record: str, directory: str, text: str = "") -> str:
             ]
             why = "must preserve its history"
         return f"{subject} and {why}; nothing was written, run `{shlex.join(argv)}`"
+    if verb == "mark-ready":
+        argv = ["comment", record, "--text", "ready for delivery"]
+        return f"{subject} and has no vault form yet; nothing was written, run `{shlex.join(argv)}`"
     if verb in {"comment", "claim", "unassign"}:
         argv = [verb, record]
         if verb == "comment":

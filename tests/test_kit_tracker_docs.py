@@ -260,6 +260,9 @@ def test_every_documented_command_runs_on_a_fresh_install(
     if vault and argv[0] == "update":
         claimed = _run(repo, ["claim", first])
         assert claimed.returncode == 0, claimed.stdout + claimed.stderr
+    if argv[0] == "mark-ready":
+        claimed = _run(repo, ["claim", ".basicly/ledger", first])
+        assert claimed.returncode == 0, claimed.stdout + claimed.stderr
     loss = _seed_documented_loss(repo, argv) if argv[0] == "acknowledge-loss" else None
 
     done = _run(repo, argv)

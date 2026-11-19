@@ -33,13 +33,13 @@ CRITERION = "When the fixture check runs, it shall report the saved result."
 TRIGGER = "When a team shares a task, I want to save its progress, so I can complete it."
 WORKS = ("update", "comment", "child", "dep", "undep", "review", "confirm", "close")
 PROTOCOL = ("claim", "unassign")
-REFUSED = ("assign", "resolve", "acknowledge-loss", "delete")
+REFUSED = ("assign", "resolve", "acknowledge-loss", "delete", "mark-ready")
 
 
 def test_every_record_write_form_has_one_vault_contract_class() -> None:
     classified = ("create", *WORKS, *PROTOCOL, *REFUSED)
 
-    assert len(classified) == len(set(classified)) == 15
+    assert len(classified) == len(set(classified)) == 16
     assert set(classified) == {"create", *cli._WRITES}
 
 
@@ -166,6 +166,7 @@ def test_a_retired_or_unsupported_vault_write_names_a_real_remedy_and_writes_not
         "resolve": [],
         "acknowledge-loss": ["--sequence", "1", "--reason", "lost", "--evidence", "proof"],
         "delete": [],
+        "mark-ready": [],
     }
 
     done = _kit(root, verb, LEDGER, record, *extra[verb])
@@ -184,6 +185,8 @@ def test_a_retired_or_unsupported_vault_write_names_a_real_remedy_and_writes_not
         parsed = parser.parse_args([*remedy, "--vault", "vault.git"])
         if verb == "assign":
             assert parsed.command in {"claim-vault", "unassign-vault"}
+        elif verb == "mark-ready":
+            assert parsed.command == "comment-vault"
         else:
             assert parsed.command == "fsck-vault" and parsed.repair
 
