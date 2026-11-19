@@ -1,0 +1,1 @@
+- `orch status` names a session that started before the state hook, from the newest custom title or agent name in its transcript, and uses the full terminal width (at least 40 columns) so the now text is no longer cut to a few characters.

@@ -72,12 +72,12 @@ def _doing(record: dict[str, object], now: datetime) -> str:
     return clean(text)
 
 
-def row(record: dict[str, object], now: datetime, alive: Alive) -> str:
+def row(record: dict[str, object], now: datetime, alive: Alive, columns: int = WIDTH) -> str:
     name = clean(str(record.get("name") or record.get("id") or "?"))
     updated = _when(record.get("updated_at"))
     when = age(now - updated) if updated else "?"
     head = f"{fit(name, NAME)} {fit(state(record, now, alive), STATE)} {when:>{AGE}} "
-    return (head + fit(_doing(record, now), WIDTH - width(head))).rstrip()
+    return (head + fit(_doing(record, now), max(columns, WIDTH) - width(head))).rstrip()
 
 
 def header(asks: list[dict[str, object]], now: datetime) -> list[str]:
@@ -104,6 +104,7 @@ def render(
     asks: list[dict[str, object]],
     now: datetime,
     alive: Alive,
+    columns: int = WIDTH,
 ) -> list[str]:
     ordered = sorted(records, key=lambda r: str(r.get("name") or r.get("id") or ""))
-    return [*header(asks, now), *(row(r, now, alive) for r in ordered)]
+    return [*header(asks, now), *(row(r, now, alive, columns) for r in ordered)]

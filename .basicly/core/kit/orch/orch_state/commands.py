@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 from pathlib import Path
 
 from orch_lessons.log import RefusedError
@@ -99,7 +100,8 @@ def run(
         return set_state(args, cwd, environ, clock)
     if args.group == "status":
         root = base(cwd, environ)
-        lines = status.render(store.sessions(root), store.asks(root), clock(), store.alive)
+        columns = shutil.get_terminal_size((status.WIDTH, 24)).columns
+        lines = status.render(store.sessions(root), store.asks(root), clock(), store.alive, columns)
         return "\n".join(lines) if lines else "no session has written its state yet"
     if args.group == "ask":
         return run_ask(args, base(cwd, environ), clock)

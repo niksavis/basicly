@@ -238,3 +238,61 @@ def test_pid_and_its_start_come_as_a_pair_and_only_on_linux(
     assert ("pid" in record and "pid_start" in record) is kept
     assert ("pid" in record) == ("pid_start" in record)
     assert record["platform"] == platform
+
+
+def transcript(tmp_path: Path, *entries: dict[str, str]) -> Path:
+    path = tmp_path / "t.jsonl"
+    filler = json.dumps({"type": "assistant", "message": "x" * 200})
+    lines = [*(json.dumps(e) for e in entries), *([filler] * 3)]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_a_hook_fills_a_missing_name_from_the_transcript(tmp_path: Path) -> None:
+    base, repo = workspace(tmp_path)
+    path = transcript(
+        tmp_path,
+        {"type": "custom-title", "customTitle": "old", "sessionId": "s"},
+        {"type": "custom-title", "customTitle": "basicly", "sessionId": "s"},
+    )
+    event = {"hook_event_name": "Stop", "session_id": "s", "cwd": str(repo)}
+
+    reporter.run(json.dumps({**event, "transcript_path": str(path)}), {}, lambda: at(0))
+
+    assert store.read(store.session_path(base, "s"))["name"] == "basicly"
+
+
+def test_a_stored_name_is_kept_and_an_agent_name_is_the_fallback(tmp_path: Path) -> None:
+    base, repo = workspace(tmp_path)
+    path = transcript(tmp_path, {"type": "agent-name", "agentName": "repair", "sessionId": "s"})
+    event = {"hook_event_name": "Stop", "session_id": "s", "cwd": str(repo)}
+    payload = json.dumps({**event, "transcript_path": str(path)})
+
+    reporter.run(payload, {}, lambda: at(0))
+    store.save(base, "s", {"name": "kept"}, lambda: at(1))
+    reporter.run(payload, {}, lambda: at(2))
+
+    assert store.read(store.session_path(base, "s"))["name"] == "kept"
+
+
+def test_a_missing_or_unreadable_transcript_leaves_no_name(tmp_path: Path) -> None:
+    base, repo = workspace(tmp_path)
+    event = {"hook_event_name": "Stop", "session_id": "s", "cwd": str(repo)}
+
+    reporter.run(
+        json.dumps({**event, "transcript_path": str(tmp_path / "none")}), {}, lambda: at(0)
+    )
+
+    assert "name" not in store.read(store.session_path(base, "s"))
+
+
+def test_a_wide_terminal_shows_more_of_now_and_a_narrow_one_keeps_forty(tmp_path: Path) -> None:
+    base, _repo = workspace(tmp_path)
+    stamp = at(0).isoformat()
+    record = saved(base, "s1", 0, name="dev", state="working", now="x" * 90, now_at=stamp)
+
+    wide = status.row(record, at(1), never_dead, 100)
+    narrow = status.row(record, at(1), never_dead, 20)
+
+    assert status.width(wide) == 100
+    assert status.width(narrow) == status.WIDTH

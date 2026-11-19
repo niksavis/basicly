@@ -24,6 +24,32 @@ EVENT_STATES = {
     "Stop": "idle",
 }
 ASKING = frozenset({"permission_prompt", "elicitation_dialog"})
+TAIL_BYTES = 262_144
+NAME_ENTRIES = (("custom-title", "customTitle"), ("agent-name", "agentName"))
+
+
+def transcript_name(path: object) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        with Path(path).open("rb") as handle:
+            size = handle.seek(0, 2)
+            handle.seek(max(0, size - TAIL_BYTES))
+            text = handle.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    for line in reversed(text.splitlines()):
+        for kind, key in NAME_ENTRIES:
+            if f'"{kind}"' not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            value = entry.get(key) if isinstance(entry, dict) else None
+            if entry.get("type") == kind and isinstance(value, str) and value.strip():
+                return store.clean(value, 40)
+    return None
 
 
 @dataclass(frozen=True)
@@ -98,6 +124,8 @@ def write_state(event: dict[str, object], environ: dict[str, str], clock: store.
     title = event.get("session_title")
     if isinstance(title, str) and title.strip():
         changes["name"] = store.clean(title, 40)
+    elif not store.read(store.session_path(root, session)).get("name"):
+        changes["name"] = transcript_name(event.get("transcript_path"))
     store.save(root, session, changes, clock)
 
 
