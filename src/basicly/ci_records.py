@@ -11,7 +11,6 @@ READERS = (
     (re.compile(r"tracker-commit-msg\.py"), "runs the record-existence hook"),
     (re.compile(r"kit/tracker/cli\.py"), "runs the tracker kit"),
     (re.compile(r"\bbasicly(?:\.cli)?\s+tracker\b"), "runs a tracker command"),
-    (re.compile(r"hooks/pre-push\.py"), "runs the local full checks without --ci"),
     (re.compile(r"\bverify\b(?!.*\s--ci\b).*\s--mode\b"), "runs verify without --ci"),
 )
 
@@ -23,12 +22,32 @@ def guard_value(repo_root: Path) -> str:
     return os.pathsep.join(roots)
 
 
-def violations(text: str) -> list[tuple[int, str]]:
+HOOK_SCRIPT = re.compile(r"(?P<script>[\w./-]*hooks/pre-push\.py)")
+FULL_RUN = (
+    re.compile(r"\bverify\b(?!.*--ci\b).*--mode\s+full"),
+    re.compile(r"\brun_checks\([^)]*[\"']full[\"']"),
+)
+
+
+def runs_full_checks(script: Path) -> bool:
+    try:
+        text = script.read_text(encoding="utf-8")
+    except OSError:
+        return True
+    return any(pattern.search(text) for pattern in FULL_RUN)
+
+
+def violations(text: str, root: Path | None = None) -> list[tuple[int, str]]:
+    base = root or Path.cwd()
     found = []
     for number, line in enumerate(text.splitlines(), start=1):
-        for pattern, reason in READERS:
-            if pattern.search(line):
-                found.append((number, reason))
+        found.extend((number, reason) for pattern, reason in READERS if pattern.search(line))
+        hook = HOOK_SCRIPT.search(line)
+        if hook and runs_full_checks(base / hook["script"]):
+            found.append((
+                number,
+                f"runs {hook['script']}, which runs the local full checks without --ci",
+            ))
     return found
 
 
@@ -66,7 +85,7 @@ def workflow_problems(repo_root: Path) -> list[str]:
         f"{path.relative_to(repo_root).as_posix()}:{number}: {reason}; "
         f"CI never reads tracker records; fix: {FIX}"
         for path in workflow_files(repo_root)
-        for number, reason in violations(path.read_text(encoding="utf-8"))
+        for number, reason in violations(path.read_text(encoding="utf-8"), repo_root)
     ]
 
 

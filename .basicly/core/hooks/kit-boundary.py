@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import ast
 import re
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -257,10 +258,27 @@ def module_findings(module: Path, rel: str, place: tuple[str, ...] = ()) -> list
     return findings
 
 
-def scan(kit_root: Path, repo_root: Path | None = None) -> list[Finding]:
+def committed_modules(repo_root: Path, kit_root: Path) -> set[Path] | None:
+    try:
+        listed = subprocess.run(  # nosec B603 B607
+            ["git", "ls-files", "-z", "--", str(kit_root)],
+            cwd=repo_root,
+            capture_output=True,
+            check=True,
+        ).stdout
+    except OSError, subprocess.CalledProcessError:
+        return None
+    return {(repo_root / name.decode()).resolve() for name in listed.split(b"\0") if name}
+
+
+def scan(
+    kit_root: Path, repo_root: Path | None = None, only: set[Path] | None = None
+) -> list[Finding]:
     base = repo_root or kit_root
     findings: list[Finding] = []
     for module in kit_modules(kit_root):
+        if only is not None and module.resolve() not in only:
+            continue
         try:
             rel = module.relative_to(base).as_posix()
         except ValueError:
@@ -285,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"kit-boundary: no kit tree at {kit_root}; nothing to gate.")
         return 0
 
-    findings = scan(kit_root, repo_root)
+    findings = scan(kit_root, repo_root, committed_modules(repo_root, kit_root))
     if not findings:
         return 0
 

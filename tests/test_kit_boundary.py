@@ -4,6 +4,7 @@ import importlib.util
 import os
 import shutil
 import subprocess
+import sys
 import sysconfig
 import tomllib
 from pathlib import Path
@@ -216,6 +217,52 @@ def test_main_fails_and_names_the_module_and_rule(
 def test_main_passes_on_the_repos_own_kit(capsys: pytest.CaptureFixture[str]) -> None:
     assert gate.main(["--kit-root", str(KIT_ROOT)]) == 0
     assert capsys.readouterr().err == ""
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+
+def _consumer(tmp_path: Path) -> Path:
+    repo = tmp_path / "consumer"
+    shutil.copytree(
+        KIT_ROOT, repo / ".basicly" / "core" / "kit", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "x")
+    return repo
+
+
+def _run_in(repo: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT)], cwd=repo, capture_output=True, text=True, check=False
+    )
+
+
+def test_main_judges_only_kit_files_in_the_commit_index(tmp_path: Path) -> None:
+    repo = _consumer(tmp_path)
+    leaky = _seed(repo / ".basicly" / "core" / "kit" / "tracker", "later.py", "import basicly\n")
+
+    assert _run_in(repo).returncode == 0
+    _git(repo, "add", str(leaky))
+    refused = _run_in(repo)
+    assert refused.returncode == 1
+    assert "later.py:1: imports-basicly" in refused.stderr
+
+
+def test_a_consumer_with_the_installed_kit_commits_a_tracker_line_during_an_unstaged_update(
+    tmp_path: Path,
+) -> None:
+    repo = _consumer(tmp_path)
+    assert _run_in(repo).returncode == 0
+    _seed(
+        repo / ".basicly" / "core" / "kit" / "tracker", "newer.py", 'LEDGER = "src/basicly/x.py"\n'
+    )
+    ledger = _seed(repo / ".basicly" / "ledger", "pending-main.jsonl", "{}\n")
+    _git(repo, "add", str(ledger))
+
+    assert _run_in(repo).returncode == 0
 
 
 def test_main_passes_when_a_consumer_has_no_kit(
