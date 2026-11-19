@@ -2,12 +2,13 @@
   "version": "1",
   "outputs": {
     ".claude/CLAUDE.md": {
-      "hash": "sha256:903ec38635837beefe8cafed4f28c9eafa0779e7c01295c3112876d5fc7923dd",
+      "hash": "sha256:6de3b1e947419d8ac32c55c190baf3cf769d74ed525e29048454df7dffb4001f",
       "source_fragments": [
         "code-is-authoritative",
         "secure-coding",
         "require-explicit-confirmation",
         "project-overview",
+        "agentic-kanban",
         "commands",
         "knowledge-priming",
         "harness-loop",
@@ -33,12 +34,13 @@
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:66aa7b81152a8bad6d6939cd36e7b8afcb2180c746ff6a60cf560cf32d39ba0e",
+      "hash": "sha256:d9c91f3db6aab65064f2622f400ba1422b95815ba43140eb20477b05f3070113",
       "source_fragments": [
         "code-is-authoritative",
         "secure-coding",
         "require-explicit-confirmation",
         "project-overview",
+        "agentic-kanban",
         "commands",
         "knowledge-priming",
         "harness-loop",
@@ -59,12 +61,13 @@
       ]
     },
     ".github/copilot-instructions.md": {
-      "hash": "sha256:903ec38635837beefe8cafed4f28c9eafa0779e7c01295c3112876d5fc7923dd",
+      "hash": "sha256:6de3b1e947419d8ac32c55c190baf3cf769d74ed525e29048454df7dffb4001f",
       "source_fragments": [
         "code-is-authoritative",
         "secure-coding",
         "require-explicit-confirmation",
         "project-overview",
+        "agentic-kanban",
         "commands",
         "knowledge-priming",
         "harness-loop",
