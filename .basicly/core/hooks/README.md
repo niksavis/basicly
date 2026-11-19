@@ -51,6 +51,7 @@ module docstring, and gated by `.scripts/docs_claims.py`.
 | `internal-info-scan` | `pre-commit` | `git` | [`internal-info-scan.py`](internal-info-scan.py) | Block a commit that stages an internal-only identifier (basicly-0n3d). |
 | `no-comments` | `pre-commit` | `git` | [`no-comments.py`](no-comments.py) | Enforce the selected comment policy; strict no-comments is the default. |
 | `kit-boundary` | `pre-commit` | `git` | [`kit-boundary.py`](kit-boundary.py) | Fail when a kit module reaches back into basicly (basicly-vkh0.16). |
+| `git-env-check` | `pre-commit` | `git` | [`git-env-check.py`](git-env-check.py) | Refuse an added test line that runs git with the inherited GIT_ variables (basicly-qpr2xmr.3.26). |
 | `commit-msg-script` | `commit-msg` | `git` | [`commit-msg.py`](commit-msg.py) | Validate conventional commit message format. |
 | `tracker-commit-msg-script` | `commit-msg` | `git` | [`tracker-commit-msg.py`](tracker-commit-msg.py) | Validate that a commit message references an issue id the tracker holds. |
 | `tracker-claim-script` | `commit-msg` | `git` | [`tracker-claim.py`](tracker-claim.py) | Refuse a commit that changes files outside the ledger unless the committer holds a named record in progress. |
