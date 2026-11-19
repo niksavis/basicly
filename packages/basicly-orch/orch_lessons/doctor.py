@@ -87,8 +87,9 @@ def lesson_lines(cwd: Path, environ: dict[str, str]) -> tuple[list[str], bool]:
 
 def run(cwd: Path, environ: dict[str, str]) -> Report:
     refused = orch_allow_lines(settings_files(log.repo_root(cwd), environ))
+    unchecked = [] if environ.get("HOME") else ["user settings: not checked, HOME is not set"]
     lessons, stale = lesson_lines(cwd, environ)
-    lines = [*refused, wake_adapter_line(environ), *lessons]
+    lines = [*refused, *unchecked, wake_adapter_line(environ), *lessons]
     failed = bool(refused) or stale
     lines.append(f"doctor: {'FAILED' if failed else 'OK'}")
     return Report(lines, failed)

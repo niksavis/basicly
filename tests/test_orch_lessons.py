@@ -200,7 +200,8 @@ def test_doctor_names_the_file_and_rule_and_reports_no_wake_adapter(tmp_path: Pa
     )
     home = tmp_path / "home"
     home.mkdir()
-    report = doctor.run(tmp_path, {"HOME": str(home), "PATH": str(home)})
+    environ = {"HOME": str(home), "PATH": str(home), "ORCH_LESSONS_ROOT": str(home)}
+    report = doctor.run(tmp_path, environ)
     assert report.failed
     assert report.lines[0] == (
         f"{settings}: allow rule 'Bash(orch:*)' lets a worker run orch; "
@@ -208,3 +209,8 @@ def test_doctor_names_the_file_and_rule_and_reports_no_wake_adapter(tmp_path: Pa
     )
     assert report.lines[1].startswith("wake adapter: none")
     assert report.lines[2].startswith("lessons: not checked")
+
+
+def test_doctor_reports_herdr_as_the_wake_adapter_inside_a_herdr_pane() -> None:
+    environ = {"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p2", "HERDR_BIN_PATH": sys.executable}
+    assert doctor.wake_adapter_line(environ) == "wake adapter: herdr (pane w1:p2)"

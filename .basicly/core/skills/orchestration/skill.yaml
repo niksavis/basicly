@@ -37,7 +37,7 @@ instructions: |
 
   1. Quote the person's words and the UTC time from a clock call.
   2. Name the tracker record and the exact action and target repository.
-  3. Never relay an answer to a permission prompt, a gate bypass, an irreversible destruction or a rule change as your own decision. Those stay with the person in the project session's own window.
+  3. No approval and no decision covers a permission prompt or a classifier refusal, a gate or hook bypass, an irreversible destruction or a rule change. Those stay with the person in the project session's own window.
 
   ## A rehearsal order
 
