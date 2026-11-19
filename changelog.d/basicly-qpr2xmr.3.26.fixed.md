@@ -1,0 +1,1 @@
+- **A hook job can no longer rewrite the repository git config.** Hook jobs run without `GIT_DIR` and `GIT_WORK_TREE` (pre-push also without `GIT_INDEX_FILE`), and a hook run that changes `core.worktree` or `core.bare` is refused with the repair command. A job that read these variables must find the repository from its folder (basicly-qpr2xmr.3.26).
