@@ -129,6 +129,7 @@ def test_a_dirty_tree_or_no_consumer_list_refuses_by_name(tmp_path: Path) -> Non
     [
         ('name = "../x"\nci = []', "plain name"),
         ('name = "app"\nci = ["true"]', "list of argv lists"),
+        ('name = "app"\nci = []\npath = "../up"', "path must be relative"),
     ],
 )
 def test_a_wrong_consumer_entry_is_refused_by_name(
@@ -147,3 +148,15 @@ def test_this_repository_names_development_handily_and_terminal() -> None:
     names = [c.name for c in consumer_proof.consumers(root)]
 
     assert names == ["development", "handily", "terminal"]
+
+
+def test_a_consumer_path_names_a_folder_under_the_root(tmp_path: Path) -> None:
+    repo = init(tmp_path / "tool")
+    (repo / "basicly.toml").write_text(
+        '[[release.consumers]]\nname = "ws"\npath = "."\nci = []\n', encoding="utf-8"
+    )
+
+    listed = consumer_proof.consumers(repo)
+
+    assert consumer_proof.source(repo, listed[0], {}) == tmp_path
+    assert consumer_proof.source(repo, listed[0], {"BASICLY_CONSUMERS_ROOT": "/w"}) == Path("/w")

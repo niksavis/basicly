@@ -31,6 +31,7 @@ Records = Callable[[Path, dict[str, str], str], list[dict[str, object]]]
 class Consumer:
     name: str
     ci: tuple[tuple[str, ...], ...]
+    path: str = ""
 
 
 class ProofError(Exception):
@@ -55,7 +56,13 @@ def consumers(repo_root: Path) -> list[Consumer]:
             raise ProofError(
                 f"{CONFIG_FILE} [[release.consumers]] {name}: ci must be a list of argv lists"
             )
-        found.append(Consumer(name, tuple(tuple(c) for c in ci)))
+        path = entry.get("path", "")
+        if not isinstance(path, str) or Path(path).is_absolute() or ".." in Path(path).parts:
+            raise ProofError(
+                f"{CONFIG_FILE} [[release.consumers]] {name}: "
+                "path must be relative, inside the root"
+            )
+        found.append(Consumer(name, tuple(tuple(c) for c in ci), path))
     return found
 
 
@@ -73,7 +80,7 @@ def result_path(repo_root: Path, commit: str) -> Path:
 
 def source(repo_root: Path, consumer: Consumer, environ: dict[str, str]) -> Path:
     root = Path(environ[ROOT_ENV]) if environ.get(ROOT_ENV) else repo_root.parent
-    return root / consumer.name
+    return (root / consumer.path) if consumer.path else root / consumer.name
 
 
 def execute(argv: list[str], cwd: Path, env: dict[str, str]) -> int:
