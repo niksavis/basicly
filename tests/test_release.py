@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -9,6 +10,7 @@ import pytest
 
 from basicly import commit as commit_mod
 from basicly import (
+    consumer_proof,
     owned_store,
     release,
     release_history,
@@ -298,6 +300,63 @@ def test_a_cut_without_a_consumer_proof_of_head_is_refused(repo: Path) -> None:
 
     head = _git(repo, "rev-parse", "HEAD")[:12]
     assert any(r == f"no consumer proof for {head}; run: basicly consumer-proof" for r in reasons)
+
+
+def _consumers_and_proof(repo: Path) -> str:
+    config = repo / "basicly.toml"
+    before = config.read_text(encoding="utf-8") if config.exists() else ""
+    config.write_text(before + '\n[[release.consumers]]\nname = "app"\nci = []\n', encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "chore: name a consumer")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    proof = consumer_proof.result_path(repo, head)
+    proof.parent.mkdir(exist_ok=True)
+    result = {"v": consumer_proof.FORMAT, "commit": head, "passed": True, "consumers": []}
+    proof.write_text(json.dumps(result), encoding="utf-8")
+    return head
+
+
+@pytest.mark.usefixtures("no_regen")
+def test_the_release_commit_sits_on_the_proved_commit_and_changes_only_release_files(
+    repo: Path,
+) -> None:
+    proved = _consumers_and_proof(repo)
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert not result.refused and result.tagged
+    assert _git(repo, "rev-parse", "HEAD~1").strip() == proved
+    assert _git(repo, "log", "--format=%s", "-1").strip() == release.COMMIT_SUBJECT
+    assert _git(repo, "rev-list", "--count", f"{proved}..HEAD").strip() == "1"
+    changed = _git(repo, "diff", "--name-only", proved, "HEAD").split()
+    release_files = {
+        release.VERSION_FILE.as_posix(),
+        release.KIT_VERSION_FILE.as_posix(),
+        release.CHANGELOG_FILE.as_posix(),
+        *(site.path.as_posix() for site in plan.pins),
+    }
+    assert changed
+    assert [
+        path
+        for path in changed
+        if path not in release_files and not path.startswith(f"{release.FRAGMENT_DIR.as_posix()}/")
+    ] == []
+
+
+@pytest.mark.usefixtures("no_regen")
+def test_a_commit_after_the_proof_refuses_the_cut(repo: Path) -> None:
+    _consumers_and_proof(repo)
+    (repo / "later.txt").write_text("x\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "fix: a change after the proof")
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    head = _git(repo, "rev-parse", "HEAD").strip()[:12]
+    assert result.refused and not result.tagged
+    assert f"no consumer proof for {head}; run: basicly consumer-proof" in result.refusals
 
 
 def test_every_refusal_is_reported_from_one_run(repo: Path) -> None:
