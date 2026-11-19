@@ -634,6 +634,7 @@ local_only = true
 name = "release-notes"
 command = ["uv", "run", "python", ".scripts/check_release_notes.py"]
 modes = ["fast", "full"]
+local_only = true
 
 # A lane's recorded spend forecast against its actual, per bead, over the committed markers
 # and the local run records (basicly-helmej). The live test that used to carry this moved
@@ -643,6 +644,7 @@ modes = ["fast", "full"]
 name = "spend-accuracy"
 command = ["uv", "run", "python", ".scripts/check_spend_accuracy.py"]
 modes = ["fast", "full"]
+local_only = true
 inputs = [
   "src/basicly/decompose.py",
   "src/basicly/run_record.py",

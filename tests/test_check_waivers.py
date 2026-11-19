@@ -141,6 +141,7 @@ def test_the_census_reads_the_marker_of_every_gate_that_grants_a_waiver() -> Non
     assert dict(gate.GRANTING_GATES) == {module_size.LABEL: module_size.WAIVER_MARKER}
 
 
+@pytest.mark.live_ledger
 def test_every_waiver_in_this_tree_states_its_kind_and_none_has_expired() -> None:
     completed = subprocess.run(
         [sys.executable, str(SCRIPTS / "check_waivers.py")],

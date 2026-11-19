@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from basicly import __version__
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -29,6 +31,7 @@ def _probe(*arguments: str) -> tuple[str, dict]:
     return completed.stdout, json.loads(completed.stderr.strip().splitlines()[-1])
 
 
+@pytest.mark.live_ledger
 def test_a_tracker_read_loads_no_harness_module() -> None:
     out, seen = _probe("tracker", "list", "--status", "closed", "--limit", "1")
     assert seen["code"] == 0

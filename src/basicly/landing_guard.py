@@ -183,7 +183,7 @@ def record_verification(
 
 
 def before_verification(root: Path, mode: str, config: VerifyConfig) -> str:
-    in_ci = owned_store.records_guard(os.environ) == root.resolve()
+    in_ci = root.resolve() in owned_store.records_guard(os.environ)
     if mode != "full" or in_ci or not blocker(root, "", allow_owner=False):
         return ""
     try:

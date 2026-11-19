@@ -5,13 +5,12 @@ import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import pytest
 
 from basicly import supervise, wip
 from basicly.read_cost import SCOPE_FILE_READ_CAP
-
-if TYPE_CHECKING:
-    import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "improvement_controller.py"
@@ -236,6 +235,7 @@ def test_a_run_reports_the_candidates_it_dropped(
     assert "dropped:   1 candidate(s)" in capsys.readouterr().out
 
 
+@pytest.mark.live_ledger
 def test_the_controller_runs_against_the_real_tree() -> None:
 
     proc = subprocess.run(

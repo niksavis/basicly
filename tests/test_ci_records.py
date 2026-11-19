@@ -142,3 +142,15 @@ def test_ci_verify_fails_a_check_that_reads_records_and_names_a_local_only_one(
     assert "FAIL: reads-records" in said
     assert "CI never reads tracker records" in log
     assert "landing-only: local only" in said
+
+
+def test_the_ci_guard_covers_the_ledger_a_worktree_redirects_to(tmp_path: Path) -> None:
+    main = tmp_path / "main"
+    lane = tmp_path / "lane"
+    (main / ".basicly/ledger").mkdir(parents=True)
+    (lane / ".basicly/ledger").mkdir(parents=True)
+    (lane / ".basicly/ledger/redirect").write_text(f"{main}\n", encoding="utf-8")
+
+    roots = ci_records.guard_value(lane).split(os.pathsep)
+
+    assert roots == [str(lane.resolve()), str(main.resolve())]

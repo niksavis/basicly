@@ -7,13 +7,11 @@ import sys
 import tomllib
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING
+
+import pytest
 
 from basicly import plan_record
 from tests import flipped_tracker
-
-if TYPE_CHECKING:
-    import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "check_declared_dependencies.py"
@@ -171,6 +169,7 @@ def test_a_repository_with_no_ledger_fails(
     assert "no open record was read at all" in capsys.readouterr().err
 
 
+@pytest.mark.live_ledger
 def test_the_gate_runs_over_this_repository() -> None:
     completed = subprocess.run(  # nosec B603
         [sys.executable, str(SCRIPT)], capture_output=True, text=True, check=False

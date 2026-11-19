@@ -30,7 +30,7 @@ class LockUnavailableError(LedgerError):
     retryable = True
 
 
-class RecordsInCIError(LedgerError, ValueError):
+class RecordsInCIError(LedgerError):
     pass
 
 
@@ -63,14 +63,14 @@ _GUARD_SOURCE = (
 )
 
 
-def records_guard_root() -> Path | None:
+def records_guard_roots() -> tuple[Path, ...]:
     named = "" if _GUARD_SOURCE is None else _GUARD_SOURCE.environment_value(RECORDS_GUARD)
-    return Path(named).resolve() if named else None
+    return tuple(Path(part).resolve() for part in named.split(os.pathsep) if part)
 
 
 def refuse_records_in_ci(path: Path | str) -> None:
-    root = records_guard_root()
-    if root is not None and Path(path).resolve().is_relative_to(root / ".basicly"):
+    target = Path(path).resolve()
+    if any(target.is_relative_to(root / ".basicly") for root in records_guard_roots()):
         raise RecordsInCIError(
             "CI never reads tracker records; run this check in the local landing verify"
         )
