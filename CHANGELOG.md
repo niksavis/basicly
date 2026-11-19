@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch lets a repository with a frozen ledger push again, which the vault cutover needs (basicly-gaimph4). Install writes the S603 noqa into `.basicly/tracker-bootstrap.py` only when the repository's ruff selects S603, so a consumer without the S rules commits cleanly (basicly-lstc5qz).
+
+- Vault cutover: the pre-push hook reads the frozen marker before it looks for a ledger lock (basicly-gaimph4).
+- Consumers: `basicly check` names a bootstrap whose noqa no longer matches the ruff selection (basicly-lstc5qz).
+
 ## v0.46.5 - 2026-11-19
 
 Delta: v0.46.4..v0.46.5
