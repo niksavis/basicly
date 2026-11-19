@@ -128,7 +128,7 @@ uv run basicly permissions-check
 
 ### Model Tier Routing
 
-- Before specialist dispatch, use `tier-injection` to name a tier, never a model id. `maximum` (Fable) is never a worker: it advises or orchestrates.
+- Before specialist dispatch, use `tier-injection` to name a tier, and pass its alias as `model` on the Agent call, never a model id. `maximum` (Fable) is never a worker: it advises or orchestrates.
 
 ### Catalog Authoring
 

@@ -13,9 +13,9 @@ from tests.test_kit_claude_hook import (
     HOOK,
     _consumer_repo,
     _definition,
+    _named_model,
     _payload,
     _run_hook,
-    _updated_input,
     kit,
 )
 
@@ -47,6 +47,12 @@ def _untiered_spawn(cwd: Path, **tool_input: object) -> dict:
             None,
         ),
         ({"subagent_type": "Explore"}, {DEFAULT_TIER_ENV: "medium"}, None, None),
+        (
+            {},
+            {DEFAULT_TIER_ENV: "medium", "CLAUDE_CODE_SUBAGENT_MODEL": WORKER_ALIAS},
+            None,
+            None,
+        ),
     ],
     ids=[
         "default-applied-to-general-purpose",
@@ -57,6 +63,7 @@ def _untiered_spawn(cwd: Path, **tool_input: object) -> dict:
         "maximum-warns-and-changes-nothing",
         "default-applied-with-subagent-model-variable-set",
         "another-agent-type-left-alone",
+        "no_rewrite-and-no-deny-when-the-subagent-model-variable-names-the-default",
     ],
 )
 def test_the_default_tier_reaches_only_an_untiered_general_spawn(
@@ -74,7 +81,7 @@ def test_the_default_tier_reaches_only_an_untiered_general_spawn(
 
     assert result.returncode == 0, result.stderr
     if expected_model is not None:
-        assert _updated_input(result)["model"] == expected_model
+        assert _named_model(result) == expected_model
     elif warned_value is not None:
         output = json.loads(result.stdout)
         assert set(output) == {"systemMessage"}
@@ -151,7 +158,7 @@ def test_an_invalid_default_never_cancels_a_tier_the_definition_declares(tmp_pat
     )
 
     assert result.returncode == 0, result.stderr
-    assert _updated_input(result)["model"] == kit.HOST_MODEL_ALIASES["claude"]["high"]
+    assert _named_model(result) == kit.HOST_MODEL_ALIASES["claude"]["high"]
 
 
 def test_an_invalid_default_is_silent_where_the_hook_has_no_map(tmp_path: Path) -> None:

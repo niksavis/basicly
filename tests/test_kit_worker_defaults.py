@@ -142,6 +142,7 @@ def test_a_copied_consumer_kit_keeps_cli_and_hook_defaults_consistent(
         assert resolved["reason"] == output["systemMessage"]
     else:
         assert cli.returncode == 0, cli.stderr
-        assert (
-            resolved["alias"] == output["hookSpecificOutput"]["updatedInput"]["model"] == "sonnet"
-        )
+        decision = output["hookSpecificOutput"]
+        assert resolved["alias"] == "sonnet"
+        assert "updatedInput" not in decision
+        assert 'model: "sonnet"' in decision["permissionDecisionReason"]
