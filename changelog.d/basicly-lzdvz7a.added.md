@@ -1,0 +1,1 @@
+- `basicly worktree merge --mode ci` proves a lane on GitHub runners instead of a local full verify: it runs only the checks that read tracker records locally, pushes the rebased lane to a `land/` branch, waits for a first-attempt green `quality-gates` run, merges, pushes the base and deletes the branch; main's push run then reuses that run.
