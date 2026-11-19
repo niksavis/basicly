@@ -140,7 +140,7 @@ basicly catalog lint
 
 ```text
 ...
-catalog lint: routing: rank-1 rate 96/102 = 94.1% (no floor declared)
+catalog lint: routing: rank-1 rate 99/105 = 94.3% (no floor declared)
 catalog lint: OK
 ```
 
