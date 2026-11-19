@@ -230,11 +230,20 @@ def _exit_kind(code: int, text: str, command: str) -> str:
     return f"exit|{last}|{code}"
 
 
+def _hook_reason(text: str) -> str:
+    reasons = (
+        ("conventional-format", "does not follow conventional commit format"),
+        ("tracker-claim", "tracker-claim:"),
+        ("issue-id", "Issue id reference is not valid"),
+    )
+    return next((name for name, marker in reasons if marker in text), "other")
+
+
 def _structured_exit(code: int, text: str, names: list[str]) -> str | None:
-    jobs = _HOOK_JOB.findall(text)
-    hook = _HOOK_NAME.search(text)
-    if jobs and hook:
-        return f"git-hook|{hook[1]}|{','.join(sorted(set(jobs)))}"
+    failed = _HOOK_JOB.search(text)
+    hooks = list(_HOOK_NAME.finditer(text, 0, failed.start())) if failed else []
+    if failed and hooks:
+        return f"git-hook|{hooks[-1][1]}|{failed[1]}|{_hook_reason(text)}"
     last = names[-1] if names else ""
     if code in {1, 128} and last in _PROBES:
         return f"probe|{last}"

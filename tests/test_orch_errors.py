@@ -86,7 +86,9 @@ def _commit(key: str, stamp: str, uuid: str, path: str) -> list[dict[str, Any]]:
         _use(key, "Bash", {"command": f"git -C {path} commit -F msg.txt"}, stamp, uuid + "u"),
         _result(
             key,
-            f"Exit code 1\nhook:  commit-msg\nsummary:\n🥊 conventional ({path})\n",
+            "Exit code 1\nhook:  pre-commit\nsummary:\n✔️ checks (1.0 seconds)\n"
+            "hook:  commit-msg\nERROR: Commit message does not follow conventional commit format.\n"
+            f"summary:\n🥊 conventional ({path})\n",
             stamp,
             uuid,
         ),
@@ -157,7 +159,7 @@ def test_join_attaches_the_input_and_folds_a_script_throw_into_its_inner_call(
     assert summary["errors"] == 1
     assert summary["script_throws"] == 1
     row = summary["projects"]["tools"]["classes"][0]
-    assert row["class"] == "Bash|git-hook|commit-msg|conventional"
+    assert row["class"] == "Bash|git-hook|commit-msg|conventional|conventional-format"
     assert row["sample"]["input"] == "git -C lane commit -F msg.txt"
     assert row["sample"]["script_error"] == ["Error: commit refused"]
 
@@ -254,7 +256,7 @@ def test_classes_stay_stable_when_errors_differ_only_in_a_path_or_number(
     _write(tmp_path, "-work-space-tools", "s1.jsonl", rows)
     summary = _run(tmp_path, capsys)
     assert _classes(summary, "tools") == {
-        "Bash|git-hook|commit-msg|conventional": 2,
+        "Bash|git-hook|commit-msg|conventional|conventional-format": 2,
         "Bash|probe|git rev-parse": 2,
         "Bash|probe|git merge-base": 2,
         "REPL|script-throw": 2,
