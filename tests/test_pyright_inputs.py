@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 
@@ -144,7 +145,9 @@ def runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     site = tmp_path / "site"
     (site / "pyright/dist").mkdir(parents=True)
     (site / "pyright/__init__.py").write_text("", encoding="utf-8")
-    (site / "pyright/dist/package.json").write_text('{"version":"1.1.411"}', encoding="utf-8")
+    (site / "pyright/dist/package.json").write_text(
+        json.dumps({"version": pyright_inputs.PYRIGHT_VERSION}), encoding="utf-8"
+    )
     stdlib = tmp_path / "stdlib"
     stdlib.mkdir()
     (stdlib / "typing.py").write_text("value = 1\n", encoding="utf-8")
@@ -246,3 +249,14 @@ def test_controlled_checks_preserve_the_prepared_environment(tmp_path: Path) -> 
     selected = pyright_inputs.execution_environment(tmp_path, source)
     assert selected["PYTHONPYCACHEPREFIX"] == "positive-control"
     assert selected.get("UV_NO_SYNC") == "1"
+
+
+def test_the_reviewed_pyright_version_is_the_locked_one() -> None:
+    lock = tomllib.loads(
+        (Path(__file__).resolve().parent.parent / "uv.lock").read_text(encoding="utf-8")
+    )
+    (locked,) = (entry["version"] for entry in lock["package"] if entry["name"] == "pyright")
+    assert locked == pyright_inputs.PYRIGHT_VERSION, (
+        f"uv.lock pins pyright {locked}; review the input recipe in "
+        "src/basicly/pyright_inputs.py and set PYRIGHT_VERSION to it"
+    )
