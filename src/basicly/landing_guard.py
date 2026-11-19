@@ -15,6 +15,8 @@ from .config import VerifyConfig, load_verify_config
 from .verify_artifact import CheckResult, VerifyReport, write_run_artifact
 from .verify_receipt import changed_components, components
 
+CI_MODE = "ci"
+
 
 class LandingSession(Protocol):
     @property
@@ -50,7 +52,12 @@ def _head(root: Path, ref: str) -> str:
 
 def _inputs(workspace: Path, mode: str, candidate: str, config: VerifyConfig | None = None) -> str:
     config = config or load_verify_config(workspace)
-    commands = [check.command[0] for check in config.for_mode(mode)]
+    checks = (
+        [check for check in config.checks if check.local_only]
+        if mode == CI_MODE
+        else config.for_mode(mode)
+    )
+    commands = [check.command[0] for check in checks]
     configuration = json.loads(json.dumps(asdict(config), default=sorted))
     return pytest_inputs.landing_fingerprint(workspace, commands, candidate, configuration)
 
@@ -341,7 +348,7 @@ def _read_subject(path: Path) -> LandingSubject:
             raise ValueError("Malformed landing subject identity")
     raw["components"] = tuple(tuple(row) for row in raw.get("components", ()))
     subject = LandingSubject(**raw)
-    if subject.mode not in {"full", "fast", "staged"}:
+    if subject.mode not in {"full", "fast", "staged", CI_MODE}:
         raise ValueError("Unknown landing verification mode")
     if not Path(subject.workspace).is_absolute() or not isinstance(subject.record, str):
         raise ValueError("Malformed landing subject workspace or record")

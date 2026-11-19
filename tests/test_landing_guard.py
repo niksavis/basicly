@@ -7,7 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -286,3 +286,41 @@ def test_self_hosted_engine_update_uses_a_stable_candidate_engine(
         assert result.returncode != 0
         assert "rerun from the candidate worktree" in result.stderr
         assert not _git_here(repo, "status", "--porcelain")
+
+
+def test_a_ci_subject_publishes_through_the_real_hook(tmp_path: Path) -> None:
+    repo = _seed_repo(tmp_path)
+    session = _lane_worktree(tmp_path, repo)
+    _add_source(session.path, "b")
+    subject = landing_guard.capture(repo, session, landing_guard.CI_MODE)
+
+    result = landing_guard.guarded_merge(
+        repo, subject, ["merge", "--no-ff", subject.candidate, "-m", "ci landing"]
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _git_here(repo, "show", "-s", "--format=%P%n%T", "HEAD").splitlines() == [
+        f"{subject.destination} {subject.candidate}",
+        subject.tree,
+    ]
+
+
+@pytest.mark.parametrize(("mode", "refused"), [("ci", True), ("bogus", False)])
+def test_the_hook_refuses_an_unknown_mode_and_a_changed_ci_candidate(
+    tmp_path: Path, mode: str, refused: bool
+) -> None:
+    repo = _seed_repo(tmp_path)
+    session = _lane_worktree(tmp_path, repo)
+    _add_source(session.path, "b")
+    subject = replace(landing_guard.capture(repo, session, "full"), mode=mode)
+    if refused:
+        subject = landing_guard.capture(repo, session, mode)
+        (session.path / "sources/a.txt").write_text("changed")
+    before = _git_here(repo, "rev-parse", "HEAD")
+
+    result = landing_guard.guarded_merge(
+        repo, subject, ["merge", "--no-ff", subject.candidate, "-m", "must refuse"]
+    )
+
+    assert result.returncode != 0
+    assert _git_here(repo, "rev-parse", "HEAD") == before

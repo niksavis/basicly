@@ -6,10 +6,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import checkout, gh_cli, tracker, verify
+from . import checkout, gh_cli, landing_guard, tracker, verify
 from .config import load_verify_config
 
-MODE = "ci"
+MODE = landing_guard.CI_MODE
 WORKFLOW = "quality-gates.yml"
 REF_PREFIX = "land"
 LEDGER = ".basicly/ledger"
