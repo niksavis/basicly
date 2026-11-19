@@ -101,6 +101,10 @@ def _path(folder: Path, key: str) -> Path:
     return folder / f"{SAFE.sub('_', key)[:80]}.json"
 
 
+def session_path(base: Path, session: str) -> Path:
+    return _path(base / SESSIONS, session)
+
+
 def read(path: Path) -> dict[str, object]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
