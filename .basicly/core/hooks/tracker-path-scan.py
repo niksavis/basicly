@@ -3,6 +3,7 @@ from __future__ import annotations
 import getpass
 import importlib.util
 import json
+import os
 import re
 import subprocess  # nosec B404
 import sys
@@ -24,7 +25,10 @@ _IDENTITY_RULE = "machine-username"
 _MIN_IDENTITY_LENGTH = 4
 _FIELD_KIND = "field"
 _CREATED_KIND = "created"
+_CLAIM_KIND = "claim"
+_CLAIM_HOLDER = "name"
 _HOLDER_FIELD = "assignee"
+_CONTESTED = "contested"
 
 
 def _harness(module: Any) -> Any:
@@ -53,6 +57,16 @@ def vault_ledger() -> Path | None:
     module: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return _harness(module).harness_ledger(root, time.time)
+
+
+def configured_holder() -> str:
+    source = Path(__file__).resolve().parent.parent / "kit/tracker/holders.py"
+    spec = importlib.util.spec_from_file_location("basicly_tracker_kit_holders", source)
+    if not source.is_file() or spec is None or spec.loader is None:
+        return ""
+    module: Any = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return str(module.chosen_holder(Path.cwd(), dict(os.environ)) or "")
 
 
 def identity_pattern() -> re.Pattern[str] | None:
@@ -101,12 +115,29 @@ def _holder_key(event: object) -> str | None:
         return "value"
     if event.get("kind") == _CREATED_KIND and _HOLDER_FIELD in payload:
         return _HOLDER_FIELD
+    if event.get("kind") == _CLAIM_KIND and _CLAIM_HOLDER in payload:
+        return _CLAIM_HOLDER
     return None
 
 
-def _outside_holder(event: object) -> object:
+def _outside_snapshot_holder(record: dict[str, Any], holder: str) -> object:
+    fields = record.get("fields")
+    kept = dict(record)
+    if isinstance(fields, dict) and fields.get(_HOLDER_FIELD) == holder:
+        kept["fields"] = {k: v for k, v in fields.items() if k != _HOLDER_FIELD}
+    contested = record.get(_CONTESTED)
+    if isinstance(contested, list):
+        kept[_CONTESTED] = [name for name in contested if name != holder]
+    return kept
+
+
+def _outside_holder(event: object, holder: str) -> object:
+    if not holder or not isinstance(event, dict):
+        return event
+    if "payload" not in event and "kind" not in event:
+        return _outside_snapshot_holder(event, holder)
     key = _holder_key(event)
-    if key is None or not isinstance(event, dict):
+    if key is None or event["payload"].get(key) != holder:
         return event
     return {**event, "payload": {k: v for k, v in event["payload"].items() if k != key}}
 
@@ -127,6 +158,7 @@ def rule_hit(
 
 def findings(path: str, content: str) -> list[tuple[str, int, str]]:
     identity = identity_pattern()
+    holder = configured_holder() if identity is not None else ""
     hits: list[tuple[str, int, str]] = []
     for lineno, line in enumerate(content.splitlines(), start=1):
         if not line.strip():
@@ -136,7 +168,7 @@ def findings(path: str, content: str) -> list[tuple[str, int, str]]:
         except json.JSONDecodeError:
             event = line
         texts = _strings(event)
-        if rule := rule_hit(texts, identity, _strings(_outside_holder(event))):
+        if rule := rule_hit(texts, identity, _strings(_outside_holder(event, holder))):
             hits.append((path, lineno, rule))
     return hits
 
