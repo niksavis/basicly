@@ -89,6 +89,7 @@ def test_every_checklist_source_is_a_fetched_source() -> None:
 
     assert cited, "the checklist parse found no row"
     assert cited <= set(module.SOURCES), sorted(cited - set(module.SOURCES))
+    assert {"fable-prompting", "opus-prompting"} <= cited
 
 
 def test_every_source_is_an_https_url_on_a_vendor_docs_host() -> None:
