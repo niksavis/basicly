@@ -37,6 +37,7 @@ from . import (
     codex_permissions,
     comment_rows,
     commit,
+    consumer_proof,
     contention,
     decisions,
     decompose,
@@ -3107,6 +3108,18 @@ def cmd_release(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_consumer_proof(_args: argparse.Namespace) -> int:
+    try:
+        result = consumer_proof.run_proof(_repo_root(), consumer_proof.environ())
+    except consumer_proof.ProofError as refusal:
+        print(f"consumer-proof: {refusal}", file=sys.stderr)
+        return 1
+    for item in consumer_proof.consumer_results(result):
+        print(f"{'pass' if item.get('passed') else 'FAIL'}: {item.get('name')}")
+    print(f"consumer-proof: {'PASS' if result['passed'] else 'FAIL'} for {result['commit']}")
+    return 0 if result["passed"] else 1
+
+
 def cmd_catalog(args: argparse.Namespace) -> int:
     handlers = {
         "lint": cmd_catalog_lint,
@@ -5218,6 +5231,10 @@ def _add_decompose_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_release_parser(subparsers: argparse._SubParsersAction) -> None:
+    subparsers.add_parser(
+        "consumer-proof",
+        help="Install a wheel of HEAD into each [[release.consumers]] clone, commit, run its CI",
+    )
     release_parser = subparsers.add_parser(
         "release",
         help="Produce a release up to the annotated tag (never pushes; component 9)",
@@ -5915,6 +5932,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "policy": cmd_policy,
         "decompose": cmd_decompose,
         "release": cmd_release,
+        "consumer-proof": cmd_consumer_proof,
         "loop": cmd_loop,
         "runner": cmd_runner,
         "rubric": cmd_rubric,

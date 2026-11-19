@@ -286,6 +286,20 @@ def test_an_existing_tag_is_refused(repo: Path) -> None:
     assert result.refused and any("already exists" in r for r in result.refusals)
 
 
+def test_a_cut_without_a_consumer_proof_of_head_is_refused(repo: Path) -> None:
+    config = repo / "basicly.toml"
+    before = config.read_text(encoding="utf-8") if config.exists() else ""
+    config.write_text(before + '\n[[release.consumers]]\nname = "app"\nci = []\n', encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "chore: name a consumer")
+    plan = release.plan_release(repo, "0.4.0", date="2026-07-26")
+
+    reasons = release.blocking_reasons(repo, plan, issue_id="fx-1")
+
+    head = _git(repo, "rev-parse", "HEAD")[:12]
+    assert any(r == f"no consumer proof for {head}; run: basicly consumer-proof" for r in reasons)
+
+
 def test_every_refusal_is_reported_from_one_run(repo: Path) -> None:
     (repo / "stray.txt").write_text("dirt\n", encoding="utf-8")
     plan = release.plan_release(repo, "0.4.0", date="2026-07-26")

@@ -899,3 +899,29 @@ name = "pytest"
 command = ["pytest", "-q", "-n", "{workers}", "--durations=25", "-m", "not live_ledger and not fresh_runtime"]
 reuse = "pytest"
 modes = ["full"]
+
+# A release cut needs a passing consumer proof of the exact commit (basicly-n5k3jv7):
+# `basicly consumer-proof` installs a wheel of HEAD into a fresh clone of each consumer
+# below (a sibling folder of this checkout, or $BASICLY_CONSUMERS_ROOT/<name>), commits
+# it through the consumer's own hooks and runs its own CI commands. "{wheel}" is the
+# built wheel. 0.46.4, 0.46.5 and 0.46.6 each shipped a defect one of these steps catches.
+[[release.consumers]]
+name = "development"
+ci = [["uvx", "--from", "{wheel}", "basicly", "verify", "--mode", "full", "--ci"]]
+
+[[release.consumers]]
+name = "handily"
+ci = [
+  ["npm", "run", "validate"],
+  ["npm", "run", "test-scripts"],
+  ["node", "scripts/mods.mjs", "test"],
+  ["uvx", "--from", "{wheel}", "basicly", "verify", "--mode", "full", "--ci"],
+]
+
+[[release.consumers]]
+name = "terminal"
+ci = [
+  ["uv", "sync", "--locked"],
+  ["uv", "run", "python", ".scripts/git-hooks/pre-push.py"],
+  ["uvx", "--from", "{wheel}", "basicly", "verify", "--mode", "full", "--ci"],
+]

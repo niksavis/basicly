@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import tempfile
+import tomllib
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from basicly import worktree
+
+FORMAT = 1
+CONFIG_FILE = "basicly.toml"
+ROOT_ENV = "BASICLY_CONSUMERS_ROOT"
+RESULTS = Path("basicly-consumer-proof")
+COMMAND = "basicly consumer-proof"
+WHEEL = "{wheel}"
+SUBJECT = "chore(basicly): install the kit for a consumer proof ({record})"
+CI_ENV = {"GIT_TERMINAL_PROMPT": "0"}
+IDENTITY = ("user.name", "user.email", "basicly.holder")
+
+Run = Callable[[list[str], Path, dict[str, str]], int]
+Records = Callable[[Path, dict[str, str], str], list[dict[str, object]]]
+
+
+@dataclass(frozen=True)
+class Consumer:
+    name: str
+    ci: tuple[tuple[str, ...], ...]
+
+
+class ProofError(Exception):
+    pass
+
+
+def consumers(repo_root: Path) -> list[Consumer]:
+    path = repo_root / CONFIG_FILE
+    if not path.is_file():
+        return []
+    table = tomllib.loads(path.read_text(encoding="utf-8")).get("release", {})
+    found = []
+    for entry in table.get("consumers", []):
+        name, ci = entry.get("name"), entry.get("ci", [])
+        if not isinstance(name, str) or not name or "/" in name or name.startswith("."):
+            raise ProofError(
+                f"{CONFIG_FILE} [[release.consumers]] needs a plain name, got {name!r}"
+            )
+        if not isinstance(ci, list) or not all(
+            isinstance(c, list) and c and all(isinstance(a, str) for a in c) for c in ci
+        ):
+            raise ProofError(
+                f"{CONFIG_FILE} [[release.consumers]] {name}: ci must be a list of argv lists"
+            )
+        found.append(Consumer(name, tuple(tuple(c) for c in ci)))
+    return found
+
+
+def git(repo: Path, *args: str) -> str:
+    return worktree.run(["git", "-C", str(repo), *args], check=True).stdout.strip()
+
+
+def results_dir(repo_root: Path) -> Path:
+    return Path(git(repo_root, "rev-parse", "--absolute-git-dir")) / RESULTS
+
+
+def result_path(repo_root: Path, commit: str) -> Path:
+    return results_dir(repo_root) / f"{commit}.json"
+
+
+def source(repo_root: Path, consumer: Consumer, environ: dict[str, str]) -> Path:
+    root = Path(environ[ROOT_ENV]) if environ.get(ROOT_ENV) else repo_root.parent
+    return root / consumer.name
+
+
+def execute(argv: list[str], cwd: Path, env: dict[str, str]) -> int:
+    done = worktree.run(argv, cwd=cwd, env=env, check=False)
+    with (cwd.parent / f"{cwd.name}.log").open("a", encoding="utf-8") as log:
+        log.write(f"$ {' '.join(argv)}\n{done.stdout}{done.stderr}")
+    return done.returncode
+
+
+def list_records(clone: Path, env: dict[str, str], wheel: str) -> list[dict[str, object]]:
+    argv = ["uvx", "--from", wheel, "basicly", "tracker", "list", "--status", "in_progress"]
+    done = worktree.run([*argv, "--summary"], cwd=clone, env=env, check=False)
+    if done.returncode != 0:
+        return []
+    records = json.loads(done.stdout).get("records", [])
+    return records if isinstance(records, list) else []
+
+
+def held_record(clone: Path, listed: list[dict[str, object]]) -> str | None:
+    names = {git(clone, "config", "--default", "", key) for key in ("user.name", "basicly.holder")}
+    for item in listed:
+        fields = item.get("fields")
+        if isinstance(fields, dict) and fields.get("assignee") in names - {""}:
+            record = item.get("record")
+            return record if isinstance(record, str) else None
+    return None
+
+
+@dataclass(frozen=True)
+class Tools:
+    run: Run
+    records: Records
+    env: dict[str, str]
+
+
+def prove(clone: Path, consumer: Consumer, wheel: str, tools: Tools) -> dict[str, object]:
+    run, env = tools.run, tools.env
+    steps: list[dict[str, object]] = []
+
+    def step(name: str, argv: list[str]) -> bool:
+        code = run(argv, clone, env)
+        steps.append({"step": name, "argv": argv, "exit": code})
+        return code == 0
+
+    passed = step("install", ["uvx", "--from", wheel, "basicly", "install"])
+    record = held_record(clone, tools.records(clone, env, wheel)) if passed else None
+    if passed and record is None:
+        steps.append({"step": "record", "exit": 1, "error": "no in-progress record of the holder"})
+        passed = False
+    if passed:
+        passed = step("stage", ["git", "add", "-A"]) and step(
+            "commit",
+            [
+                "git",
+                "commit",
+                "-q",
+                "-m",
+                SUBJECT.format(record=record),
+            ],
+        )
+    for argv in consumer.ci if passed else ():
+        if not step("ci", [wheel if a == WHEEL else a for a in argv]):
+            passed = False
+            break
+    return {"name": consumer.name, "passed": passed, "steps": steps}
+
+
+def build_wheel(repo_root: Path, out: Path, run: Run, env: dict[str, str]) -> Path:
+    if run(["uv", "build", "--wheel", "-o", str(out)], repo_root, env) != 0:
+        raise ProofError(f"uv build --wheel failed; see {out.parent / (repo_root.name + '.log')}")
+    wheels = sorted(out.glob("*.whl"))
+    if len(wheels) != 1:
+        raise ProofError(f"expected one wheel in {out}, found {len(wheels)}")
+    return wheels[0]
+
+
+def run_proof(
+    repo_root: Path,
+    environ: dict[str, str],
+    run: Run = execute,
+    records: Records = list_records,
+    work: Path | None = None,
+) -> dict[str, object]:
+    listed = consumers(repo_root)
+    if not listed:
+        raise ProofError(f"{CONFIG_FILE} names no [[release.consumers]]; add one before a release")
+    if git(repo_root, "status", "--porcelain"):
+        raise ProofError(
+            "the working tree is not clean; commit first, so the proof names one commit"
+        )
+    commit = git(repo_root, "rev-parse", "HEAD")
+    folder = work or Path(tempfile.mkdtemp(prefix="basicly-consumer-proof-"))
+    env = {**environ, **CI_ENV}
+    wheel = build_wheel(repo_root, folder / "dist", run, env)
+    results = []
+    for consumer in listed:
+        origin = source(repo_root, consumer, environ)
+        clone = folder / consumer.name
+        if not (origin / ".git").exists():
+            results.append({
+                "name": consumer.name,
+                "passed": False,
+                "steps": [{"step": "clone", "exit": 1, "error": f"no repository at {origin}"}],
+            })
+            continue
+        git(folder, "clone", "-q", str(origin), str(clone))
+        for key in IDENTITY:
+            value = git(origin, "config", "--default", "", key)
+            if value:
+                git(clone, "config", key, value)
+        if (origin / "node_modules").is_dir():
+            shutil.copytree(origin / "node_modules", clone / "node_modules", symlinks=True)
+        results.append(prove(clone, consumer, str(wheel), Tools(run, records, env)))
+    result = {
+        "v": FORMAT,
+        "commit": commit,
+        "wheel_sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+        "at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "consumers": results,
+        "passed": all(r["passed"] for r in results),
+    }
+    target = result_path(repo_root, commit)
+    target.parent.mkdir(exist_ok=True)
+    target.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
+def consumer_results(result: dict[str, object]) -> list[dict[str, object]]:
+    items = result.get("consumers")
+    return [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
+
+
+def refusal(repo_root: Path) -> str | None:
+    if not consumers(repo_root):
+        return None
+    commit = git(repo_root, "rev-parse", "HEAD")
+    path = result_path(repo_root, commit)
+    try:
+        result = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return f"no consumer proof for {commit[:12]}; run: {COMMAND}"
+    if result.get("v") != FORMAT or result.get("commit") != commit:
+        return f"the consumer proof at {path} is not for {commit[:12]}; run: {COMMAND}"
+    failed = [c.get("name") for c in result.get("consumers", []) if not c.get("passed")]
+    if failed or not result.get("passed"):
+        names = ", ".join(map(str, failed))
+        return f"the consumer proof for {commit[:12]} failed for {names}; fix it, run: {COMMAND}"
+    return None
+
+
+def environ() -> dict[str, str]:
+    return dict(os.environ)
