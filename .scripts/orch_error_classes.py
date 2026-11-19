@@ -30,6 +30,7 @@ _PROBES = {
 _RISKY = re.compile(
     r"\brm\s+-\w*[rf]|git\s+(?:\S+\s+)*(?:push|reset|clean|worktree\s+remove|branch\s+-D)|--delete\b|--force\b"
 )
+_REPORTERS = {"echo", "printf", "true", ":"}
 _EXPECTED_ONE = {"rg", "grep", "egrep", "fgrep", "test", "[", "diff", "find", "cmp"}
 _SUBCOMMAND = {
     "git",
@@ -198,6 +199,8 @@ def _output_kind(result: Result, use: Use | None) -> str:
     exit_code = _EXIT.match(first)
     if exit_code:
         return _exit_kind(int(exit_code[1]), result.text, command_of(use))
+    if use is not None and use.tool == "REPL" and first.startswith("Error"):
+        return "script-throw"
     return f"other|{signature(first)}"
 
 
@@ -215,7 +218,7 @@ def script_error(text: str) -> bool:
 
 
 def _exit_kind(code: int, text: str, command: str) -> str:
-    names = programs(command)
+    names = [name for name in programs(command) if name not in _REPORTERS] or programs(command)
     last = names[-1] if names else ""
     found = _structured_exit(code, text, names)
     if found:
