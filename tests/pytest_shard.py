@@ -1,35 +1,29 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 
 import pytest
 
+from basicly import verify_shard
+
 WEIGHTS_FILE = Path(__file__).resolve().parent / "shard_weights.json"
-OPTION = "--shard"
-FORM = "K/N, with 1 <= K <= N"
+OPTION = verify_shard.OPTION
 
 
 def parse(value: str) -> tuple[int, int]:
-    index, _, total = value.partition("/")
-    if not (index.isdigit() and total.isdigit()) or not 1 <= int(index) <= int(total):
-        raise pytest.UsageError(f"{OPTION} {value!r} is not {FORM}; for example {OPTION} 2/8")
-    return int(index), int(total)
+    try:
+        return verify_shard.parse(value)
+    except ValueError as exc:
+        raise pytest.UsageError(f"{exc}; the form is {verify_shard.FORM}") from exc
 
 
 def load_weights(path: Path = WEIGHTS_FILE) -> dict[str, float]:
-    return {str(key): float(value) for key, value in json.loads(path.read_text("utf-8")).items()}
+    return verify_shard.suite_weights(verify_shard.load_weights(path))
 
 
 def plan(weights: dict[str, float], total: int) -> dict[str, int]:
-    loads = [0.0] * total
-    placed: dict[str, int] = {}
-    for nodeid, weight in sorted(weights.items(), key=lambda item: (-item[1], item[0])):
-        target = min(range(total), key=lambda shard: (loads[shard], shard))
-        loads[target] += weight
-        placed[nodeid] = target
-    return placed
+    return verify_shard.plan(weights, total)[0]
 
 
 def shard_of(nodeid: str, placed: dict[str, int], total: int) -> int:
@@ -40,7 +34,9 @@ def shard_of(nodeid: str, placed: dict[str, int], total: int) -> int:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(OPTION, default=None, help=f"run one shard of the suite, as {FORM}")
+    parser.addoption(
+        OPTION, default=None, help=f"run one shard of the suite, as {verify_shard.FORM}"
+    )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -51,8 +47,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     weights = load_weights()
     placed = plan(weights, total)
     kept = [item for item in items if shard_of(item.nodeid, placed, total) == index - 1]
-    kept.sort(key=lambda item: -weights.get(item.nodeid, 0.0))
     dropped = [item for item in items if shard_of(item.nodeid, placed, total) != index - 1]
+    kept.sort(key=lambda item: -weights.get(item.nodeid, 0.0))
     if dropped:
         config.hook.pytest_deselected(items=dropped)
     items[:] = kept

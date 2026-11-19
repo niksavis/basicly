@@ -3409,7 +3409,8 @@ def _verify_ci(repo_root: Path, args: argparse.Namespace) -> verify.VerifyReport
             print(f"[verify] {check.name}: local only (reads tracker records); not run in CI")
     kept = tuple(check for check in config.checks if not check.local_only)
     if shard := getattr(args, "shard", None):
-        kept = verify_shard.select(kept, *verify_shard.parse(shard))
+        weights = verify_shard.load_weights(repo_root / verify_shard.WEIGHTS)
+        kept = verify_shard.select(kept, *verify_shard.parse(shard), weights)
     return verify.run_verify(repo_root, args.mode, replace(config, checks=kept))
 
 

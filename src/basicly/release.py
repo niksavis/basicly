@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from . import (
     checkout,
+    macos_gate,
     merge,
     policy,
     release_history,
@@ -434,6 +435,8 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
     reasons.extend(_release_note_reasons(repo_root))
     reasons.extend(stale_transcripts(repo_root, plan.version, plan.current_version))
     reasons.extend(lagging_pins(repo_root, plan.current_version))
+    if (macos := macos_gate.refusal(repo_root)) is not None:
+        reasons.append(macos)
     return tuple(reasons)
 
 

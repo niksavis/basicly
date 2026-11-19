@@ -1,0 +1,5 @@
+# The macOS release preflight reads the compatibility runs with gh. It resolves gh with
+# shutil.which and passes a literal argv; a shell, the rejected alternative, would
+# reinterpret the run ids it passes on.
+[ratchet.noqa_debt.frozen]
+S603 = 1

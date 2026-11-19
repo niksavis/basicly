@@ -60,6 +60,49 @@ def test_a_sharded_workflow_runs_every_shard_its_command_names(name: str) -> Non
     assert [int(part) for part in listed.split(",")] == list(range(1, int(total) + 1))
 
 
+HEAVY = (
+    *(_check(f"pyright-{n}", "pyright", str(n)) for n in range(6)),
+    _check("pytest-fresh-runtime", "pytest", "-q", "-m", "fresh_runtime"),
+)
+COSTS = {f"check:{check.name}": 30.0 for check in HEAVY} | {"tests/test_a.py::test_slow": 400.0}
+
+
+@pytest.mark.parametrize("total", [8, 10, 12])
+def test_no_shard_gets_two_heavy_checks_while_another_has_none(total: int) -> None:
+    heavy = {check.name for check in HEAVY}
+    checks = (*HEAVY, SUITE, *(c for c in CHECKS if c.name not in heavy and c is not SUITE))
+    counts = [
+        sum(
+            c.name in {h.name for h in HEAVY}
+            for c in verify_shard.select(checks, k, total, COSTS, 4)
+        )
+        for k in range(1, total + 1)
+    ]
+    assert sum(counts) == len(HEAVY)
+    assert max(counts) <= 1
+
+
+def test_a_heavy_check_avoids_the_shard_with_the_heaviest_tests() -> None:
+    placed, loads = verify_shard.plan(verify_shard.suite_weights(COSTS), 8)
+    heaviest = loads.index(max(loads))
+    chosen = verify_shard.place_checks(HEAVY, 8, COSTS, 4)
+    assert heaviest not in set(chosen.values())
+    assert placed["tests/test_a.py::test_slow"] == heaviest
+
+
+def test_the_committed_weights_name_only_known_checks() -> None:
+    weights = verify_shard.load_weights(
+        Path(__file__).resolve().parent.parent / verify_shard.WEIGHTS
+    )
+    named = {
+        key.removeprefix(verify_shard.CHECK_PREFIX)
+        for key in weights
+        if key.startswith(verify_shard.CHECK_PREFIX)
+    }
+    assert "pyright-linux" in named
+    assert "pytest" not in named
+
+
 @pytest.mark.parametrize("value", ["0/4", "5/4", "4", "x/2"])
 def test_a_malformed_shard_names_the_correct_command(value: str) -> None:
     with pytest.raises(ValueError, match="basicly verify --mode full --ci --shard 2/8"):
