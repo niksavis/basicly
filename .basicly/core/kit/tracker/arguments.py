@@ -239,7 +239,8 @@ def _add_write_parsers(sub: Any) -> None:
     note = sub.add_parser("comment", help="append one comment to a record")
     note.add_argument("directory", help=DIRECTORY_HELP)
     note.add_argument("record", help="the record id")
-    note.add_argument("text", help="the comment body")
+    note.add_argument("text", nargs="?", default=argparse.SUPPRESS, help="the comment body")
+    note.add_argument("--text", dest="text", help="the comment body, as an option")
 
     dep = sub.add_parser("dep", help="record a dependency edge on the dependent")
     dep.add_argument("directory", help=DIRECTORY_HELP)
