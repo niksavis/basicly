@@ -1,0 +1,1 @@
+- The pre-push hook no longer crashes in a repository whose ledger is frozen after a vault migration. It checks the frozen marker first: a valid frozen ledger has no write in flight, so the push goes on. A changed archive or a held lock in a normal ledger still stops the push.
