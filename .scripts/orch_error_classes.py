@@ -169,7 +169,7 @@ def programs(command: str) -> list[str]:
 def _refusal_kind(result: Result, use: Use | None) -> str | None:
     text = result.text
     if _EXIT.match(text):
-        return "missing-path" if _MISSING.search(text) else None
+        return None
     if "classifier gave no verdict" in text:
         return "classifier-no-verdict"
     refused = (
@@ -206,8 +206,28 @@ def classify(result: Result, use: Use | None) -> str:
     return f"{tool}|{_refusal_kind(result, use) or _output_kind(result, use)}"
 
 
+def expected(kind: str) -> bool:
+    return kind.split("|")[1] in {"probe", "expected-exit"}
+
+
+def script_error(text: str) -> bool:
+    return bool(_JS_ERROR.match(text)) or text.startswith("Timed out after")
+
+
 def _exit_kind(code: int, text: str, command: str) -> str:
     names = programs(command)
+    last = names[-1] if names else ""
+    found = _structured_exit(code, text, names)
+    if found:
+        return found
+    if _MISSING.search(text):
+        return "missing-path"
+    if code == 1 and last.split(" ")[0] in _EXPECTED_ONE:
+        return f"expected-exit|{last}"
+    return f"exit|{last}|{code}"
+
+
+def _structured_exit(code: int, text: str, names: list[str]) -> str | None:
     jobs = _HOOK_JOB.findall(text)
     hook = _HOOK_NAME.search(text)
     if jobs and hook:
@@ -220,6 +240,4 @@ def _exit_kind(code: int, text: str, command: str) -> str:
     fatal = re.search(r"^fatal: (.*)$", text, re.MULTILINE)
     if fatal:
         return f"git-fatal|{signature(fatal[1])}"
-    if code == 1 and last.split(" ")[0] in _EXPECTED_ONE:
-        return f"expected-exit|{last}"
-    return f"exit|{last}|{code}"
+    return None

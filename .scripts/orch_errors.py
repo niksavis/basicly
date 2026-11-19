@@ -12,7 +12,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from orch_error_classes import Result, Use, classify, command_of, shown_input
+from orch_error_classes import (
+    Result,
+    Use,
+    classify,
+    command_of,
+    expected,
+    script_error,
+    shown_input,
+)
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -158,7 +166,7 @@ def incidents(
         parent = None
         if key.startswith("repl-error-"):
             parent = by_uuid.get(use.parent) if use and use.parent else None
-            if parent is None or not parent.error:
+            if (parent is None or not parent.error) and not script_error(result.text):
                 parent = beside.get((result.session, result.stamp))
         if parent is not None and parent.error:
             script_throws.append((parent.tool_use_id, result.text))
@@ -199,14 +207,19 @@ def report(
         grouped[item.result.project][item.kind].append(item)
     for project in sorted(set(totals) | set(grouped)):
         classes = grouped.get(project, {})
-        sessions = Counter(item.result.session for items in classes.values() for item in items)
+        sessions = Counter(
+            item.result.session
+            for kind, items in classes.items()
+            if not expected(kind)
+            for item in items
+        )
         rows = []
         for kind, items in sorted(classes.items(), key=lambda pair: (-len(pair[1]), pair[0])):
             sample = items[-1]
             rows.append({
                 "class": kind,
                 "count": len(items),
-                "new_class": kind not in seen,
+                "new_class": kind not in seen and not expected(kind),
                 "new_errors": sum(
                     1 for item in items if until is None or (item.result.stamp or "") > until
                 ),
@@ -231,7 +244,7 @@ def report(
 def _render(summary: dict[str, Any]) -> str:
     lines = [
         f"orch errors since {summary['since']}: {summary['errors']} errors"
-        f" in {summary['results']} tool results"
+        f" in {summary['results']} tool results, {summary['expected']} expected exits"
         f" ({summary['script_throws']} script throws merged,"
         f" {summary['undated']} undated errors skipped)",
         f"new classes since last run: {summary['new_classes']}",
@@ -307,11 +320,12 @@ def main(argv: list[str] | None = None) -> int:
         if result.stamp and since <= result.stamp < args.until
     )
     projects = report(found, totals, seen, state.get("until"))
-    new_classes = sorted({item.kind for item in found} - seen)
+    new_classes = sorted({item.kind for item in found if not expected(item.kind)} - seen)
     summary = {
         "since": since,
         "results": sum(totals.values()),
-        "errors": len(found),
+        "errors": sum(1 for item in found if not expected(item.kind)),
+        "expected": sum(1 for item in found if expected(item.kind)),
         "script_throws": script_throws,
         "undated": undated,
         "new_classes": len(new_classes) if state_path else "no --state given",

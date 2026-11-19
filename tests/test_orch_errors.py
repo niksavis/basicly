@@ -162,6 +162,24 @@ def test_join_attaches_the_input_and_folds_a_script_throw_into_its_inner_call(
     assert row["sample"]["script_error"] == ["Error: commit refused"]
 
 
+def test_join_keeps_a_script_error_that_shares_a_timestamp_with_an_expected_exit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stamp = "2026-01-02T05:00:00Z"
+    rows = [
+        _use("repl_rg", "Bash", {"command": "rg -n gone src"}, stamp, "u1"),
+        _result("repl_rg", "Exit code 1", stamp, "r1"),
+        _use("repl-error-2", "REPL", {}, stamp, "u2"),
+        _result("repl-error-2", "TypeError: out.split is not a function", stamp, "r2"),
+    ]
+    _write(tmp_path, "-work-space-tools", "s1.jsonl", rows)
+    summary = _run(tmp_path, capsys)
+    assert summary["script_throws"] == 0
+    assert summary["errors"] == 1
+    assert summary["expected"] == 1
+    assert _classes(summary, "tools") == {"Bash|expected-exit|rg": 1, "REPL|js|TypeError": 1}
+
+
 def test_classes_stay_stable_when_errors_differ_only_in_a_path_or_number(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -186,7 +204,7 @@ def test_classes_stay_stable_when_errors_differ_only_in_a_path_or_number(
         ),
         _result(
             "toolu_d",
-            fatal.replace("docs/a.md", "src/b/c.py").replace("main", "dev"),
+            "Exit code 128\nfatal: path 'src/b/c.py' does not exist in 'dev'",
             "2026-01-02T04:00:01Z",
             "r4",
         ),
