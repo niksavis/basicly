@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess  # nosec B404
 from collections.abc import Callable
 from pathlib import Path
+
+from . import gh_cli
 
 WORKFLOW = Path(".github") / "workflows" / "compatibility.yml"
 SOURCES = (("compatibility.yml", ("schedule", "workflow_dispatch")), ("release.yml", ("push",)))
@@ -12,19 +12,6 @@ LIMIT = "10"
 REMEDY = "run gh workflow run compatibility.yml, wait for it to pass, then release again"
 
 Query = Callable[[list[str]], str | None]
-
-
-def _gh(argv: list[str]) -> str | None:
-    gh = shutil.which("gh")
-    if gh is None:
-        return None
-    try:
-        done = subprocess.run(  # noqa: S603 — resolved gh receives this module's literal argv; no shell  # nosec B603
-            [gh, *argv], capture_output=True, text=True, encoding="utf-8", check=False
-        )
-    except OSError:
-        return None
-    return done.stdout if done.returncode == 0 else None
 
 
 def declared(repo_root: Path) -> bool:
@@ -52,7 +39,7 @@ def _macos_job(query: Query, run: dict) -> dict | None:
     return next((job for job in done if job.get("status") == "completed"), None)
 
 
-def refusal(repo_root: Path, query: Query = _gh) -> str | None:
+def refusal(repo_root: Path, query: Query = gh_cli.run) -> str | None:
     if not declared(repo_root):
         return None
     runs = _runs(query)

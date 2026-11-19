@@ -29,6 +29,7 @@ from . import (
     catalog_lint,
     catalog_verify,
     checkout,
+    ci_landing,
     ci_records,
     claude_settings,
     claude_user_settings,
@@ -4754,6 +4755,9 @@ def _cmd_worktree_merge(args: argparse.Namespace) -> int:
         ui.fail(str(error))
         return 1
     print(f"  {result.name}: {result.status.upper()} — {result.detail}")
+    if result.merged and args.mode == ci_landing.MODE:
+        for note in ci_landing.finish(root, args.name, args.bead):
+            print(f"  {note}")
     return 0 if result.merged else 1
 
 
@@ -5081,7 +5085,10 @@ def _add_worktree_parser(subparsers: argparse._SubParsersAction) -> None:
     wt_merge.add_argument("name")
     wt_merge.add_argument("--bead", required=True, help="Bead id for the merge commit message")
     wt_merge.add_argument(
-        "--mode", choices=VERIFY_MODES, default="full", help="Verify mode to re-run before merge"
+        "--mode",
+        choices=(*VERIFY_MODES, ci_landing.MODE),
+        default="full",
+        help="Verify mode to re-run before merge; ci proves the lane on GitHub runners",
     )
     wt_merge.add_argument(
         "--wait",

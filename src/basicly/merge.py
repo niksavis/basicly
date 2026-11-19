@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import (
     base_lock,
+    ci_landing,
     decompose,
     landing_guard,
     owned_store,
@@ -174,6 +175,24 @@ def _verify_for_landing(
         f"verify {verify_mode} failed: {_verify_reasons(report) or failures}",
         checks=_failed_checks(report),
     )
+
+
+def _prove_on_ci(
+    session: Session, subject: landing_guard.LandingSubject, clock: _Landing
+) -> MergeResult | None:
+    report = ci_landing.local_checks(session.path)
+    clock.note_checks(report)
+    if not report.passed:
+        detail = _verify_reasons(report) or ", ".join(report.failures)
+        return MergeResult(session.name, "verify-failed", f"local-only checks failed: {detail}")
+    candidate = ci_landing.Candidate(
+        session.name, clock.bead, subject.destination, subject.candidate
+    )
+    try:
+        ci_landing.prove(clock.repo_root, candidate)
+    except ci_landing.CiLandingError as error:
+        return MergeResult(session.name, "verify-failed", str(error))
+    return None
 
 
 def _failed_checks(rerun: verify.VerifyReport) -> tuple[verify.CheckResult, ...]:
@@ -734,7 +753,10 @@ def _replay_verify_merge(
 
     subject = landing_guard.capture(repo_root, session, verify_mode, record=bead)
     gate = _engine_preflight(session, subject, clock, verify_mode)
-    if gate is None and not override_gate:
+    if gate is None and not override_gate and verify_mode == ci_landing.MODE:
+        gate = _prove_on_ci(session, subject, clock)
+        clock.mark("verify")
+    elif gate is None and not override_gate:
         gate = _verify_for_landing(name, worktree_path, verify_mode, clock)
         clock.mark("verify")
     if gate is not None:
