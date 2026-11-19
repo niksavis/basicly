@@ -11,6 +11,10 @@ instructions: |
 
   Checklists for the orchestrator session. The rules are in the orchestrator agent and the always-on files; this skill does not add authority. A project session that loads it uses it only to check what it receives.
 
+  ## The queue
+
+  Order the queue by the Agentic Kanban rules in the always-on instructions: the oldest waiting item first, and act on any wait over 2 hours.
+
   ## Before you ask
 
   1. Measure each read-only fact yourself: git state, tracker state, a file, a version. Ask a project session or the person only for a fact you cannot read.

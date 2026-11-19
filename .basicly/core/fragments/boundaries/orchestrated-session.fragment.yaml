@@ -44,6 +44,8 @@ body: |
 
   Before a new test, search for an existing test of the same behaviour and extend it. A new test names its level, type and size, the search, and why no existing test fits, in the commit body. Keep CI under 5 minutes per workflow and release checks under 10.
 
+  Work by the Agentic Kanban rules in the always-on instructions: finish and deliver before you start, and take the next item from the orchestrator's queue.
+
   When another session asks for a quiet window for a measurement or a landing verify, run no tests, builds or live checks in it, and make no commit on a main branch while its landing verify runs.
 
   Report to the orchestrator in this form: first comment on your own tracker record, then send the record id, the state (`done`, `blocked` or `needs decision`) and, for a decision, a recommended option. Report at record start, record end, a blocker, a scope change, or an item that stays with the person. Routine progress needs no report.
