@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from orch_relay.record import Tracker
 
 VALID_FOR_MINUTES = 60
+UNTIL_LANDED = "Good for this exact diff until it lands; any change to the diff voids it."
 REPORT_STATES = ("done", "blocked", "needs-decision")
 RULE_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -103,7 +104,7 @@ class Writer:
         ])
         return self._record_and_send(act.record, text)
 
-    def approve(self, act: Action, words: str) -> str:
+    def approve(self, act: Action, words: str, diff: bool = False) -> str:
         given = {
             "item": act.item,
             "record": act.record,
@@ -120,7 +121,9 @@ class Writer:
             f"[approval {now}] The person's approval, relayed by the orchestrator.",
             f'The person\'s words at {now}: "{words}"',
             *_action_lines(act, parsed),
-            f"Good for one use, within {VALID_FOR_MINUTES} minutes of {now}.",
+            UNTIL_LANDED
+            if diff
+            else f"Good for one use, within {VALID_FOR_MINUTES} minutes of {now}.",
         ])
         return self._record_and_send(act.record, text)
 

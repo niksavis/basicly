@@ -165,6 +165,21 @@ def test_approve_accepts_only_the_class_the_person_approves_through_the_orchestr
     assert fake.comments == []
 
 
+@pytest.mark.parametrize(
+    ("diff", "limit"),
+    [
+        (True, "Good for this exact diff until it lands; any change to the diff voids it."),
+        (False, "Good for one use, within 60 minutes of"),
+    ],
+)
+def test_approve_states_the_time_limit_for_a_diff_and_for_a_command(
+    repo: Path, diff: bool, limit: str
+) -> None:
+    text = writer(repo, FakeTracker([])).approve(act("gate-weakening"), "go", diff)
+
+    assert limit in text
+
+
 def test_start_builds_the_launch_command_for_each_vendor(tmp_path: Path) -> None:
     role = tmp_path / start.ROLE_FILES / "orchestrator.md"
     role.parent.mkdir(parents=True)

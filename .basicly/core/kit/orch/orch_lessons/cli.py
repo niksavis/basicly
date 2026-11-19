@@ -43,6 +43,7 @@ def parser() -> argparse.ArgumentParser:
     for flag in ("--rule", "--rule-date", "--reason", "--condition", "--proof", "--if-proof-fails"):
         decide.add_argument(flag, required=True)
     groups.choices["approve"].add_argument("--words", required=True)
+    groups.choices["approve"].add_argument("--diff", action="store_true")
     send = groups.add_parser("send")
     send.add_argument("--order", action="store_true", required=True)
     send.add_argument("--to", required=True)
@@ -71,7 +72,7 @@ def relay(args: argparse.Namespace, writer: messages.Writer) -> str:
         args.risk,
     )
     if args.group == "approve":
-        return writer.approve(act, args.words)
+        return writer.approve(act, args.words, args.diff)
     why = messages.Decision(
         args.rule,
         args.rule_date,
