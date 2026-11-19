@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from .runner import sanitised_project_env
 from .verify_receipt import InputFingerprint, implementation_digest
 
+PYRIGHT_VERSION = "1.1.414"
 _IGNORED = frozenset({".git", ".venv", "node_modules", "__pycache__"})
 _CONFIG_KEYS = frozenset({
     "venvPath",
@@ -224,7 +225,7 @@ def _runtime(root: Path) -> dict[str, str]:
     if runtime["pyright"] != str(site / "pyright/__init__.py"):
         raise UnsupportedInputsError("unsupported Pyright import location")
     version = json.loads((site / "pyright/dist/package.json").read_text(encoding="utf-8"))
-    if version.get("version") != "1.1.411":
+    if version.get("version") != PYRIGHT_VERSION:
         raise UnsupportedInputsError("unsupported Pyright version")
     return {
         "environment": hashlib.sha256(json.dumps(env, sort_keys=True).encode()).hexdigest(),
@@ -276,7 +277,7 @@ def fingerprint(repo_root: Path) -> str:
         if len(sites) != 1 or not sites[0].is_dir():
             raise UnsupportedInputsError("unsupported analysis environment layout")
         payload = {
-            "recipe": "pyright-1.1.411-v5",
+            "recipe": f"pyright-{PYRIGHT_VERSION}-v5",
             "implementation": implementation_digest(),
             "source": _digest_files(root, sources=True),
             "analysis": _digest_files(sites[0], sources=True, workspace=root),
