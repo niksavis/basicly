@@ -39,7 +39,18 @@ def test_every_check_other_than_the_suite_runs_whole_in_exactly_one_shard(total:
 def test_every_shard_runs_its_own_part_of_the_suite() -> None:
     shards = [verify_shard.select(CHECKS, index, 3) for index in (1, 2, 3)]
     suites = [check.command for shard in shards for check in shard if check.name == "pytest"]
-    assert suites == [(*SUITE.command, "--shard", f"{index}/3") for index in (1, 2, 3)]
+    assert suites == [
+        (
+            *SUITE.command,
+            "--shard",
+            f"{index}/3",
+            "--junitxml",
+            f"build/shard-junit/{index}-of-3.xml",
+            "-o",
+            "junit_family=xunit1",
+        )
+        for index in (1, 2, 3)
+    ]
 
 
 def test_a_shard_of_the_suite_is_never_reused_as_the_full_suite_proof() -> None:

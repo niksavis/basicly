@@ -121,3 +121,11 @@ jobs:
       # running pre-commit too just repeated that work (basicly-5uo6).
       - name: Run shard ${{ matrix.shard }}/12 of the full checks with no tracker read
         run: uv run python -m basicly.cli verify --mode full --ci --shard ${{ matrix.shard }}/12
+      - name: Upload shard ${{ matrix.shard }}/12 test times
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: shard-junit-${{ matrix.shard }}
+          path: build/shard-junit/
+          if-no-files-found: ignore
+          retention-days: 14

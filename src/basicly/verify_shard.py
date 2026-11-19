@@ -14,6 +14,7 @@ OPTION = "--shard"
 FORM = "K/N, with 1 <= K <= N"
 WEIGHTS = Path("tests") / "shard_weights.json"
 CHECK_PREFIX = "check:"
+JUNIT_DIR = Path("build") / "shard-junit"
 UNKNOWN_CHECK_S = 1.0
 
 
@@ -67,6 +68,11 @@ def place_checks(
     return placed
 
 
+def _suite_options(index: int, total: int) -> tuple[str, ...]:
+    report = (JUNIT_DIR / f"{index}-of-{total}.xml").as_posix()
+    return (OPTION, f"{index}/{total}", "--junitxml", report, "-o", "junit_family=xunit1")
+
+
 def select(
     checks: tuple[VerifyCheck, ...],
     index: int,
@@ -76,7 +82,7 @@ def select(
 ) -> tuple[VerifyCheck, ...]:
     placed = place_checks(checks, total, weights or {}, cores or os.process_cpu_count() or 1)
     return tuple(
-        replace(check, command=(*check.command, OPTION, f"{index}/{total}"))
+        replace(check, command=(*check.command, *_suite_options(index, total)))
         if split(check)
         else check
         for check in checks
