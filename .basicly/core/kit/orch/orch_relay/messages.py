@@ -64,6 +64,7 @@ class Writer:
     tracker: Tracker
     scan: Scan
     clock: Clock = utc_now
+    session: str = ""
 
     def _record_and_send(self, record: str, comment: str) -> str:
         check_text(self.scan, [comment])
@@ -104,6 +105,7 @@ class Writer:
         now = stamp(self.clock)
         text = "\n".join([
             f"[decision {now}] Orchestrator decision on an ask-first item.",
+            *([self.session] if self.session else []),
             f'Rule that lets the orchestrator decide ask-first items ({rule_date}): "{rule}"',
             f"Entry stamp: {now}",
             *_action_lines(act, parsed),
@@ -131,6 +133,7 @@ class Writer:
         now = stamp(self.clock)
         text = "\n".join([
             f"[approval {now}] The person's approval, relayed by the orchestrator.",
+            *([self.session] if self.session else []),
             f'The person\'s words at {now}: "{words}"',
             *_action_lines(act, parsed),
             UNTIL_LANDED

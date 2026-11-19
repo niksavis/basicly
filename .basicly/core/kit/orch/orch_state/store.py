@@ -90,6 +90,11 @@ def vendor_process(start: int) -> tuple[int, int, str] | None:
     return None
 
 
+def started(pid: int) -> int:
+    found = _stat(pid) if Path("/proc/self/stat").is_file() else None
+    return found[2] if found is not None else 0
+
+
 def alive(pid: int, began: int) -> bool | None:
     if not Path("/proc/self/stat").is_file():
         return None

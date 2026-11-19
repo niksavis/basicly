@@ -9,7 +9,7 @@ from pathlib import Path
 
 import runner
 
-from orch_state import commands, herdr, store
+from orch_state import commands, herdr, relay_guard, store
 
 INPUT_MAX = 1_000_000
 BLOCKED_TTL_MS = 600_000
@@ -122,10 +122,22 @@ def write_state(event: dict[str, object], environ: dict[str, str], clock: store.
         **commands.process_fields(os.getppid()),
     }
     title = event.get("session_title")
+    current = store.read(store.session_path(root, session)).get("name")
     if isinstance(title, str) and title.strip():
-        changes["name"] = store.clean(title, 40)
-    elif not store.read(store.session_path(root, session)).get("name"):
-        changes["name"] = transcript_name(event.get("transcript_path"))
+        named = store.clean(title, 40)
+    elif not current:
+        named = transcript_name(event.get("transcript_path"))
+    else:
+        named = None
+    starting = event.get("hook_event_name") == "SessionStart"
+    keeps_reserved = relay_guard.reserved(current)
+    claims = relay_guard.reserved(named)
+    if claims and starting and not keeps_reserved:
+        claims_ok = not relay_guard.second_refused(root, session, clock)
+    else:
+        claims_ok = not claims
+    if named and not keeps_reserved and claims_ok:
+        changes["name"] = named
     store.save(root, session, changes, clock)
 
 

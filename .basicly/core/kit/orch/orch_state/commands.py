@@ -7,7 +7,7 @@ from pathlib import Path
 
 from orch_lessons.log import RefusedError
 
-from orch_state import status, store
+from orch_state import relay_guard, status, store
 
 SESSION_ENVS = ("ORCH_SESSION_ID", "CLAUDE_CODE_SESSION_ID")
 NAME_ENV = "ORCH_MEMBER"
@@ -60,11 +60,23 @@ def process_fields(start: int) -> dict[str, object]:
     return {"pid": pid, "pid_start": began, "vendor": vendor}
 
 
+def _name(args: argparse.Namespace, environ: dict[str, str], current: object) -> str | None:
+    name = store.clean(args.name or environ.get(NAME_ENV, ""), 40) or None
+    if relay_guard.reserved(name) or (name and relay_guard.reserved(current)):
+        raise RefusedError(
+            f"orch state set cannot give or change the name {relay_guard.ORCHESTRATOR}; "
+            "only the session started with that name gets it, from its SessionStart hook"
+        )
+    return name
+
+
 def set_state(
     args: argparse.Namespace, cwd: Path, environ: dict[str, str], clock: store.Clock
 ) -> str:
+    root, chosen = base(cwd, environ), session(environ, args.session)
+    current = store.read(store.session_path(root, chosen)).get("name")
     changes: dict[str, object] = {
-        "name": store.clean(args.name or environ.get(NAME_ENV, ""), 40) or None,
+        "name": _name(args, environ, current),
         "project": store.project(cwd),
         "next": store.clean(args.next) if args.next is not None else None,
         "waiting_on": store.clean(args.waiting) if args.waiting is not None else None,
@@ -76,7 +88,7 @@ def set_state(
         changes["now_at"] = store.stamp(clock)
     if args.state is not None:
         changes["state_at"] = store.stamp(clock)
-    record = store.save(base(cwd, environ), session(environ, args.session), changes, clock)
+    record = store.save(root, chosen, changes, clock)
     return f"state saved for {record.get('name') or record['id']}"
 
 
