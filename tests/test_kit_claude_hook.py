@@ -4,6 +4,7 @@ import ast
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -190,12 +191,19 @@ def _consumer_repo(tmp_path: Path, tier: str | None = DECLARED_TIER, **kwargs) -
     return consumer
 
 
-def _updated_input(result: subprocess.CompletedProcess[str]) -> dict:
+def _named_model(result: subprocess.CompletedProcess[str]) -> str:
     assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-    specific = payload["hookSpecificOutput"]
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
     assert specific["hookEventName"] == "PreToolUse"
-    return specific["updatedInput"]
+    assert "updatedInput" not in specific
+    assert specific["permissionDecision"] == "deny"
+    reason = specific["permissionDecisionReason"]
+    match = re.fullmatch(
+        r'call Agent again with model: "(\w+)" \(tier (\w+), model-map\.json\)', reason
+    )
+    assert match, reason
+    assert kit.HOST_MODEL_ALIASES["claude"][match[2]] == match[1]
+    return match[1]
 
 
 def test_the_hook_runs_where_basicly_is_neither_importable_nor_on_path(
@@ -233,25 +241,28 @@ def test_the_hook_imports_nothing_but_the_standard_library_and_the_resolver() ->
     assert not outside, sorted(outside)
 
 
-def test_a_declared_tier_pins_the_spawn_to_its_alias(tmp_path: Path) -> None:
+def test_a_declared_tier_with_no_model_is_denied_naming_its_alias_and_no_rewrite(
+    tmp_path: Path,
+) -> None:
     consumer = _consumer_repo(tmp_path)
 
     result = _run_hook(_payload(consumer), cwd=consumer, tmp_path=tmp_path)
 
-    updated = _updated_input(result)
-    assert updated["model"] == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
-    assert updated["model"] in AGENT_TOOL_MODEL_ENUM
+    named = _named_model(result)
+    assert named == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
+    assert named in AGENT_TOOL_MODEL_ENUM
 
 
-def test_the_rewrite_carries_the_whole_original_tool_input(tmp_path: Path) -> None:
+def test_the_call_sent_again_with_the_named_model_passes_with_no_rewrite(tmp_path: Path) -> None:
     consumer = _consumer_repo(tmp_path)
     payload = _payload(consumer, some_future_key=["kept", 1, None])
+    named = _named_model(_run_hook(payload, cwd=consumer, tmp_path=tmp_path))
 
-    updated = _updated_input(_run_hook(payload, cwd=consumer, tmp_path=tmp_path))
+    retry = _payload(consumer, some_future_key=["kept", 1, None], model=named)
+    result = _run_hook(retry, cwd=consumer, tmp_path=tmp_path)
 
-    expected = dict(payload["tool_input"])
-    expected["model"] = kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
-    assert updated == expected
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
 
 
 def test_a_full_model_id_is_never_what_gets_injected(tmp_path: Path) -> None:
@@ -279,7 +290,7 @@ def test_a_directory_with_no_map_is_left_alone_though_the_kit_has_one_beside_it(
     installed.parent.mkdir(parents=True)
     shutil.copy2(MAP, installed)
     rewritten = _run_hook(_payload(bare), cwd=bare, tmp_path=tmp_path)
-    assert _updated_input(rewritten)["model"] == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
+    assert _named_model(rewritten) == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
 
 
 def _vendored_kit(repo: Path) -> Path:
@@ -306,7 +317,7 @@ def test_a_vendored_kit_reads_the_map_it_installed_beside_itself(tmp_path: Path)
     )
 
     assert result.returncode == 0, result.stderr
-    assert _updated_input(result)["model"] == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
+    assert _named_model(result) == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
 
 
 def test_a_vendored_kit_leaves_a_project_it_was_not_installed_into_alone(tmp_path: Path) -> None:
@@ -343,7 +354,7 @@ def test_a_declared_tier_still_pins_the_spawn_when_the_subagent_model_variable_i
         env_extra={"CLAUDE_CODE_SUBAGENT_MODEL": "haiku"},
     )
 
-    assert _updated_input(result)["model"] == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
+    assert _named_model(result) == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
 
 
 def test_a_definition_that_pins_its_own_model_is_left_alone(tmp_path: Path) -> None:

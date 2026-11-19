@@ -95,8 +95,10 @@ def test_the_tier_kit_wires_the_host_and_resolves_without_basicly(
         check=False,
     )
     assert rewritten.returncode == 0, rewritten.stderr
-    chosen = json.loads(rewritten.stdout)["hookSpecificOutput"]["updatedInput"]["model"]
-    assert chosen == "haiku", "tier low must resolve from the map the kit vendored beside itself"
+    reason = json.loads(rewritten.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert 'model: "haiku"' in reason, (
+        "tier low must resolve from the map the kit vendored beside itself"
+    )
 
 
 def test_uninstalling_from_a_wheel_leaves_no_hook_naming_a_deleted_kit(
