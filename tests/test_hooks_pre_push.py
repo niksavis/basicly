@@ -15,6 +15,10 @@ import pytest
 
 from basicly import hooks, lefthook_config
 from tests import kit_modules
+from tests.test_kit_vault_share import bare
+from tests.test_vault_harness_hooks import _frozen
+
+__all__ = ["bare"]
 
 REPO_ROOT = Path(__file__).parent.parent
 HOOK_SOURCE = REPO_ROOT / ".basicly" / "core" / "hooks" / "pre-push.py"
@@ -54,6 +58,38 @@ def test_contention_is_named_when_a_live_writer_holds_the_ledger(
 ) -> None:
     monkeypatch.setattr(hook, "_kit_events", lambda: events)
     with events.LedgerLock(tmp_path / ".basicly" / "ledger"):
+        assert hook.ledger_write_in_flight(tmp_path)
+
+
+def test_a_frozen_ledger_has_no_write_in_flight_so_the_push_goes_on(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hook, "_kit_events", lambda: events)
+    root = _frozen(tmp_path, bare)
+    assert (root / ".basicly" / "ledger").is_file()
+
+    assert not hook.ledger_write_in_flight(root)
+
+
+def test_a_frozen_ledger_whose_archive_changed_still_stops_the_push(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hook, "_kit_events", lambda: events)
+    root = _frozen(tmp_path, bare)
+    extra = root / ".basicly" / "ledger-archive" / "pending-main.jsonl"
+    before = extra.read_text(encoding="utf-8") if extra.exists() else ""
+    extra.write_text(before + "{}\n", encoding="utf-8")
+
+    with pytest.raises(Exception, match="archived ledger changed"):
+        hook.ledger_write_in_flight(root)
+
+
+def test_a_held_lock_in_an_unfrozen_ledger_is_still_in_flight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hook, "_kit_events", lambda: events)
+    with events.LedgerLock(tmp_path / ".basicly" / "ledger"):
+        assert (tmp_path / ".basicly" / "ledger").is_dir()
         assert hook.ledger_write_in_flight(tmp_path)
 
 
