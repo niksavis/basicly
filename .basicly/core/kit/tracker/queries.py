@@ -80,6 +80,30 @@ def query_records(
     return vault_pending.annotate(directory, matched if limit is None else matched[:limit])
 
 
+def listed(args: Any) -> list[dict[str, object]]:
+    if getattr(args, "ready_for_delivery", False):
+        return ready_for_delivery(args.directory, args.limit)
+    return query_records(
+        args.directory, status=args.status, limit=args.limit, query=args.query, summary=args.summary
+    )
+
+
+def ready_for_delivery(directory: Path | str, limit: int | None = None) -> list[dict[str, object]]:
+
+    records = folded(directory)
+    marked_at: dict[str, str] = {}
+    for event in snapshot.events.read_events(ledger_dir(directory))[0]:
+        if event.payload.get("name") == holders.READY_FIELD:
+            marked_at[event.record] = event.ts if event.payload.get("value") else ""
+    rows = [
+        {**_summary(records[record]), holders.READY_FIELD: since}
+        for record, since in marked_at.items()
+        if since and record in records and not records[record].tombstoned
+    ]
+    ordered = sorted(rows, key=lambda row: str(row[holders.READY_FIELD]))
+    return ordered if limit is None else ordered[:limit]
+
+
 def _search_text(state: Any) -> str:
     return json.dumps(
         [state.record, state.status, *state.fields.values(), *state.comments],
@@ -88,7 +112,15 @@ def _search_text(state: Any) -> str:
 
 
 def _summary(state: Any) -> dict[str, object]:
-    names = ("title", "issue_type", "priority", "labels", "assignee", "close_resolution")
+    names = (
+        "title",
+        "issue_type",
+        "priority",
+        "labels",
+        "assignee",
+        "close_resolution",
+        holders.READY_FIELD,
+    )
     return {
         "record": state.record,
         "status": state.status,

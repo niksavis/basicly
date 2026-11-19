@@ -41,6 +41,11 @@ def _listing_filters(parser: Any) -> None:
     parser.add_argument(
         "--summary", action="store_true", help="omit prose and history; fetch detail with show"
     )
+    parser.add_argument(
+        "--ready-for-delivery",
+        action="store_true",
+        help="only records marked ready for delivery, oldest mark first, with the wait in minutes",
+    )
 
 
 def _add_list_parser(sub: Any) -> None:
@@ -263,6 +268,7 @@ def _add_write_parsers(sub: Any) -> None:
     settle.add_argument("record", help="the record id")
 
     _add_release_parser(sub)
+    _add_ready_mark_parser(sub)
 
     removal = sub.add_parser("delete", help="tombstone a record; its id is never reused")
     removal.add_argument("directory", help=DIRECTORY_HELP)
@@ -275,6 +281,19 @@ def _add_release_parser(sub: Any) -> None:
     release.add_argument("record", help="the record id")
     release.add_argument("--by", default="", help="who gives it back; default: git user.name")
     release.add_argument("--take", action="store_true", help="release another holder's record")
+
+
+def _add_ready_mark_parser(sub: Any) -> None:
+    mark = sub.add_parser("mark-ready", help="record that a built record waits for delivery")
+    mark.add_argument("directory", help=DIRECTORY_HELP)
+    mark.add_argument("record", help="the record id")
+    mark.add_argument("--to", default="", help="the holder marking it; default: your holder name")
+    action = mark.add_mutually_exclusive_group()
+    again = "mark it again after a change"
+    action.add_argument("--again", dest="mode", action="store_const", const="again", help=again)
+    clear = "remove the ready mark"
+    action.add_argument("--clear", dest="mode", action="store_const", const="clear", help=clear)
+    mark.set_defaults(mode="")
 
 
 def _add_config_parser(sub: Any) -> None:

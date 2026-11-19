@@ -135,6 +135,9 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
     "unassign": lambda a, c: commands.unassign(
         a.directory, a.record, _releaser(a), take=a.take, context=c
     ),
+    "mark-ready": lambda a, c: commands.mark_ready(
+        a.directory, a.record, _holder(a), mode=a.mode, context=c
+    ),
     "resolve": lambda a, c: commands.resolve(a.directory, a.record, context=c),
     "acknowledge-loss": lambda a, c: fsck.recovery.acknowledge(
         a.directory,
@@ -274,7 +277,7 @@ _REFUSABLE: dict[str, Callable[[argparse.Namespace, Callable[[], float]], tuple[
 
 
 def _refuse_vault_ledger_form(args: argparse.Namespace) -> None:
-    if args.command not in {"assign", "resolve", "acknowledge-loss", "delete"}:
+    if args.command not in vault_refusal.REFUSED_FORMS:
         return
     ledger = commands.git_layout.shared_ledger(args.directory)
     config = vault_config.load(ledger.resolve())
@@ -362,9 +365,7 @@ def _run_command(
             "appended": bool(appended),
             **_owed_of(vault_cli.view_of(args, clock), record),
         }
-    records = query_records(
-        args.directory, status=args.status, limit=args.limit, query=args.query, summary=args.summary
-    )
+    records = queries.listed(args)
     return EXIT_OK, {"count": len(records), "records": records}
 
 

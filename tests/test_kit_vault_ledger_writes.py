@@ -35,8 +35,9 @@ FORMS = {
     "unassign": [],
     "resolve": [],
     "acknowledge-loss": ["--sequence", "1", "--reason", "lost", "--evidence", "proof"],
+    "mark-ready": [],
 }
-REFUSED = frozenset({"assign", "resolve", "acknowledge-loss", "delete"})
+REFUSED = frozenset({"assign", "resolve", "acknowledge-loss", "delete", "mark-ready"})
 
 
 def test_every_record_write_form_is_in_the_vault_contract_population() -> None:
@@ -80,6 +81,8 @@ def test_an_unsupported_vault_ledger_write_refuses_without_changing_any_local_fi
         args = cli.vault_arguments.FORMS[argv[0]]().parse_args([*argv, "--vault", "vault.git"])
         if verb == "assign":
             assert args.command == "claim-vault" and args.record == record
+        elif verb == "mark-ready":
+            assert args.command == "comment-vault" and args.record == record
         else:
             assert args.command == "fsck-vault" and args.repair
     assert "nothing was written" in refused

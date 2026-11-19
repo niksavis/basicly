@@ -73,7 +73,7 @@ The engine and standalone kit use the same admission and write adapter.
 | --- | --- | --- |
 | Ordinary writes | `create`, `child`, `update`, `close`, `comment`, `review`, `confirm`, `dep`, `undep` | Keep their ledger-form arguments and existing checks. |
 | Canonical protocol | `claim`, `unassign` | Compatible ledger aliases use the native handler, report schema and exit codes. |
-| Refused | `assign`, `resolve`, `acknowledge-loss`, `delete` | Write nothing and name a real remedy. |
+| Refused | `assign`, `resolve`, `acknowledge-loss`, `delete`, `mark-ready` | Write nothing and name a real remedy. |
 
 Use native `claim RECORD-ID` to reserve work in the vault, then
 `update .basicly/ledger RECORD-ID --status in_progress` to start it after its readiness checks.
@@ -230,6 +230,19 @@ another holder's record on purpose, pass `--take`, which the ledger records.
 ```sh
 python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2
 python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2 --take
+```
+
+### mark-ready
+
+Record that an in_progress record is built and waits for delivery. Only its holder marks it
+(`--to`, default: your holder name); a record that is not in_progress, held by someone else
+or already marked is refused by name. `--again` marks it again after a change and `--clear`
+removes the mark. The ready time is the time of the marking event:
+`list --ready-for-delivery` prints it, oldest first.
+
+```sh
+python3 .basicly/kit/tracker/cli.py mark-ready .basicly/ledger acme-a1b2
+python3 .basicly/kit/tracker/cli.py list .basicly/ledger --ready-for-delivery
 ```
 
 ### vault-check

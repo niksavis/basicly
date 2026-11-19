@@ -29,6 +29,8 @@ events = _load("events.py", "basicly_tracker_kit_events")
 fields = _load("fields.py", "basicly_tracker_kit_fields")
 
 HOLDER_FIELD = events.HOLDER_FIELD
+READY_FIELD = "ready_for_delivery"
+READY_MARK = "ready"
 TAKE_KEY = events.TAKE_KEY
 HOLDER_VARIABLE = "BASICLY_HOLDER"
 NAME_VARIABLES = ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME")
