@@ -9,9 +9,11 @@ from basicly.agents import (
     CLAUDE_AGENTS_ROOT,
     COPILOT_AGENTS_ROOT,
     GENERATED_MARKER,
+    HAND_WRITTEN_REASON,
     ORPHANED_REASON,
     SLOT_ORDER,
     AgentOutputRoot,
+    HandWrittenAgentError,
     check_synced_agents,
     compose_body,
     compose_description,
@@ -466,6 +468,24 @@ def test_orphan_pruning_spares_a_hand_written_agent(tmp_path: Path) -> None:
         assert target.read_text(encoding="utf-8") == hand_written
 
 
+def test_sync_agents_refuses_to_overwrite_a_hand_written_agent(tmp_path: Path) -> None:
+
+    repo = _repo_with_agent(tmp_path)
+    hand_written = "---\nname: code-reviewer\n---\n\nMy own reviewer.\n"
+    targets = _targets(repo)
+    for target in targets:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(hand_written, encoding="utf-8")
+
+    with pytest.raises(HandWrittenAgentError, match="code-reviewer") as refusal:
+        sync_agents(repo)
+
+    assert refusal.value.paths == targets
+    assert check_synced_agents(repo) == [(target, HAND_WRITTEN_REASON) for target in targets]
+    for target in targets:
+        assert target.read_text(encoding="utf-8") == hand_written
+
+
 @pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
 def test_projected_read_only_agent_grants_no_write_tool(
     tmp_path: Path, root: AgentOutputRoot
@@ -483,3 +503,41 @@ def test_projected_read_only_agent_grants_no_write_tool(
     assert [name for name in projected if resolve_copilot_tool(name) == "edit"] == []
     folded_writes = {tool.casefold() for tool in WRITE_TOOLS}
     assert [name for name in projected if name.casefold() in folded_writes] == []
+
+
+def test_the_orchestrator_agent_projects_only_when_the_workspace_enables_orchestration(
+    tmp_path: Path,
+) -> None:
+
+    repo = _repo_with_agent(tmp_path)
+    extra = "requires: [orchestration]\ncodex_role: true\n"
+    _write_agent(
+        repo / ".basicly/core/agents",
+        "orchestrator",
+        _agent_yaml("orchestrator", tools='["*"]', posture="Coordinates.", extra=extra),
+    )
+    hand_written = repo / ".claude/agents/orchestrator.md"
+    hand_written.parent.mkdir(parents=True)
+    hand_written.write_text("---\nname: orchestrator\n---\n\nMine.\n", encoding="utf-8")
+
+    sync_agents(repo)
+
+    assert hand_written.read_text(encoding="utf-8") == "---\nname: orchestrator\n---\n\nMine.\n"
+    assert not (repo / ".agents/roles/orchestrator.md").exists()
+    assert check_synced_agents(repo) == []
+
+    hand_written.unlink()
+    enabled = frozenset({"orchestration"})
+    sync_agents(repo, features=enabled)
+
+    projected = [
+        repo / ".claude/agents/orchestrator.md",
+        repo / ".github/agents/orchestrator.agent.md",
+        repo / ".agents/roles/orchestrator.md",
+    ]
+    assert all(GENERATED_MARKER in path.read_text(encoding="utf-8") for path in projected)
+    assert all("\ntools:" not in path.read_text(encoding="utf-8") for path in projected)
+    assert check_synced_agents(repo, features=enabled) == []
+    assert check_synced_agents(repo) == [
+        (path, "excluded by technology selection") for path in projected
+    ]

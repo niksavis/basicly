@@ -65,7 +65,7 @@ venvPath = "."
 venv = ".venv"
 extraPaths = ["src", "."]
 typeCheckingMode = "standard"
-include = ["src", "tests", ".scripts", ".basicly", "packages", ".claude/skills", ".agents/skills", "hatch_build.py"]
+include = ["src", "tests", ".scripts", ".basicly", "packages", ".claude/skills", ".agents/skills", "hatch_build.py", "docs/design/orchestrator-kit-probes", "docs/design/session-state-probes"]
 exclude = ["**/node_modules", "**/__pycache__", "**/.venv"]
 
 [project.scripts]

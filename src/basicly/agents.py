@@ -12,7 +12,13 @@ from .copilot_tools import (
     resolve_copilot_tool,
 )
 from .projection import SyncResult, sync_file
-from .schema import MODEL_TIERS, ValidationError, technology_selected, validate_technologies
+from .schema import (
+    MODEL_TIERS,
+    ValidationError,
+    catalog_item_selected,
+    validate_requires,
+    validate_technologies,
+)
 from .skill_source import discover_skills
 
 CORE_AGENTS_DIR = Path(".basicly/core/agents")
@@ -48,6 +54,11 @@ COPILOT_AGENTS_ROOT = AgentOutputRoot(
     family="copilot", path=Path(".github/agents"), suffix=".agent.md", claude_passthrough=False
 )
 AGENTS_OUTPUT_ROOTS = (CLAUDE_AGENTS_ROOT, COPILOT_AGENTS_ROOT)
+CODEX_ROLE_ROOT = AgentOutputRoot(
+    family="codex", path=Path(".agents/roles"), suffix=".md", claude_passthrough=False
+)
+ALL_OUTPUT_ROOTS = (*AGENTS_OUTPUT_ROOTS, CODEX_ROLE_ROOT)
+ALL_TOOLS = "*"
 
 
 @dataclass(frozen=True)
@@ -82,6 +93,8 @@ class AgentDefinition:
     override: bool
     source_path: Path
     technologies: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ()
+    codex_role: bool = False
 
     def slot(self, name: str) -> tuple[SlotItem, ...]:
         return dict(self.slots)[name]
@@ -201,6 +214,11 @@ def _parse_agent(slug: str, data: dict, path: Path, source: str) -> AgentDefinit
             "(agents never silently inherit every tool)",
             path,
         )
+    if ALL_TOOLS in tools and len(tools) > 1:
+        raise ValidationError(
+            f'tools: "{ALL_TOOLS}" grants every tool and stands alone; remove the other names',
+            path,
+        )
 
     claude = data.get("claude", {})
     if not isinstance(claude, dict) or not all(isinstance(key, str) for key in claude):
@@ -213,6 +231,7 @@ def _parse_agent(slug: str, data: dict, path: Path, source: str) -> AgentDefinit
         )
 
     technologies = validate_technologies(data.get("technologies") or [], path)
+    requires = validate_requires(data.get("requires") or [], path)
 
     return AgentDefinition(
         slug=slug,
@@ -229,6 +248,8 @@ def _parse_agent(slug: str, data: dict, path: Path, source: str) -> AgentDefinit
         override=bool(data.get("override", False)),
         source_path=path,
         technologies=tuple(technologies),
+        requires=tuple(requires),
+        codex_role=bool(data.get("codex_role", False)),
     )
 
 
@@ -312,11 +333,9 @@ def render_agent_md(
     agent: AgentDefinition, blocks: dict[str, BlockDefinition], root: AgentOutputRoot
 ) -> str:
 
-    front: dict[str, object] = {
-        "name": agent.slug,
-        "description": compose_description(agent),
-        "tools": ", ".join(agent.tools),
-    }
+    front: dict[str, object] = {"name": agent.slug, "description": compose_description(agent)}
+    if agent.tools != (ALL_TOOLS,):
+        front["tools"] = ", ".join(agent.tools)
     if agent.tier:
         front["tier"] = agent.tier
     if root.claude_passthrough:
@@ -331,12 +350,51 @@ def _is_generated_agent(path: Path) -> bool:
 
 
 ORPHANED_REASON = "orphaned (no agent source)"
+HAND_WRITTEN_REASON = "hand-written file with no generated marker; basicly will not overwrite it"
+
+
+class HandWrittenAgentError(Exception):
+    def __init__(self, paths: list[Path]) -> None:
+        self.paths = paths
+        names = ", ".join(path.as_posix() for path in paths)
+        super().__init__(
+            f"refusing to overwrite hand-written agent file(s): {names}. "
+            "Each has no basicly generated marker. Rename the hand-written file, "
+            "or rename the catalog agent source of the same name, then run the command again"
+        )
+
+
+def agent_selected(
+    agent: AgentDefinition, selection: frozenset[str] | None, features: frozenset[str]
+) -> bool:
+    return catalog_item_selected(agent.technologies, agent.requires, selection, features)
+
+
+def output_roots(agent: AgentDefinition) -> tuple[AgentOutputRoot, ...]:
+    return ALL_OUTPUT_ROOTS if agent.codex_role else AGENTS_OUTPUT_ROOTS
+
+
+def hand_written_targets(
+    repo_root: Path,
+    sources: list[AgentDefinition],
+    selection: frozenset[str] | None,
+    features: frozenset[str] = frozenset(),
+) -> list[Path]:
+    found: list[Path] = []
+    for agent in sources:
+        if not agent_selected(agent, selection, features):
+            continue
+        for out_root in output_roots(agent):
+            target = out_root.target(repo_root, agent.slug)
+            if target.is_file() and not _is_generated_agent(target):
+                found.append(target)
+    return found
 
 
 def orphaned_projections(repo_root: Path, source_slugs: set[str]) -> list[Path]:
 
     orphans: list[Path] = []
-    for out_root in AGENTS_OUTPUT_ROOTS:
+    for out_root in ALL_OUTPUT_ROOTS:
         base = repo_root / out_root.path
         if not base.is_dir():
             continue
@@ -348,17 +406,22 @@ def orphaned_projections(repo_root: Path, source_slugs: set[str]) -> list[Path]:
 
 
 def sync_agents(
-    repo_root: Path, selection: frozenset[str] | None = None
+    repo_root: Path,
+    selection: frozenset[str] | None = None,
+    features: frozenset[str] = frozenset(),
 ) -> tuple[SyncResult, list[Path]]:
 
     roots = default_agent_roots(repo_root)
     blocks = discover_blocks(roots)
     sources = discover_agents(roots)
+    hand_written = hand_written_targets(repo_root, sources, selection, features)
+    if hand_written:
+        raise HandWrittenAgentError(hand_written)
     result = SyncResult()
     pruned: list[Path] = []
     for agent in sources:
-        selected = technology_selected(agent.technologies, selection)
-        for out_root in AGENTS_OUTPUT_ROOTS:
+        selected = agent_selected(agent, selection, features)
+        for out_root in output_roots(agent):
             target_path = out_root.target(repo_root, agent.slug)
             if selected:
                 sync_file(
@@ -374,15 +437,17 @@ def sync_agents(
 
 
 def check_synced_agents(
-    repo_root: Path, selection: frozenset[str] | None = None
+    repo_root: Path,
+    selection: frozenset[str] | None = None,
+    features: frozenset[str] = frozenset(),
 ) -> list[tuple[Path, str]]:
     roots = default_agent_roots(repo_root)
     blocks = discover_blocks(roots)
     sources = discover_agents(roots)
     mismatches: list[tuple[Path, str]] = []
     for agent in sources:
-        selected = technology_selected(agent.technologies, selection)
-        for out_root in AGENTS_OUTPUT_ROOTS:
+        selected = agent_selected(agent, selection, features)
+        for out_root in output_roots(agent):
             target_path = out_root.target(repo_root, agent.slug)
             if not selected:
                 if _is_generated_agent(target_path):
@@ -390,6 +455,9 @@ def check_synced_agents(
                 continue
             if not target_path.exists():
                 mismatches.append((target_path, "missing"))
+                continue
+            if not _is_generated_agent(target_path):
+                mismatches.append((target_path, HAND_WRITTEN_REASON))
                 continue
             if target_path.read_bytes() != render_agent_md(agent, blocks, out_root).encode("utf-8"):
                 mismatches.append((target_path, "content mismatch"))
@@ -435,7 +503,9 @@ def lint_agent_sources(repo_root: Path) -> list[str]:
                 "model id or alias, which is not portable across agent families; declare the "
                 f"portable model tier instead — replace it with `tier: {' | '.join(MODEL_TIERS)}`"
             )
-        unresolved = [tool for tool in agent.tools if resolve_copilot_tool(tool) is None]
+        unresolved = [
+            tool for tool in agent.tools if tool != ALL_TOOLS and resolve_copilot_tool(tool) is None
+        ]
         if unresolved:
             violations.append(
                 f"{rel}: tool(s) {', '.join(unresolved)} resolve to nothing in GitHub's "
@@ -466,7 +536,9 @@ def lint_agent_sources(repo_root: Path) -> list[str]:
 
         if READ_ONLY_MARKER in agent.posture.lower():
             granted = sorted({
-                tool for tool in agent.tools if tool.casefold() in _WRITE_TOOLS_FOLDED
+                tool
+                for tool in agent.tools
+                if tool.casefold() in _WRITE_TOOLS_FOLDED or tool == ALL_TOOLS
             })
             if granted:
                 violations.append(

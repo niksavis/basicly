@@ -113,6 +113,24 @@ def test_copilot_deny_specs_flattens_dedups_in_order(tmp_path: Path) -> None:
     ]
 
 
+def test_a_gated_deny_rule_projects_its_copilot_entry_only_when_the_feature_is_on(
+    tmp_path: Path,
+) -> None:
+    gated = COPILOT_YAML.replace(
+        "deny:\n",
+        "deny:\n  - id: gated\n    description: gated\n    requires: [orchestration]\n"
+        '    copilot:\n      - "shell(orch approve)"\n',
+        1,
+    )
+    folder = _write_perms(tmp_path, gated)
+    off = permissions.copilot_deny_specs(permissions.active_deny_rules(folder))
+    on = permissions.copilot_deny_specs(
+        permissions.active_deny_rules(folder, frozenset({"orchestration"}))
+    )
+    assert "shell(orch approve)" not in off
+    assert "shell(orch approve)" in on
+
+
 def test_load_deny_rules_rejects_bad_copilot_specs(tmp_path: Path) -> None:
     bad = "deny:\n  - id: r\n    description: d\n    copilot: ['']\n"
     with pytest.raises(ValueError, match="'copilot' must be a list of non-empty strings"):

@@ -60,6 +60,26 @@ def technology_selected(
     return selection is None or not technologies or bool(set(technologies) & selection)
 
 
+FEATURES = frozenset({"orchestration"})
+
+
+def validate_requires(requires: object, path: Path) -> list[str]:
+    if not isinstance(requires, list) or not set(requires) <= FEATURES:
+        raise ValidationError(
+            f"requires must list features from: {', '.join(sorted(FEATURES))}", path
+        )
+    return requires
+
+
+def catalog_item_selected(
+    technologies: list[str] | tuple[str, ...],
+    requires: list[str] | tuple[str, ...],
+    selection: frozenset[str] | None,
+    features: frozenset[str],
+) -> bool:
+    return technology_selected(technologies, selection) and set(requires) <= features
+
+
 def validate_technologies(technologies: object, path: Path) -> list[str]:
 
     if not isinstance(technologies, list) or not all(
@@ -96,6 +116,7 @@ class Fragment:
     replaces: list[str] = field(default_factory=list)
     extends: list[str] = field(default_factory=list)
     enforced_by: list[str] = field(default_factory=list)
+    requires: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "title", self.title or self._id_to_title(self.id))

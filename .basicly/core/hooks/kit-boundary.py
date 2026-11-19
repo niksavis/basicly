@@ -36,6 +36,9 @@ LISTENER_IMPORTS = frozenset({"http", "http.server", "urllib.parse"})
 GIT_RUNNER = ("tracker", "git_runner.py")
 GIT_RUNNER_IMPORTS = frozenset({"subprocess"})
 
+ORCH_RUNNER = ("orch", "runner.py")
+ORCH_RUNNER_IMPORTS = frozenset({"subprocess"})
+
 ENVIRONMENT_KIT = "tracker"
 ENVIRONMENT_ADAPTERS = frozenset({
     "cli.py",
@@ -236,6 +239,8 @@ def allowed_imports(place: tuple[str, ...]) -> frozenset[str]:
         return LISTENER_IMPORTS
     if place == GIT_RUNNER:
         return GIT_RUNNER_IMPORTS
+    if place == ORCH_RUNNER:
+        return ORCH_RUNNER_IMPORTS
     return frozenset()
 
 
@@ -291,7 +296,10 @@ def main(argv: list[str] | None = None) -> int:
         "reaching no network and spawning no process. Only the board kit may import "
         f"{', '.join(sorted(LISTENER_IMPORTS))}, to listen on loopback when a person serves it. "
         f"Only {'/'.join(GIT_RUNNER)} may import "
-        f"{', '.join(sorted(GIT_RUNNER_IMPORTS))}, to run git.",
+        f"{', '.join(sorted(GIT_RUNNER_IMPORTS))}, to run git. "
+        f"Only {'/'.join(ORCH_RUNNER)} may import "
+        f"{', '.join(sorted(ORCH_RUNNER_IMPORTS))}, to run herdr, codex and the tracker CLI "
+        "for the orchestrator (owner approval 2026-11-19, basicly-qpr2xmr.3.17).",
         file=sys.stderr,
     )
     for finding in findings:

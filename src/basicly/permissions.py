@@ -36,6 +36,7 @@ class DenyRule:
     description: str
     claude: tuple[str, ...] = ()
     copilot: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,7 @@ def load_deny_rules(permissions_dir: Path | None = None) -> list[DenyRule]:
                 description=str(entry["description"]),
                 claude=_str_list(entry, "claude", rule, manifest),
                 copilot=_str_list(entry, "copilot", rule, manifest),
+                requires=_str_list(entry, "requires", rule, manifest),
             )
         )
     return rules
@@ -143,7 +145,15 @@ def _shell_command_drop_reason(tool: str, content: str, pattern: str) -> str | N
     return None
 
 
-def load_claude_permissions(permissions_dir: Path | None = None) -> ClaudePermissions:
+def active_deny_rules(
+    permissions_dir: Path | None = None, features: frozenset[str] = frozenset()
+) -> list[DenyRule]:
+    return [rule for rule in load_deny_rules(permissions_dir) if set(rule.requires) <= features]
+
+
+def load_claude_permissions(
+    permissions_dir: Path | None = None, features: frozenset[str] = frozenset()
+) -> ClaudePermissions:
     manifest, data = _read_manifest(permissions_dir)
     allow = _claude_only_patterns(data, "allow", manifest)
     for pattern in allow:
@@ -152,7 +162,7 @@ def load_claude_permissions(permissions_dir: Path | None = None) -> ClaudePermis
             raise ValueError(f"{manifest}: allow pattern {pattern!r} is refused: {reason}")
     return ClaudePermissions(
         allow=tuple(allow),
-        deny=tuple(claude_deny_patterns(load_deny_rules(permissions_dir))),
+        deny=tuple(claude_deny_patterns(active_deny_rules(permissions_dir, features))),
     )
 
 

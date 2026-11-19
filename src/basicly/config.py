@@ -408,6 +408,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
         }
     ),
     "tracker": Table(keys=frozenset({"mode", "prefix", "fold_on_merge"})),
+    "orchestration": Table(keys=frozenset({"enabled"})),
     "privacy": Table(arrays={"denied": Table(keys=frozenset({"name", "token"}))}),
 }
 
@@ -1107,6 +1108,18 @@ def _positive_float(value: object, default: float) -> float:
     return default
 
 
+def load_enabled_features(repo_root: Path) -> frozenset[str]:
+
+    data = _validated_documents(repo_root).get(CONFIG_FILE) or {}
+    section = data.get("orchestration", {})
+    if not isinstance(section, dict) or "enabled" not in section:
+        return frozenset()
+    enabled = section["enabled"]
+    if not isinstance(enabled, bool):
+        raise ValueError("[orchestration] enabled must be true or false")
+    return frozenset({"orchestration"}) if enabled else frozenset()
+
+
 def load_technology_selection(repo_root: Path) -> frozenset[str] | None:
 
     data = _validated_documents(repo_root).get(CONFIG_FILE)
@@ -1230,7 +1243,7 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
             spec = _parse_runner_agent(entry)
             specs[spec.name] = spec
 
-    _inject_copilot_deny_tools(specs)
+    _inject_copilot_deny_tools(specs, load_enabled_features(repo_root))
     _inject_copilot_session_store(specs, section)
     _apply_context_windows(specs, section)
     _apply_default_tier(specs, default_tier)
@@ -1268,12 +1281,12 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
     )
 
 
-def _inject_copilot_deny_tools(specs: dict[str, RunnerSpec]) -> None:
+def _inject_copilot_deny_tools(specs: dict[str, RunnerSpec], features: frozenset[str]) -> None:
 
     spec = specs.get(COPILOT_RUNNER)
     if spec is None or spec.kind != HEADLESS:
         return
-    deny = permissions.copilot_deny_specs(permissions.load_deny_rules())
+    deny = permissions.copilot_deny_specs(permissions.active_deny_rules(features=features))
     if deny:
         specs[COPILOT_RUNNER] = replace(spec, deny_tools=tuple(deny))
 

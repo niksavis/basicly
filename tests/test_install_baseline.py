@@ -172,3 +172,24 @@ def test_guidance_install_and_upgrade_preserve_local_and_scoped_rules(tmp_path: 
         assert "app/**/*.py" in rule
         assert "Preserve the path-specific invariant." in rule
         assert {path: path.read_bytes() for path in (overlay, scoped)} == local_before
+
+
+def test_a_hand_written_agent_file_is_refused_before_any_projection(tmp_path: Path) -> None:
+    consumer = tmp_path / "consumer"
+    _old_core(consumer)
+    provision_markdownlint_double(consumer)
+    hand_written = consumer / ".claude/agents/reviewer.md"
+    hand_written.parent.mkdir(parents=True)
+    hand_written.write_text("---\nname: reviewer\n---\n\nMy own reviewer.\n", encoding="utf-8")
+
+    result = _install(consumer)
+
+    assert result.returncode != 0
+    assert "refusing to overwrite hand-written agent file(s)" in result.stderr
+    assert "reviewer.md" in result.stderr
+    assert (
+        hand_written.read_text(encoding="utf-8") == "---\nname: reviewer\n---\n\nMy own reviewer.\n"
+    )
+    assert not (consumer / ".github/agents").exists()
+    assert not (consumer / ".claude/CLAUDE.md").exists()
+    assert not (consumer / "AGENTS.md").exists()

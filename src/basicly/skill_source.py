@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from .schema import ValidationError, validate_technologies
+from .schema import ValidationError, validate_requires, validate_technologies
 
 SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
 SKILL_SOURCE_FILE = "skill.yaml"
@@ -25,6 +25,7 @@ class SkillDefinition:
     instructions: str
     source_path: Path
     technologies: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ()
     license: str | None = None
     compatibility: str | None = None
     allowed_tools: str | None = None
@@ -207,6 +208,7 @@ def discover_skills(
                 instructions=instructions,
                 source_path=path,
                 technologies=tuple(technologies),
+                requires=tuple(validate_requires(data.get("requires") or [], path)),
                 license=_optional_str(data.get("license"), "license", path),
                 compatibility=_optional_str(
                     data.get("compatibility"), "compatibility", path, max_len=500

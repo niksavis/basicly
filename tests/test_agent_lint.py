@@ -16,6 +16,7 @@ from basicly.agents import (
     unknown_skill_refs,
 )
 from basicly.copilot_tools import COPILOT_TOOL_ALIASES, WRITE_TOOLS
+from basicly.schema import ValidationError
 from tests.agent_helpers import _agent_yaml, _write_agent, _write_block
 
 
@@ -287,3 +288,15 @@ def test_no_catalog_agent_declares_the_maximum_tier() -> None:
         f"{offenders} declare tier: maximum; use tier: high, because Fable advises "
         "or orchestrates and is never a delegated worker"
     )
+
+
+def test_every_tool_wildcard_stands_alone_and_is_never_read_only(tmp_path: Path) -> None:
+    core = tmp_path / ".basicly/core/agents"
+    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools='["*"]'))
+
+    violations = lint_agent_sources(tmp_path)
+
+    assert any("read-only but tools grant *" in v for v in violations), violations
+    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools='["*", Read]'))
+    with pytest.raises(ValidationError, match="grants every tool and stands alone"):
+        discover_agents(default_agent_roots(tmp_path))

@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from .projection import SyncResult, resolve_roots, sync_file, write_if_changed
-from .schema import ValidationError, technology_selected
+from .schema import ValidationError, catalog_item_selected, technology_selected
 from .skill_source import (
     EVAL_SOURCE_FILE,
     MODEL_INVOKED,
@@ -204,6 +204,7 @@ def sync_skills(
     roots: list[Path],
     source_dir: Path = SKILLS_SOURCE_DIR,
     selection: frozenset[str] | None = None,
+    features: frozenset[str] = frozenset(),
 ) -> tuple[SyncResult, list[Path]]:
 
     skills = discover_skills(repo_root, source_dir)
@@ -211,7 +212,7 @@ def sync_skills(
     pruned: list[Path] = []
 
     for skill in skills:
-        selected = technology_selected(skill.technologies, selection)
+        selected = catalog_item_selected(skill.technologies, skill.requires, selection, features)
         for root in roots:
             skill_dir = root / skill.slug
             if selected:
@@ -269,18 +270,19 @@ def check_synced_skills(
     roots: list[Path],
     source_dir: Path = SKILLS_SOURCE_DIR,
     selection: frozenset[str] | None = None,
+    features: frozenset[str] = frozenset(),
 ) -> list[tuple[Path, str]]:
     skills = discover_skills(repo_root, source_dir)
     mismatches: list[tuple[Path, str]] = []
 
     for skill in skills:
-        selected = technology_selected(skill.technologies, selection)
+        reason = _exclusion(skill, selection, features)
         for root in roots:
             skill_dir = root / skill.slug
-            if not selected:
+            if reason is not None:
                 skill_md = skill_dir / SKILL_FILE_NAME
                 if _is_generated_skill(skill_md):
-                    mismatches.append((skill_md, "excluded by technology selection"))
+                    mismatches.append((skill_md, reason))
                 continue
             mismatches.extend(_check_projected_skill(skill, skill_dir, selection))
 
@@ -289,6 +291,17 @@ def check_synced_skills(
         mismatches.extend(_unmanaged_entries(root, known_slugs, source_dir))
 
     return mismatches
+
+
+def _exclusion(
+    skill: SkillDefinition, selection: frozenset[str] | None, features: frozenset[str]
+) -> str | None:
+    if not technology_selected(skill.technologies, selection):
+        return "excluded by technology selection"
+    missing = sorted(set(skill.requires) - features)
+    if missing:
+        return f"excluded: basicly.toml does not enable {', '.join(missing)}"
+    return None
 
 
 def _check_projected_skill(

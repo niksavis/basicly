@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import claude_settings, skill_source, skills
+from .config import load_enabled_features
 from .context_window import ADAPTER_WINDOWS, CODEX_FALLBACK_WINDOW
 from .schema import ValidationError
 
@@ -74,7 +75,12 @@ def listing_characters(entries: Sequence[skill_source.SkillDefinition], host: _H
 
 def listing_budget_warnings(repo_root: Path) -> list[str]:
 
-    entries = skill_source.discover_skills(repo_root)
+    features = load_enabled_features(repo_root)
+    entries = [
+        skill
+        for skill in skill_source.discover_skills(repo_root)
+        if set(skill.requires) <= features
+    ]
     if not entries:
         return []
     warnings: list[str] = []

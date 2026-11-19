@@ -99,6 +99,10 @@ def test_bundled_allow_carries_read_git_and_basicly_check_rules() -> None:
     for pattern in ("Read", "Glob", "Grep", "Bash(git status *)", "Bash(basicly check)"):
         assert pattern in managed.allow
     assert "Bash(rm -rf*)" in managed.deny
+    assert "Agent(orchestrator)" not in managed.deny
+    enabled = permissions.load_claude_permissions(features=frozenset({"orchestration"}))
+    assert "Agent(orchestrator)" in enabled.deny
+    assert "Bash(rm -rf*)" in enabled.deny
 
 
 def test_bundled_allow_ships_no_edit_write_or_web_allow() -> None:

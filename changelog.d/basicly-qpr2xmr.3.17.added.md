@@ -1,0 +1,1 @@
+- Workspaces with `[orchestration] enabled = true` get an `orchestrated-session` rule fragment (how orders, relayed approvals and orchestrator decisions count, what stays with the person, how to report) and an `orchestration` skill of orchestrator checklists. Fragments and skills can now declare `requires` like agents.

@@ -23,6 +23,7 @@ from basicly.config import (
     LOCAL_CONFIG_FILE,
     PolicyConfig,
     WorktreeConfig,
+    load_enabled_features,
     load_policy_config,
     load_project_paths,
     load_runner_config,
@@ -102,6 +103,23 @@ def test_technology_selection_absent_means_everything(tmp_path: Path) -> None:
     assert load_technology_selection(tmp_path) is None
     (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
     assert load_technology_selection(tmp_path) is None
+
+
+def test_orchestration_feature_is_off_unless_enabled_is_true(tmp_path: Path) -> None:
+    config = tmp_path / CONFIG_FILE
+    config.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
+    assert load_enabled_features(tmp_path) == frozenset()
+    config.write_text(
+        DEFAULT_CONFIG_TOML + "\n[orchestration]\nenabled = false\n", encoding="utf-8"
+    )
+    assert load_enabled_features(tmp_path) == frozenset()
+    config.write_text(DEFAULT_CONFIG_TOML + "\n[orchestration]\nenabled = true\n", encoding="utf-8")
+    assert load_enabled_features(tmp_path) == frozenset({"orchestration"})
+    config.write_text(
+        DEFAULT_CONFIG_TOML + '\n[orchestration]\nenabled = "yes"\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="enabled must be true or false"):
+        load_enabled_features(tmp_path)
 
 
 def test_record_technology_selection_round_trips(tmp_path: Path) -> None:

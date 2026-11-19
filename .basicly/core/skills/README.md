@@ -33,6 +33,7 @@ field: every skill root advertises its first body paragraph instead.
 | `interface-facts` | `model` | any | Establishes a third-party CLI flag, API field, model, price or limit from the tool and live vendor docs. Use before code depends on it. |
 | `no-comments` | `model` | any | Keeps prose comments and docstrings out of code: where a fact goes instead and which tool directives stay. Use when writing a comment or docstring, or when the no-comments gate refuses a commit. |
 | `node` | `model` | `node` | Runs Node and npm for the markdownlint hook and other tools. Use when npm or npx fails or resolves the wrong node binary, often on WSL. |
+| `orchestration` | `model` | any | Checklists for the orchestrator session: a design proposal, a relayed decision or approval, a rehearsal order and a question to a session. Use when the orchestrator proposes, decides, relays or orders. |
 | `plain-english` | `model` | any | Writes plain prose for readers of any language: READMEs, release notes, design docs, records. Use when writing text for a person. |
 | `python` | `model` | `python` | Writes typed Python with pathlib and Windows-safe subprocesses, and judges if an abstraction earns its keep. Use for .py edits, an except clause, a size gate or a silenced warning. |
 | `release-process` | `model` | any | Cuts a release with basicly release, pushes it and confirms it published. Use when cutting, tagging or checking a release. |
