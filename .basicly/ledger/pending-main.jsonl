@@ -1,0 +1,2 @@
+{"actor":"agent:claude-code_2-1-328_agent","id":"basicly-qpr2xmr.3.21#ev-34f392418b","kind":"field","payload":{"name":"assignee","value":"niksa"},"record":"basicly-qpr2xmr.3.21","seq":5,"totals":{"attempts":0,"events":5,"spend_micros":0,"status":"open"},"ts":"2026-11-19T14:00:55.029953Z"}
+{"actor":"agent:claude-code_2-1-328_agent","id":"basicly-qpr2xmr.3.21#ev-f56aa4c32a","kind":"status","payload":{"status":"in_progress"},"record":"basicly-qpr2xmr.3.21","seq":6,"totals":{"attempts":0,"events":6,"spend_micros":0,"status":"in_progress"},"ts":"2026-11-19T14:00:55.029994Z"}
