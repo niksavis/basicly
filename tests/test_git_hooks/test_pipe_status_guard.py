@@ -136,9 +136,30 @@ def test_the_guard_fails_open_on_anything_it_cannot_read() -> None:
         assert _run_hook(payload).returncode == 0
 
 
-def test_the_advice_works_in_bash_and_zsh() -> None:
+def test_the_advice_works_in_bash_and_zsh_and_gives_the_repl_form() -> None:
     stderr = _run_hook(_bash(THE_RECORDED_ONE)).stderr
+    assert "Code Mode REPL" in stderr
+    assert ".nothrow(); [r.exitCode, r.stdout.split" in stderr
     assert "PIPESTATUS" not in stderr
     assert "pipestatus" not in stderr
     assert "<cmd> | tail -5; <next>" in stderr
     assert "; not &&" in stderr
+
+
+TRUE_REFUSALS_2026_11_19 = [
+    'git push origin --delete harness/x 2>&1 | tail -5; echo "exit=$?"; '
+    "git fetch --prune origin 2>&1 | tail -3; git branch -a",
+    'S=scratch/repro; mkdir -p "$S/repo"; cd "$S/repo" && git init -q\n'
+    'uvx --from pkg.whl basicly install 2>&1 | tail -25; echo "exit=$?"',
+    "cd lane && uv run basicly build 2>&1 | tail -2; echo build=$?; "
+    'for c in check hooks-check; do uv run basicly $c > /dev/null 2>&1; echo "$c=$?"; done; '
+    'git status --short; grep -n "x" SKILL.md | cut -c1-120',
+    "cd ws; timeout 120 uvx --offline --from pkg.whl basicly check 2>&1 | tail -4; echo exit=$?",
+    "git -C lane status --porcelain | wc -l; git worktree remove lane 2>&1 | tail -2; "
+    "echo rm=$?; git worktree list | grep -c lane; git branch -D harness/x 2>&1 | tail -1",
+]
+
+
+@pytest.mark.parametrize("command", TRUE_REFUSALS_2026_11_19)
+def test_each_true_refusal_of_2026_11_19_stays_refused(module, command: str) -> None:
+    assert module.unread_pipe_filters(command) != ()

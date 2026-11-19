@@ -1,0 +1,1 @@
+- The pipe-status-guard refusal also names the Code Mode REPL form: run the command with `.nothrow()` and cut its output in JavaScript, so `.exitCode` stays the command's own.

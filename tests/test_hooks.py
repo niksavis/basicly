@@ -93,6 +93,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "protect-generated-commit",
         "unsplit-loop-guard",
         "pipe-status-guard",
+        "pkill-self-match",
         "bare-var-guard",
         "rg-replace-guard",
         "tool-usage",
