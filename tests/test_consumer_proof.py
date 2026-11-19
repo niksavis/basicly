@@ -160,3 +160,40 @@ def test_a_consumer_path_names_a_folder_under_the_root(tmp_path: Path) -> None:
 
     assert consumer_proof.source(repo, listed[0], {}) == tmp_path
     assert consumer_proof.source(repo, listed[0], {"BASICLY_CONSUMERS_ROOT": "/w"}) == Path("/w")
+
+
+def test_consumers_run_in_parallel_each_on_its_own_core_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    init(tmp_path / "web")
+    repo = workspace(tmp_path)
+    (repo / "basicly.toml").write_text(
+        '[[release.consumers]]\nname = "app"\nci = [["true"]]\n\n'
+        '[[release.consumers]]\nname = "web"\nci = [["true"]]\n',
+        encoding="utf-8",
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "chore: two consumers")
+    monkeypatch.setattr(consumer_proof.shutil, "which", lambda _name: "/usr/bin/taskset")
+    seen: list[list[str]] = []
+
+    def recording(argv: list[str], cwd: Path, env: dict[str, str]) -> int:
+        seen.append(argv)
+        return fake_run(argv[3:] if argv[0] == "taskset" else argv, cwd, env)
+
+    result = consumer_proof.run_proof(
+        repo,
+        {"PATH": "/usr/bin:/bin", consumer_proof.CPUS_ENV: "16-21,22-26"},
+        recording,
+        held,
+        tmp_path / "work",
+    )
+
+    assert result["passed"] is True
+    pinned = {tuple(argv[:3]) for argv in seen if argv[0] == "taskset"}
+    assert pinned == {("taskset", "-c", "16-21"), ("taskset", "-c", "22-26")}
+
+
+def test_a_wrong_core_set_is_refused_by_name() -> None:
+    with pytest.raises(consumer_proof.ProofError, match="core sets like 16-21"):
+        consumer_proof.cpu_sets({consumer_proof.CPUS_ENV: "16-21,all"})

@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import tomllib
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +18,8 @@ from basicly import worktree
 FORMAT = 1
 CONFIG_FILE = "basicly.toml"
 ROOT_ENV = "BASICLY_CONSUMERS_ROOT"
+CPUS_ENV = "BASICLY_CONSUMER_CPUS"
+CPU_SET = re.compile(r"\d+(?:-\d+)?(?::\d+)?")
 RESULTS = Path("basicly-consumer-proof")
 COMMAND = "basicly consumer-proof"
 WHEEL = "{wheel}"
@@ -157,6 +161,34 @@ def build_wheel(repo_root: Path, out: Path, run: Run, env: dict[str, str]) -> Pa
     return wheels[0]
 
 
+def cpu_sets(environ: dict[str, str]) -> list[str]:
+    value = environ.get(CPUS_ENV, "")
+    sets = [part.strip() for part in value.split(",") if part.strip()]
+    if any(not CPU_SET.fullmatch(part) for part in sets):
+        raise ProofError(f"{CPUS_ENV} takes core sets like 16-21,22-26; got {value!r}")
+    return sets if sets and shutil.which("taskset") else []
+
+
+def pinned(run: Run, cpus: str) -> Run:
+    return lambda argv, cwd, env: run(["taskset", "-c", cpus, *argv], cwd, env)
+
+
+def one(
+    origin: Path, clone: Path, consumer: Consumer, wheel: str, tools: Tools
+) -> dict[str, object]:
+    if not (origin / ".git").exists():
+        missing = {"step": "clone", "exit": 1, "error": f"no repository at {origin}"}
+        return {"name": consumer.name, "passed": False, "steps": [missing]}
+    git(clone.parent, "clone", "-q", str(origin), str(clone))
+    for key in IDENTITY:
+        value = git(origin, "config", "--default", "", key)
+        if value:
+            git(clone, "config", key, value)
+    if (origin / "node_modules").is_dir():
+        shutil.copytree(origin / "node_modules", clone / "node_modules", symlinks=True)
+    return prove(clone, consumer, wheel, tools)
+
+
 def run_proof(
     repo_root: Path,
     environ: dict[str, str],
@@ -175,25 +207,24 @@ def run_proof(
     folder = work or Path(tempfile.mkdtemp(prefix="basicly-consumer-proof-"))
     env = {**environ, **CI_ENV}
     wheel = build_wheel(repo_root, folder / "dist", run, env)
-    results = []
-    for consumer in listed:
-        origin = source(repo_root, consumer, environ)
-        clone = folder / consumer.name
-        if not (origin / ".git").exists():
-            results.append({
-                "name": consumer.name,
-                "passed": False,
-                "steps": [{"step": "clone", "exit": 1, "error": f"no repository at {origin}"}],
-            })
-            continue
-        git(folder, "clone", "-q", str(origin), str(clone))
-        for key in IDENTITY:
-            value = git(origin, "config", "--default", "", key)
-            if value:
-                git(clone, "config", key, value)
-        if (origin / "node_modules").is_dir():
-            shutil.copytree(origin / "node_modules", clone / "node_modules", symlinks=True)
-        results.append(prove(clone, consumer, str(wheel), Tools(run, records, env)))
+    sets = cpu_sets(environ)
+    jobs = [
+        (consumer, Tools(pinned(run, sets[i % len(sets)]) if sets else run, records, env))
+        for i, consumer in enumerate(listed)
+    ]
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        results = list(
+            pool.map(
+                lambda job: one(
+                    source(repo_root, job[0], environ),
+                    folder / job[0].name,
+                    job[0],
+                    str(wheel),
+                    job[1],
+                ),
+                jobs,
+            )
+        )
     result = {
         "v": FORMAT,
         "commit": commit,
