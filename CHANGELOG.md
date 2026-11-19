@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch fixes two false refusals from 0.46.4, ships the orchestrator kit and splits CI into 12 parallel shards. `basicly check` reads a pre-push hook script before it flags the workflow line that runs it, so a pytest-only script is no longer reported (basicly-c6yppoz). The `kit-boundary` hook judges only the kit files in the commit (basicly-7lrvz5e). A workspace can turn on an `orchestrator` agent with its rule fragment, skill and `orch` commands (basicly-qpr2xmr.3.16, basicly-qpr2xmr.3.17, basicly-qpr2xmr.3.18). `basicly verify --ci --shard K/N` cuts basicly's own CI from about 30 minutes to about 5 (basicly-svtn4op).
+
+- Fixes: `basicly check` and `kit-boundary` refuse only what the commit or the workflow actually does (basicly-c6yppoz, basicly-7lrvz5e).
+- Orchestration: off by default; `[orchestration] enabled = true` projects the agent, fragment and skill (basicly-qpr2xmr.3.16, basicly-qpr2xmr.3.17).
+- CI: one check per shard, tests split by measured time (basicly-svtn4op).
+
 ## v0.46.4 - 2026-11-19
 
 Delta: v0.46.3..v0.46.4
