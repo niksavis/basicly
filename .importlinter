@@ -36,7 +36,7 @@ layers =
     loop | release
     release_preview
     board_snapshot
-    board_usage
+    board_usage | claude_user_settings
     catalog_lint | contention | cost_rollup | curate | health | landing_gate | tracker_import | tracker_query | tracker_write | user_skills
     tracker_board_json
     commit | merge

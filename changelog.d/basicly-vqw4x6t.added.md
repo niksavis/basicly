@@ -1,0 +1,1 @@
+- Add `basicly claude-user`, which turns on Claude Code Code Mode in the user settings file and optionally sets `advisorModel`; a repository cannot carry the Code Mode variable. The `architect` agent now treats the codebase as its own. The Tired Engineer style asks for messages that stand alone and softens the 20-word sentence limit.

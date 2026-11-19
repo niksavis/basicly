@@ -30,6 +30,7 @@ from . import (
     catalog_verify,
     checkout,
     claude_settings,
+    claude_user_settings,
     codex_hooks,
     codex_permissions,
     comment_rows,
@@ -5647,6 +5648,8 @@ def _build_parser() -> argparse.ArgumentParser:
     skills_user_parser.add_argument("--home", default="", help="write under this home instead")
     skills_user_parser.add_argument("--dry-run", action="store_true", help="write nothing")
 
+    claude_user_settings.add_parser(subparsers)
+
     styles_build_parser = subparsers.add_parser(
         "styles-build",
         help="Project output styles from .basicly/core/output-styles",
@@ -5728,6 +5731,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "skills-build": cmd_skills_build,
         "skills-check": cmd_skills_check,
         "skills-user": user_skills.cmd_skills_user,
+        "claude-user": claude_user_settings.cmd_claude_user,
         "styles-build": cmd_styles_build,
         "styles-check": cmd_styles_check,
         "retention": cmd_retention,
