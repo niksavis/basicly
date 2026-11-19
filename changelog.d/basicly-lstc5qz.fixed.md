@@ -1,0 +1,1 @@
+- Install writes the S603 noqa into `.basicly/tracker-bootstrap.py` only when the repository's ruff enables S603 (`.ruff.toml`, `ruff.toml` or `pyproject.toml`), so a consumer without the S rules no longer fails RUF100. `basicly check` names a bootstrap whose noqa no longer matches the ruff selection; fix: `basicly install`.

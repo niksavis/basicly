@@ -477,7 +477,10 @@ def cmd_check(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     for line in docstring_contradictions(repo_root):
         print(line, file=sys.stderr)
-    workflow_problems = ci_records.workflow_problems(repo_root)
+    workflow_problems = [
+        *ci_records.workflow_problems(repo_root),
+        *filter(None, [tracker_agent.bootstrap_noqa_drift(repo_root)]),
+    ]
     sys.stderr.write("".join(f"{problem}\n" for problem in workflow_problems))
     paths = load_project_paths(repo_root)
     if _report_provenance_notes(repo_root, paths):
