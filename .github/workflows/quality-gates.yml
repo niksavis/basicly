@@ -83,12 +83,12 @@ jobs:
           exit "${failed}"
 
   quality-gates:
-    name: Quality gates shard ${{ matrix.shard }}/10
+    name: Quality gates shard ${{ matrix.shard }}/12
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -119,5 +119,5 @@ jobs:
       # Only the full (pre-push) gate runs: it is a superset of the fast
       # (pre-commit) checks — ruff, format, pyright, bandit — plus pytest, so
       # running pre-commit too just repeated that work (basicly-5uo6).
-      - name: Run shard ${{ matrix.shard }}/10 of the full checks with no tracker read
-        run: uv run python -m basicly.cli verify --mode full --ci --shard ${{ matrix.shard }}/10
+      - name: Run shard ${{ matrix.shard }}/12 of the full checks with no tracker read
+        run: uv run python -m basicly.cli verify --mode full --ci --shard ${{ matrix.shard }}/12

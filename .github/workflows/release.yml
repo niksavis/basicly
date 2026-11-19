@@ -12,14 +12,14 @@ permissions:
 
 jobs:
   verify:
-    name: Release quality gates shard ${{ matrix.shard }}/10
+    name: Release quality gates shard ${{ matrix.shard }}/12
     if: |
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -55,7 +55,7 @@ jobs:
         if: steps.reuse.outputs.reuse != 'true'
         env:
           CI: "true"
-        run: uv run python -m basicly.cli verify --mode full --ci --shard ${{ matrix.shard }}/10 < /dev/null
+        run: uv run python -m basicly.cli verify --mode full --ci --shard ${{ matrix.shard }}/12 < /dev/null
 
   compatibility:
     name: Compatibility with macOS
