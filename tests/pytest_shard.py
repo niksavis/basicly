@@ -48,6 +48,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     placed = plan(weights, total)
     kept = [item for item in items if shard_of(item.nodeid, placed, total) == index - 1]
     dropped = [item for item in items if shard_of(item.nodeid, placed, total) != index - 1]
+    kept.sort(key=lambda item: -weights.get(item.nodeid, 0.0))
     if dropped:
         config.hook.pytest_deselected(items=dropped)
     items[:] = kept
