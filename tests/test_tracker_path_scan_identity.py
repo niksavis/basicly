@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,14 @@ scan = _load_hook()
 def _as_username(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(scan.getpass, "getuser", lambda: USERNAME)
     monkeypatch.setattr(redact.getpass, "getuser", lambda: USERNAME)
+
+
+@pytest.fixture
+def _holder_is(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
+    def choose(name: str) -> None:
+        monkeypatch.setattr(scan, "configured_holder", lambda: name)
+
+    return choose
 
 
 def _event(actor: str = "", **payload: object) -> str:
@@ -103,7 +112,10 @@ def _kind_event(kind: str, actor: str = "", **payload: object) -> str:
     return json.dumps({**event, "kind": kind}, separators=(",", ":"))
 
 
-def test_the_holder_field_may_carry_the_username(_as_username: None) -> None:
+def test_the_holder_field_may_carry_the_username(
+    _as_username: None, _holder_is: Callable[[str], None]
+) -> None:
+    _holder_is(USERNAME)
     line = _kind_event("field", name="assignee", value=USERNAME)
 
     assert scan.findings(LEDGER, line) == []
@@ -124,7 +136,10 @@ def test_the_username_outside_the_holder_field_is_still_reported(
     assert scan.findings(LEDGER, line) == [(LEDGER, 1, "machine-username")]
 
 
-def test_the_assignee_of_a_created_event_may_carry_the_username(_as_username: None) -> None:
+def test_the_assignee_of_a_created_event_may_carry_the_username(
+    _as_username: None, _holder_is: Callable[[str], None]
+) -> None:
+    _holder_is(USERNAME)
     line = _kind_event("created", assignee=USERNAME, title="t")
 
     assert scan.findings(LEDGER, line) == []
@@ -154,3 +169,83 @@ def _load_kit_events():
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _claim(**payload: object) -> str:
+    return json.dumps({"record": "basicly-test", "kind": "claim", "seq": 2, "payload": payload})
+
+
+def _snapshot(contested: list[str] | None = None, **fields: object) -> str:
+    record = {"record": "basicly-test", "status": "in_progress", "fields": fields}
+    return json.dumps({**record, "contested": contested or []})
+
+
+VAULT = "vault/snapshot.jsonl"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        _claim(name=USERNAME),
+        _snapshot(assignee=USERNAME, title="a task"),
+        _snapshot([USERNAME, "other"], assignee="other"),
+    ],
+)
+def test_the_configured_holder_in_its_holder_slot_is_not_reported(
+    _as_username: None, _holder_is: Callable[[str], None], line: str
+) -> None:
+    _holder_is(USERNAME)
+
+    assert scan.findings(VAULT, line) == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        _claim(name="holder", note=USERNAME),
+        _snapshot(assignee="holder", description=f"ask {USERNAME} first"),
+        _snapshot(assignee=USERNAME, title=f"{USERNAME} owns this"),
+        _event(note=f"{USERNAME} wrote this"),
+    ],
+)
+def test_the_same_name_anywhere_else_is_still_reported(
+    _as_username: None, _holder_is: Callable[[str], None], line: str
+) -> None:
+    _holder_is(USERNAME)
+
+    assert scan.findings(VAULT, line) == [(VAULT, 1, "machine-username")]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        _claim(name=USERNAME),
+        _snapshot(assignee=USERNAME),
+        _snapshot([USERNAME], assignee="holder"),
+        _event(assignee=USERNAME),
+    ],
+)
+def test_a_holder_slot_whose_value_is_not_the_configured_holder_is_reported(
+    _as_username: None, _holder_is: Callable[[str], None], line: str
+) -> None:
+    _holder_is("holder")
+
+    assert scan.findings(VAULT, line) == [(VAULT, 1, "machine-username")]
+
+
+def test_with_no_configured_holder_no_slot_is_exempt(
+    _as_username: None, _holder_is: Callable[[str], None]
+) -> None:
+    _holder_is("")
+
+    assert scan.findings(VAULT, _claim(name=USERNAME)) == [(VAULT, 1, "machine-username")]
+
+
+def test_a_home_path_in_a_holder_slot_is_still_reported(
+    _as_username: None, _holder_is: Callable[[str], None]
+) -> None:
+    _holder_is("/home/someone/x")
+
+    line = _claim(name="/home/someone/x")
+
+    assert scan.findings(VAULT, line) == [(VAULT, 1, "posix-home-path")]
