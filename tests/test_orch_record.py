@@ -144,8 +144,11 @@ def test_report_accepts_only_three_states_with_a_record(repo: Path, state: str) 
         ("push", "an ask-first item"),
         ("ci-edit", "an ask-first item"),
         ("gate-bypass", None),
-        ("hook-change", None),
-        ("rule-change", "stays with the person in the worker's own window"),
+        ("hook-weakening", None),
+        ("gate-exception", None),
+        ("rule-change", None),
+        ("hook-change", "unknown"),
+        ("irreversible-destruction", "stays with the person in the worker's own window"),
         ("classifier-refusal", "stays with the person in the worker's own window"),
     ],
 )
