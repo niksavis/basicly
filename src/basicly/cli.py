@@ -4755,10 +4755,14 @@ def _cmd_worktree_merge(args: argparse.Namespace) -> int:
         ui.fail(str(error))
         return 1
     print(f"  {result.name}: {result.status.upper()} — {result.detail}")
-    if result.merged and args.mode == ci_landing.MODE:
-        for note in ci_landing.finish(root, args.name, args.bead):
-            print(f"  {note}")
-    return 0 if result.merged else 1
+    notes = (
+        ci_landing.finish(root, args.name, args.bead)
+        if result.merged and args.mode == ci_landing.MODE
+        else []
+    )
+    for note in notes:
+        print(f"  {note}")
+    return 0 if result.merged and not notes else 1
 
 
 def _cmd_worktree_unlock(args: argparse.Namespace) -> int:

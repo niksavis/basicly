@@ -6,10 +6,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import checkout, gh_cli, tracker, verify
+from . import checkout, gh_cli, landing_guard, tracker, verify
 from .config import load_verify_config
 
-MODE = "ci"
+MODE = landing_guard.CI_MODE
 WORKFLOW = "quality-gates.yml"
 REF_PREFIX = "land"
 LEDGER = ".basicly/ledger"
@@ -128,17 +128,14 @@ def _wait(run: dict, gh: Gh, clock: Clock) -> dict:
             "--json",
             "status,conclusion,attempt,url,jobs",
         ])
-        if viewed is None:
-            raise CiLandingError(
-                f"cannot read {run.get('url')} with gh; run gh auth login, {FALLBACK}"
-            )
-        state = json.loads(viewed)
+        state = json.loads(viewed) if viewed else {}
         if state.get("status") == "completed":
             return state
         if clock.monotonic() - started >= TIMEOUT_S:
+            unread = "" if viewed else "; gh could not read it, check gh auth status"
             raise CiLandingError(
-                f"{WORKFLOW} run {state.get('url')} did not finish in {TIMEOUT_S / 60:.0f} min; "
-                f"nothing is landed; run the merge again for a new run, {FALLBACK}"
+                f"{WORKFLOW} run {run.get('url')} did not finish in {TIMEOUT_S / 60:.0f} min"
+                f"{unread}; nothing is landed; run the merge again for a new run, {FALLBACK}"
             )
         clock.sleep(POLL_S)
 
@@ -164,6 +161,38 @@ def verdict(state: dict, candidate: Candidate) -> str:
     )
 
 
+def _spent(root: Path, candidate: Candidate, gh: Gh, tried: list[str]) -> str:
+    heads = [candidate.head]
+    heads += [
+        h for h in tried if h != candidate.head and same_outside_ledger(root, h, candidate.head)
+    ]
+    for head in heads:
+        listed = gh([
+            "run",
+            "list",
+            "--workflow",
+            WORKFLOW,
+            "--commit",
+            head,
+            "--json",
+            "databaseId,url,status,conclusion",
+        ])
+        if listed is None:
+            raise CiLandingError(
+                f"cannot read earlier {WORKFLOW} runs of {head[:12]} with gh; "
+                f"run gh auth login, {FALLBACK}"
+            )
+        for run in json.loads(listed):
+            if run.get("status") == "completed" and run.get("conclusion") != "success":
+                return (
+                    f"{WORKFLOW} run {run.get('url')} already ended {run.get('conclusion')} "
+                    f"on this tree; a landing takes only a first attempt; change the lane, "
+                    f"then run basicly worktree merge {candidate.lane} --bead {candidate.record} "
+                    "--mode ci again"
+                )
+    return ""
+
+
 def prove(
     root: Path, candidate: Candidate, gh: Gh = gh_cli.run, clock: Clock | None = None
 ) -> dict[str, str]:
@@ -171,8 +200,13 @@ def prove(
     earlier = proved(root, candidate.lane)
     if earlier.get("head") and same_outside_ledger(root, earlier["head"], candidate.head):
         return earlier
+    tried = earlier.get("dispatched", "").split()
+    if refused := _spent(root, candidate, gh, tried):
+        raise CiLandingError(refused)
     attempt = int(earlier.get("attempt", "0")) + 1
     ref = _ref(candidate.lane, attempt)
+    dispatched = " ".join([*tried, candidate.head])
+    _remember(root, candidate.lane, {"attempt": str(attempt), "dispatched": dispatched})
     _push_ref(root, candidate.head, ref)
     if gh(["workflow", "run", WORKFLOW, "--ref", ref, "-f", f"base={candidate.base}"]) is None:
         raise CiLandingError(f"cannot dispatch {WORKFLOW} with gh; run gh auth login, {FALLBACK}")
@@ -185,6 +219,7 @@ def prove(
         "run": str(state.get("url")),
         "ref": ref,
         "attempt": str(attempt),
+        "dispatched": dispatched,
     }
     _remember(root, candidate.lane, proof)
     return proof

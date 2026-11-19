@@ -43,6 +43,8 @@ def _repo(tmp_path: Path) -> Path:
 class Gh:
     def __init__(self, conclusion: str = "success", attempt: int = 1) -> None:
         self.calls: list[list[str]] = []
+        self.history: dict[str, list[dict]] = {}
+        self.dispatched = False
         self.state = {
             "databaseId": 7,
             "url": "https://example.invalid/runs/7",
@@ -55,7 +57,10 @@ class Gh:
     def __call__(self, argv: list[str]) -> str | None:
         self.calls.append(argv)
         if argv[:2] == ["workflow", "run"]:
+            self.dispatched = True
             return ""
+        if argv[:2] == ["run", "list"] and not self.dispatched:
+            return json.dumps(self.history.get(argv[argv.index("--commit") + 1], []))
         if argv[:2] == ["run", "list"]:
             return json.dumps([self.state])
         return json.dumps(self.state)
@@ -78,7 +83,7 @@ def test_a_proved_candidate_is_pushed_to_its_own_ref_and_its_run_recorded(tmp_pa
     assert proof["run"] == "https://example.invalid/runs/7"
     assert proof["ref"] == "land/lane-a/1"
     assert _git(repo, "ls-remote", "origin", "refs/heads/land/lane-a/1")
-    assert gh.calls[0][:5] == ["workflow", "run", "quality-gates.yml", "--ref", "land/lane-a/1"]
+    assert gh.calls[1][:5] == ["workflow", "run", "quality-gates.yml", "--ref", "land/lane-a/1"]
 
 
 def test_a_proved_tree_is_reused_when_only_the_ledger_moved(tmp_path: Path) -> None:
@@ -106,7 +111,8 @@ def test_a_code_change_needs_a_new_run_on_a_new_ref(tmp_path: Path) -> None:
         (Gh("failure"), "ended failure in Quality gates shard 3/12"),
         (Gh("cancelled"), "ended cancelled"),
         (Gh("success", attempt=2), "succeeded only on attempt 2"),
-        (lambda _argv: None, "cannot dispatch quality-gates.yml with gh"),
+        (lambda _argv: None, "cannot read earlier quality-gates.yml runs"),
+        (lambda argv: "[]" if argv[:2] == ["run", "list"] else None, "cannot dispatch"),
     ],
 )
 def test_a_failed_unreadable_or_rerun_proof_is_refused_by_name(
@@ -115,7 +121,7 @@ def test_a_failed_unreadable_or_rerun_proof_is_refused_by_name(
     repo = _repo(tmp_path)
     with pytest.raises(ci_landing.CiLandingError, match=expected):
         ci_landing.prove(repo, _candidate(repo), gh, CLOCK)
-    assert not ci_landing.proved(repo, "lane-a")
+    assert "run" not in ci_landing.proved(repo, "lane-a")
 
 
 def test_a_run_that_never_finishes_is_refused_after_the_limit(tmp_path: Path) -> None:
@@ -205,3 +211,70 @@ def test_a_code_commit_on_top_of_a_proved_merge_runs_the_checks(tmp_path: Path) 
     green = {"databaseId": 7, "url": "lane-run", "conclusion": "success", "attempt": 1}
 
     assert ci_landing.reusable(repo, head, "99", _runs({proved: [green]})) == ""
+
+
+def test_a_run_that_gh_cannot_read_yet_is_waited_for(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    gh = Gh()
+    views = iter([None, None])
+
+    def flaky(argv: list[str]) -> str | None:
+        if argv[:2] == ["run", "view"]:
+            return next(views, gh(argv))
+        return gh(argv)
+
+    assert ci_landing.prove(repo, _candidate(repo), flaky, CLOCK)["ref"] == "land/lane-a/1"
+
+
+def test_a_run_gh_never_reads_is_refused_after_the_limit_by_name(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    gh = Gh()
+
+    def unread(argv: list[str]) -> str | None:
+        return None if argv[:2] == ["run", "view"] else gh(argv)
+
+    ticks = iter(range(0, 10_000, 600))
+    clock = ci_landing.Clock(sleep=lambda _s: None, monotonic=lambda: float(next(ticks)))
+    with pytest.raises(ci_landing.CiLandingError, match="gh could not read it"):
+        ci_landing.prove(repo, _candidate(repo), unread, clock)
+
+
+def _ended(conclusion: str) -> dict:
+    return {"databaseId": 5, "url": "earlier-run", "status": "completed", "conclusion": conclusion}
+
+
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled"])
+def test_a_head_whose_run_already_ended_badly_is_refused_before_any_push(
+    tmp_path: Path, conclusion: str
+) -> None:
+    repo = _repo(tmp_path)
+    gh = Gh()
+    gh.history[_git(repo, "rev-parse", "HEAD")] = [_ended(conclusion)]
+
+    with pytest.raises(ci_landing.CiLandingError, match=f"earlier-run already ended {conclusion}"):
+        ci_landing.prove(repo, _candidate(repo), gh, CLOCK)
+    assert not gh.dispatched
+    assert not _git(repo, "ls-remote", "origin", "refs/heads/land/lane-a/1")
+
+
+def test_a_failed_tree_moved_only_in_the_ledger_is_still_refused(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    failed = _git(repo, "rev-parse", "HEAD")
+    with pytest.raises(ci_landing.CiLandingError):
+        ci_landing.prove(repo, _candidate(repo), Gh("failure"), CLOCK)
+    _commit(repo, ".basicly/ledger/pending-main.jsonl", "{}\n")
+    gh = Gh()
+    gh.history[failed] = [_ended("failure")]
+
+    with pytest.raises(ci_landing.CiLandingError, match="already ended failure"):
+        ci_landing.prove(repo, _candidate(repo), gh, CLOCK)
+    assert not gh.dispatched
+
+
+def test_a_changed_lane_after_a_failure_gets_a_new_branch(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    with pytest.raises(ci_landing.CiLandingError):
+        ci_landing.prove(repo, _candidate(repo), Gh("failure"), CLOCK)
+    _commit(repo, "src/app.py", "VALUE = 5\n")
+
+    assert ci_landing.prove(repo, _candidate(repo), Gh(), CLOCK)["ref"] == "land/lane-a/2"
