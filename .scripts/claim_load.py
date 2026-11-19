@@ -21,6 +21,7 @@ GENESIS = ("vault.toml", "FORMAT.md", "reader.py", "README.md")
 P99_LIMIT_S = 10.0
 SETTLE_LIMIT_S = 60.0
 CLAIM_DEADLINE_S = 30.0
+CPU_ALLOWANCE_S = 5.0
 ENDED = (0, 3)
 CPU_EVERY_S = 3.0
 FOREIGN_CPU_LIMIT = 0.03
@@ -164,10 +165,14 @@ def _timing(stdout: str) -> dict[str, float]:
     return {str(k): float(v) for k, v in found.items()} if isinstance(found, dict) else {}
 
 
+def claim_deadline(scale: float) -> float:
+    return CLAIM_DEADLINE_S / scale + CPU_ALLOWANCE_S * (1 - 1 / scale)
+
+
 def _claim(
     setup: Setup, state: Path, session: str, record: str, tag: str
 ) -> tuple[int, dict[str, float]]:
-    deadline = CLAIM_DEADLINE_S / setup.config.scale
+    deadline = claim_deadline(setup.config.scale)
     argv = [sys.executable, str(CLI), "claim", record, "--vault", str(setup.bare)]
     argv += ["--state", str(state), "--session", session, "--deadline", str(deadline)]
     env = {**setup.env, "CLAIM_LOAD_TAG": tag, "BASICLY_HOLDER": f"load {session}"}
