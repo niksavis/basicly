@@ -60,6 +60,17 @@ def technology_selected(
     return selection is None or not technologies or bool(set(technologies) & selection)
 
 
+FEATURES = frozenset({"orchestration"})
+
+
+def validate_requires(requires: object, path: Path) -> list[str]:
+    if not isinstance(requires, list) or not set(requires) <= FEATURES:
+        raise ValidationError(
+            f"requires must list features from: {', '.join(sorted(FEATURES))}", path
+        )
+    return requires
+
+
 def catalog_item_selected(
     technologies: list[str] | tuple[str, ...],
     requires: list[str] | tuple[str, ...],

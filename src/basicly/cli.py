@@ -454,7 +454,10 @@ def _stale_projections(repo_root: Path) -> list[tuple[str, str]]:
             "Skills",
             "skills-build",
             lambda: check_synced_skills(
-                repo_root, resolve_skill_roots(repo_root=repo_root, roots=None), selection=selection
+                repo_root,
+                resolve_skill_roots(repo_root=repo_root, roots=None),
+                selection=selection,
+                features=load_enabled_features(repo_root),
             ),
         ),
         (
@@ -1739,7 +1742,11 @@ def _preflight_install(
         destinations.extend(
             path
             for path, reason in check_synced_skills(
-                repo_root, resolve_skill_roots(repo_root, None), skill_source, selection
+                repo_root,
+                resolve_skill_roots(repo_root, None),
+                skill_source,
+                selection,
+                load_enabled_features(repo_root),
             )
             if not reason.startswith(UNMANAGED_REASON_PREFIX)
         )
@@ -2700,9 +2707,17 @@ def cmd_retention(args: argparse.Namespace) -> int:
 def cmd_skills_build(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     roots = _resolve_skill_output_roots(args, repo_root)
-    result, pruned = sync_skills(repo_root, roots, selection=load_technology_selection(repo_root))
+    result, pruned = sync_skills(
+        repo_root,
+        roots,
+        selection=load_technology_selection(repo_root),
+        features=load_enabled_features(repo_root),
+    )
     for path in pruned:
-        print(f"Removed {_format_path(path, repo_root)} (no source or technology selects it)")
+        print(
+            f"Removed {_format_path(path, repo_root)} "
+            "(no source, technology or enabled feature selects it)"
+        )
     _report_sync(result, repo_root, noun="skill files", label="Skill")
     return 0
 
@@ -2730,7 +2745,10 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     roots = _resolve_skill_output_roots(args, repo_root)
     mismatches = check_synced_skills(
-        repo_root, roots, selection=load_technology_selection(repo_root)
+        repo_root,
+        roots,
+        selection=load_technology_selection(repo_root),
+        features=load_enabled_features(repo_root),
     )
     if _report_mismatches(mismatches, repo_root, stale_message=_skills_stale_message(mismatches)):
         return 1

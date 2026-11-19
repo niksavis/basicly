@@ -16,6 +16,7 @@ from .schema import (
     MODEL_TIERS,
     ValidationError,
     catalog_item_selected,
+    validate_requires,
     validate_technologies,
 )
 from .skill_source import discover_skills
@@ -57,7 +58,6 @@ CODEX_ROLE_ROOT = AgentOutputRoot(
     family="codex", path=Path(".agents/roles"), suffix=".md", claude_passthrough=False
 )
 ALL_OUTPUT_ROOTS = (*AGENTS_OUTPUT_ROOTS, CODEX_ROLE_ROOT)
-FEATURES = frozenset({"orchestration"})
 ALL_TOOLS = "*"
 
 
@@ -231,11 +231,7 @@ def _parse_agent(slug: str, data: dict, path: Path, source: str) -> AgentDefinit
         )
 
     technologies = validate_technologies(data.get("technologies") or [], path)
-    requires = data.get("requires") or []
-    if not isinstance(requires, list) or not set(requires) <= FEATURES:
-        raise ValidationError(
-            f"requires must list features from: {', '.join(sorted(FEATURES))}", path
-        )
+    requires = validate_requires(data.get("requires") or [], path)
 
     return AgentDefinition(
         slug=slug,

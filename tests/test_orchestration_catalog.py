@@ -7,6 +7,7 @@ from tests.markdownlint_runtime_fixture import provision_markdownlint_double
 from tests.test_install_baseline import _install
 
 FRAGMENT_TITLE = "Orchestrated Session"
+SKILL_FILES = (".claude/skills/orchestration/SKILL.md", ".agents/skills/orchestration/SKILL.md")
 
 
 def test_the_orchestration_catalog_reaches_a_consumer_only_when_enabled(tmp_path: Path) -> None:
@@ -18,6 +19,7 @@ def test_the_orchestration_catalog_reaches_a_consumer_only_when_enabled(tmp_path
     assert off.returncode == 0, off.stdout + off.stderr
     assert FRAGMENT_TITLE not in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
     assert not (tmp_path / ".claude/agents/orchestrator.md").exists()
+    assert not any((tmp_path / skill).exists() for skill in SKILL_FILES)
 
     config = tmp_path / "basicly.toml"
     config.write_text(
@@ -29,3 +31,4 @@ def test_the_orchestration_catalog_reaches_a_consumer_only_when_enabled(tmp_path
     for always_on in ("AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md"):
         assert FRAGMENT_TITLE in (tmp_path / always_on).read_text(encoding="utf-8"), always_on
     assert (tmp_path / ".claude/agents/orchestrator.md").is_file()
+    assert all((tmp_path / skill).is_file() for skill in SKILL_FILES)

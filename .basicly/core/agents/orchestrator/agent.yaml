@@ -10,6 +10,7 @@ tools: ["*"]
 requires: [orchestration]
 codex_role: true
 claude:
+  skills: [orchestration]
   hooks:
     PreToolUse:
       - matcher: "Edit|Write|MultiEdit|NotebookEdit"
