@@ -177,38 +177,99 @@ def test_doctor_names_open_lessons_older_than_14_days(tmp_path: Path) -> None:
     ("rule", "refused"),
     [
         ("Bash(orch:*)", True),
-        ("Bash(orch)", True),
         ("Bash(orch *)", True),
+        ("Bash(orch*)", True),
+        ("Bash(orch approve *)", True),
         ("Bash", True),
+        ("Bash(orch)", False),
         ("Bash(orch-wait)", False),
         ("Bash(orch-wait:*)", False),
         ("Bash(git status *)", False),
         ("Read", False),
     ],
 )
-def test_doctor_refuses_an_allow_rule_that_lets_a_worker_run_orch(rule: str, refused: bool) -> None:
+def test_doctor_refuses_an_allow_rule_that_lets_a_session_run_orch_approve(
+    rule: str, refused: bool
+) -> None:
     assert doctor.allows_orch(rule) is refused
 
 
-def test_doctor_names_the_file_and_rule_and_reports_no_wake_adapter(tmp_path: Path) -> None:
+@pytest.fixture
+def worker(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     (tmp_path / ".git").mkdir()
-    settings = tmp_path / ".claude" / "settings.json"
-    settings.parent.mkdir()
-    settings.write_text(
-        json.dumps({"permissions": {"allow": ["Bash(orch-wait)", "Bash(orch:*)"]}}),
-        encoding="utf-8",
-    )
     home = tmp_path / "home"
     home.mkdir()
-    environ = {"HOME": str(home), "PATH": str(home), "ORCH_LESSONS_ROOT": str(home)}
-    report = doctor.run(tmp_path, environ)
+    return tmp_path, {"HOME": str(home), "PATH": str(home), "ORCH_LESSONS_ROOT": str(home)}
+
+
+def settings(repo: Path, permissions: dict[str, list[str]]) -> Path:
+    path = repo / ".claude" / "settings.json"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps({"permissions": permissions}), encoding="utf-8")
+    return path
+
+
+def test_doctor_names_the_file_and_rule_and_reports_no_wake_adapter(
+    worker: tuple[Path, dict[str, str]],
+) -> None:
+    repo, environ = worker
+    path = settings(repo, {"allow": ["Bash(orch-wait)", "Bash(orch:*)"]})
+    report = doctor.run(repo, environ)
     assert report.failed
     assert report.lines[0] == (
-        f"{settings}: allow rule 'Bash(orch:*)' lets a worker run orch; "
-        "allow orch-wait by name instead"
+        f"{path}: allow rule 'Bash(orch:*)' lets a session run orch approve; add the deny rule "
+        "'Bash(orch approve *)', which wins over every allow rule"
     )
     assert report.lines[1].startswith("wake adapter: none")
     assert report.lines[2].startswith("lessons: not checked")
+
+
+def test_doctor_passes_a_blanket_allow_when_a_deny_rule_covers_orch_approve(
+    worker: tuple[Path, dict[str, str]],
+) -> None:
+    repo, environ = worker
+    settings(repo, {"allow": ["Bash"], "deny": ["Bash(orch approve *)"]})
+    report = doctor.run(repo, environ)
+    assert not report.failed
+    assert report.lines[0].startswith("claude: deny rule 'Bash(orch approve *)'")
+
+
+@pytest.mark.parametrize(("decision", "refused"), [("allow", True), ("forbidden", False)])
+def test_doctor_refuses_codex_rules_that_allow_orch_approve(
+    worker: tuple[Path, dict[str, str]], decision: str, refused: bool
+) -> None:
+    repo, environ = worker
+    rules = repo / ".codex" / "rules" / "default.rules"
+    rules.parent.mkdir(parents=True)
+    rules.write_text('prefix_rule(pattern=["orch"], decision="allow")\n', encoding="utf-8")
+    seen: list[list[str]] = []
+
+    def runner(argv: list[str]) -> str:
+        seen.append(argv)
+        return json.dumps({"decision": decision})
+
+    lines, failed = doctor.codex_lines(repo, environ, runner, lambda name, _path: name)
+    assert failed is refused
+    assert seen[0][-4:] == ["orch", "approve", "--request", "r"]
+    assert str(rules) in seen[0]
+    assert bool(lines) is refused
+
+
+@pytest.mark.parametrize(
+    ("name", "refused"), [("orch", True), ("orch:*", True), ("orch-wait", False)]
+)
+def test_doctor_refuses_a_saved_copilot_approval_for_orch(
+    worker: tuple[Path, dict[str, str]], name: str, refused: bool
+) -> None:
+    repo, environ = worker
+    saved = Path(environ["HOME"]) / doctor.COPILOT_PERMISSIONS
+    saved.parent.mkdir()
+    approval = {"kind": "commands", "commandIdentifiers": [name]}
+    saved.write_text(
+        json.dumps({"locations": {str(repo): {"tool_approvals": [approval]}}}), encoding="utf-8"
+    )
+    lines, failed = doctor.copilot_lines(repo, environ)
+    assert failed is refused and bool(lines) is refused
 
 
 def test_doctor_reports_herdr_as_the_wake_adapter_inside_a_herdr_pane() -> None:
