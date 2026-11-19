@@ -46,7 +46,7 @@ herdr's own badge and state colour stay the primary signal. The reporter adds on
 - Each herdr call has a 1-second timeout. Any error ends the hook with exit code 0, so a hook never slows or blocks a turn.
 - The reporter writes nothing to standard output, so it can never emit a permission decision.
 - The pane id is taken from `HERDR_PANE_ID` and must match a strict pattern. The herdr binary is `HERDR_BIN_PATH` when it is an absolute executable, else `herdr` on the path.
-- Without herdr (`HERDR_ENV` unset) the reporter does nothing.
+- Without herdr (`HERDR_ENV` unset) the reporter starts no process. It still writes the session state file of section 9 when an orchestrator store exists.
 - A hook run takes about 25 ms with a stub herdr, 30 ms at most over 100 runs (probe S5, `session-state-probes/s5-bench.py`).
 - Codex and Copilot: a `blocked` label from their permission hooks, after probe S3 shows their prompts. No paused label, because their stop hooks list no background work.
 
@@ -79,4 +79,16 @@ herdr's own badge and state colour stay the primary signal. The reporter adds on
 - herdr's rules lag a vendor UI change: the state reads unknown, not false.
 - A paused label outlives the work: bounded by the next Stop, the next prompt or the 30-minute time to live.
 - A needs-you label outlives the answer: cleared at PostToolUse, bounded by the 10-minute time to live.
-- No herdr: the reporter does nothing.
+- No herdr: the reporter writes only the session state file, and only when an orchestrator store exists.
+
+## 9. Work overview without herdr
+
+`orch status` shows every session in one list, with or without herdr (record `basicly-qpr2xmr.3.22`).
+
+- Store: one JSON file per session in `.orchestrator/sessions/`, beside the lessons folder that `orch lessons init` made, or in `ORCH_STATE_ROOT`. Each write replaces the file in one rename. Without a store nothing is written.
+- Fields: `name`, `project` (a name, never a path), `now` with `now_at`, `next`, `waiting_on`, `state` with `state_at`, `updated_at` (UTC), and the vendor process id with its start time.
+- Writers store only what an event proves: `working`, `needs-you` or `idle`. `orch state set --now --next --waiting --state` writes by hand, keyed by `CLAUDE_CODE_SESSION_ID` or `ORCH_SESSION_ID`. `orch report`, `orch decide` and `orch approve` also update `now`.
+- Hooks, keyed by the hook's `session_id` (Claude Code and Codex): SessionStart writes `idle` and the session title; UserPromptSubmit, PreToolUse and PostToolUse write `working`; PermissionRequest, and a Notification of type `permission_prompt` or `elicitation_dialog`, write `needs-you`; Stop writes `idle`.
+- Copilot CLI is not wired: its documentation does not state that the hook input arrives on standard input (checked 2026-11-19 against Copilot CLI 1.0.114). A recorded payload decides it.
+- `orch status` derives the shown state at read time: `dead` when the recorded process is gone or its start time differs (Linux `/proc`; elsewhere never dead), `stale` after 2 hours without an update, `needs you`, `working` when the last update is younger than 15 minutes, else `quiet`. Every row shows its age and fits 40 columns. A `now` text older than 15 minutes shows its own age ("2h ago: ..."), so an old `now` never reads as current.
+- Questions to the person: `orch ask --record R --question TEXT [--options A|B]` opens an item, `orch approve` for that record closes it, and `orch ask --withdraw R` closes it without an answer. The first line counts open items younger than 24 hours; older ones show as stale.
