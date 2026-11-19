@@ -1,0 +1,1 @@
+- The orchestrated-session rule keeps a relayed approval of an exact diff or commit good until that diff lands; any change to the diff voids it. A command or one-time bypass stays good for one use within 60 minutes. `orch approve --diff` states the until-landed limit.

@@ -430,7 +430,7 @@
     },
     {
       "id": "relayed-approval",
-      "rule": "A relayed approval counts only as a live message with words, time, record and exact action, once within 60 minutes.",
+      "rule": "A relayed approval counts only as a live message with words, time, record and exact action; an exact diff stays good until it lands, a command or bypass once within 60 minutes.",
       "source": "ARCHITECTURE.md:289",
       "place": "fragment",
       "file": ".basicly/core/fragments/boundaries/orchestrated-session.fragment.yaml",
