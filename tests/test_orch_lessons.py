@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO / "packages" / "basicly-orch"))
 
 log = importlib.import_module("orch_lessons.log")
 cli = importlib.import_module("orch_lessons.cli")
+doctor = importlib.import_module("orch_lessons.doctor")
 
 T0 = datetime(2026, 11, 18, 19, 0, tzinfo=UTC)
 
@@ -170,3 +171,40 @@ def test_doctor_names_open_lessons_older_than_14_days(tmp_path: Path) -> None:
     log.Writer(root, clean, "o", lambda: T0 + timedelta(days=10)).add("w", "new", "e", "x")
     later = T0 + timedelta(days=15)
     assert [lesson.requirement for lesson in log.stale(root, clock=lambda: later)] == ["old"]
+
+
+@pytest.mark.parametrize(
+    ("rule", "refused"),
+    [
+        ("Bash(orch:*)", True),
+        ("Bash(orch)", True),
+        ("Bash(orch *)", True),
+        ("Bash", True),
+        ("Bash(orch-wait)", False),
+        ("Bash(orch-wait:*)", False),
+        ("Bash(git status *)", False),
+        ("Read", False),
+    ],
+)
+def test_doctor_refuses_an_allow_rule_that_lets_a_worker_run_orch(rule: str, refused: bool) -> None:
+    assert doctor.allows_orch(rule) is refused
+
+
+def test_doctor_names_the_file_and_rule_and_reports_no_wake_adapter(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps({"permissions": {"allow": ["Bash(orch-wait)", "Bash(orch:*)"]}}),
+        encoding="utf-8",
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    report = doctor.run(tmp_path, {"HOME": str(home), "PATH": str(home)})
+    assert report.failed
+    assert report.lines[0] == (
+        f"{settings}: allow rule 'Bash(orch:*)' lets a worker run orch; "
+        "allow orch-wait by name instead"
+    )
+    assert report.lines[1].startswith("wake adapter: none")
+    assert report.lines[2].startswith("lessons: not checked")

@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from orch_lessons import log
+from orch_lessons import doctor, log
 
 
 def parser() -> argparse.ArgumentParser:
@@ -34,13 +34,11 @@ def run(argv: list[str], cwd: Path, environ: dict[str, str]) -> int:
     if args.group == "lessons" and args.action == "init":
         print(f"lessons folder ready: {log.init(args.folder)}")
         return 0
-    root = log.find_root(cwd, environ)
     if args.group == "doctor":
-        old = log.stale(root)
-        for lesson in old:
-            print(f"lesson {lesson.id} open since {lesson.time.date()}: {lesson.requirement}")
-        print(f"doctor: {len(old)} lesson(s) open longer than {log.STALE_AFTER.days} days")
-        return 1 if old else 0
+        report = doctor.run(cwd, environ)
+        print("\n".join(report.lines))
+        return 1 if report.failed else 0
+    root = log.find_root(cwd, environ)
     scan = log.scanner(log.repo_root(cwd))
     if args.group == "lesson" and args.action == "add":
         writer = log.Writer(root, scan, log.member(environ))

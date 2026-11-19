@@ -1,0 +1,1 @@
+- `orch doctor` refuses a Claude Code allow rule that lets a session run `orch`, such as `Bash(orch:*)` or a blanket `Bash`, and names the file and rule. It also reports the active wake adapter, and it runs where no lessons folder exists.
