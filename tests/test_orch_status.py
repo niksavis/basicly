@@ -115,8 +115,9 @@ def test_the_first_line_counts_only_open_asks_younger_than_a_day(tmp_path: Path)
 
 
 def test_orch_state_set_then_status_shows_the_session(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("COLUMNS", str(status.WIDTH))
     _base, repo = workspace(tmp_path)
     env = {"ORCH_SESSION_ID": "abc", "ORCH_MEMBER": "dev"}
 
