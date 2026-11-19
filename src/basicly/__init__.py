@@ -8,4 +8,4 @@ if sys.version_info < MINIMUM_PYTHON:
         "to provision a suitable runtime."
     )
 
-__version__ = "0.46.3"
+__version__ = "0.46.4"

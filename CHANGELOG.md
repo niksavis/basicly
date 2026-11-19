@@ -6,11 +6,29 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.46.4 - 2026-11-19
+
+Delta: v0.46.3..v0.46.4
+
 This patch makes CI read no tracker records and moves existing consumers onto that rule. The consumer CI scaffold checks commit message format only and runs `basicly verify --mode full --ci`, which refuses any ledger or vault read by name, also through a worktree redirect (basicly-uora5dm.1, basicly-uora5dm.3). `basicly install` migrates a 0.46.3 `basicly-gates.yml` that still reads records and refuses one it cannot migrate, and `basicly check` names each such workflow line (basicly-uora5dm.4). The new `basicly claude-user` command turns on Claude Code Code Mode in the user settings file (basicly-vqw4x6t).
 
 - CI and records: a frozen repository passes CI with no vault token (basicly-uora5dm.1, basicly-uora5dm.3).
 - Upgrade: install keeps a `.basicly-bak` copy of a migrated workflow (basicly-uora5dm.4).
 - Claude Code: `basicly claude-user [--advisor MODEL]` sets keys only when they are absent (basicly-vqw4x6t).
+
+### Added
+
+- Add `basicly claude-user`, which turns on Claude Code Code Mode in the user settings file and optionally sets `advisorModel`; a repository cannot carry the Code Mode variable. The `architect` agent now treats the codebase as its own. The Tired Engineer style asks for messages that stand alone and softens the 20-word sentence limit. (basicly-vqw4x6t)
+
+### Changed
+
+- CI never reads tracker records. The CI scaffold checks commit message format only and runs `basicly verify --mode full --ci`, which skips checks marked `local_only = true` and refuses by name any read of the repository's ledger or vault. Local hooks keep the record-id check. A frozen repository now passes CI with no vault token. (basicly-uora5dm.1)
+
+- `basicly install` migrates a `basicly-gates.yml` that runs `tracker-commit-msg.py` or `verify --mode full` without `--ci`, keeps a backup, and refuses by name a workflow it cannot migrate. `basicly check` names each workflow line that reads tracker records, with its fix. (basicly-uora5dm.4)
+
+### Fixed
+
+- The CI records guard now also covers the ledger a worktree redirects to, and its refusal can no longer be caught as a ValueError and turned into an empty tracker. release-notes, spend-accuracy and declared-dependencies are local only. (basicly-uora5dm.3)
 
 ## v0.46.3 - 2026-11-17
 

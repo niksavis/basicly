@@ -1,1 +1,0 @@
-- The CI records guard now also covers the ledger a worktree redirects to, and its refusal can no longer be caught as a ValueError and turned into an empty tracker. release-notes, spend-accuracy and declared-dependencies are local only.
