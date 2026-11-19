@@ -73,8 +73,6 @@ def _suite_options(index: int, total: int) -> tuple[str, ...]:
     return (
         OPTION,
         f"{index}/{total}",
-        "--dist",
-        "worksteal",
         "--junitxml",
         report,
         "-o",
