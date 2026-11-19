@@ -62,6 +62,7 @@ module docstring, and gated by `.scripts/docs_claims.py`.
 | `pkill-self-match` | `pretooluse` | `claude` | [`pkill-self-match.py`](pkill-self-match.py) | Refuse pkill -f or pgrep -f whose pattern matches the command's own shell (PreToolUse, pm1dzrp). |
 | `bare-var-guard` | `pretooluse` | `claude` | [`bare-var-guard.py`](bare-var-guard.py) | Refuse a command whose head is a bare `$VAR` that same command assigned a phrase. |
 | `rg-replace-guard` | `pretooluse` | `claude` | [`rg-replace-guard.py`](rg-replace-guard.py) | Refuse an `rg` short-flag cluster that swallows `-r`'s replacement value. |
+| `discard-guard` | `pretooluse` | `claude` | [`discard-guard.py`](discard-guard.py) | Refuse a shell command that discards uncommitted work unless it names a fresh approval (basicly-qpr2xmr.3.24). |
 | `headroom-guard` | `pretooluse` | `claude` | [`headroom-guard.py`](headroom-guard.py) | Put a Python module's remaining ratchet room in context before it is edited. |
 | `protect-generated-commit` | `pre-commit` | `git` | [`protect-generated-commit.py`](protect-generated-commit.py) | Block a commit that stages a hand-edited basicly-generated file (git backstop). |
 | `tool-usage` | `posttooluse` | `claude` | [`tool-usage.py`](tool-usage.py) | Count which terminal tools and skills the agent actually invokes (PostToolUse hook). |

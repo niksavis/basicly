@@ -85,6 +85,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "kit-boundary",
         "no-comments",
         "git-env-check",
+        "discard-guard",
         "headroom-guard",
         "commit-msg-script",
         "tracker-commit-msg-script",

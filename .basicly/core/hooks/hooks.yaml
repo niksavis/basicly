@@ -213,6 +213,12 @@ hooks:
     stage: pretooluse
     manager: claude
     matcher: Bash
+  - id: discard-guard
+    description: "Refuse a shell command that discards uncommitted work unless it names a fresh approval (basicly-qpr2xmr.3.24)."
+    script: discard-guard.py
+    stage: pretooluse
+    manager: claude
+    matcher: Bash
   # `module-size` is a budget, not a rule: prose can say the gate
   # exists and cannot say a module has 456 tokens left. `.scripts/headroom.py` is the read
   # that answers it before the code is written, and the `python` skill gives the command -
