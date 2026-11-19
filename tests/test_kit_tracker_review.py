@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import shlex
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -289,3 +291,62 @@ def test_parent_progress_preserves_a_deliberately_deferred_parent(
 
     assert "refused" not in _run(capsys, "claim", str(ledger), child, "--to", "sam")
     assert _run(capsys, "show", str(ledger), parent)["status"] == "deferred"
+
+
+def _evidence_shown(refused: str, verb: str) -> dict[str, Any]:
+    words = shlex.split(refused.split("next: ", 1)[1].split(", then ", maxsplit=1)[0])
+    assert words[2] == verb
+    return json.loads(words[words.index("--evidence") + 1])
+
+
+def test_a_claim_refusal_names_the_review_then_the_claim_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    record = _create(capsys, ledger)
+    place = os.path.relpath(ledger)
+
+    refused = _run(capsys, "claim", str(ledger), record, "--to", "sam")["refused"]
+
+    review, claim = f"review {place} {record} --evidence", f"claim {place} {record}"
+    assert review in refused and claim in refused
+    assert refused.index(review) < refused.index(claim)
+    shown = _evidence_shown(refused, "review")
+    assert set(shown["checks"][0]) == {"criterion", "command", "expected"}
+
+
+def test_a_close_refusal_names_the_confirm_then_the_close_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AI_AGENT", "owner")
+    ledger = tmp_path / "ledger"
+    record = _create(capsys, ledger, *SHAPED)
+    recorded_review(cli, ledger, record)
+    _run(capsys, "claim", str(ledger), record, "--to", "sam")
+    place = os.path.relpath(ledger)
+
+    refused = _run(capsys, "close", str(ledger), record, "--reason", "done")["refused"]
+
+    confirm, close = f"confirm {place} {record} --evidence", f"close {place} {record} --reason"
+    assert confirm in refused and close in refused
+    assert refused.index(confirm) < refused.index(close)
+    assert f"review {place} {record}" not in refused
+    shown = _evidence_shown(refused, "confirm")
+    assert set(shown["checks"][0]) == {"criterion", "command", "result", "exit_code"}
+
+
+def test_a_confirm_without_a_review_names_the_review_then_the_confirm_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    record = _create(capsys, ledger, *SHAPED)
+    place = os.path.relpath(ledger)
+    check = {"criterion": "it is reviewed", "command": ["true"], "result": "ok", "exit_code": 0}
+
+    refused = _run(
+        capsys, "confirm", str(ledger), record, "--evidence", json.dumps({"checks": [check]})
+    )["refused"]
+
+    review, confirm = f"review {place} {record} --evidence", f"confirm {place} {record} --evidence"
+    assert review in refused and confirm in refused
+    assert refused.index(review) < refused.index(confirm)
