@@ -237,6 +237,10 @@ The [Opus 5.5 prompting pass](../research/opus-5-5-prompting-pass.md) checks the
 Opus 5.5 prompting guide, rule by rule, with a known-match control (basicly-3i052o2). It is evidence
 for the best-practices audit, not a specification.
 
+The [deepseek-harness plugin review](../research/deepseek-harness-plugin-review.md) gives each
+concept of that harness one disposition with its source and the record that carries it
+(basicly-gtb19bg.28). It is evidence for the plugin composition work, not a specification.
+
 **Three companion files sit beside the architecture document, and none is reference
 material.**
 
