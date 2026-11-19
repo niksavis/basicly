@@ -13,6 +13,8 @@ from basicly import runner, session
 from basicly.checkout import COLOUR_ENV_FORCING, GIT_ENV_KEPT
 from tests import ledger_guard
 
+pytest_plugins = ["tests.pytest_shard"]
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 LIVE_LEDGER = REPO_ROOT / ".basicly" / "ledger"

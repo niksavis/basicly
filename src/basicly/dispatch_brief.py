@@ -24,6 +24,17 @@ LANE_SCRATCH_DIR = Path(".basicly/usage/scratch")
 
 
 CURRENT_ENVELOPE_BYTES = 16 * 1024
+OMISSION_ORDER = (
+    "comments",
+    "artifacts",
+    "unusable_artifacts",
+    "source_loss",
+    "description",
+    "source_locations",
+    "requirements",
+    "acceptance_criteria",
+    "title",
+)
 COMPLETE_COVERAGE = (
     "Recorded task facts, note text and admitted artifacts delivered; source loss is explicit."
 )
@@ -93,17 +104,7 @@ def _current_view(state: dict, contract: dict) -> dict:
         "required_hydration": [],
         "coverage_and_omissions": COMPLETE_COVERAGE,
     }
-    for field in (
-        "comments",
-        "artifacts",
-        "unusable_artifacts",
-        "source_loss",
-        "description",
-        "source_locations",
-        "requirements",
-        "acceptance_criteria",
-        "title",
-    ):
+    for field in OMISSION_ORDER:
         if len(_encoded(current).encode("utf-8")) + 1 <= CURRENT_ENVELOPE_BYTES:
             break
         value = contract[field]
