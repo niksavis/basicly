@@ -77,6 +77,28 @@ def test_a_code_commit_after_the_green_run_needs_the_full_checks(tmp_path: Path)
     assert "changes more than the ledger" in reason
 
 
+def test_a_commit_of_release_files_only_after_the_green_run_reuses_it(tmp_path: Path) -> None:
+    repo, green = _repo(tmp_path)
+    _commit(repo, release.VERSION_FILE.as_posix(), '__version__ = "1.0.0"\n', "chore: undo cut")
+    _release(repo)
+
+    ok, reason = reuse.reusable(repo, "v1.0.1", green=lambda sha: sha == green)
+
+    assert ok, reason
+
+
+def test_a_commit_of_release_files_and_code_needs_the_full_checks(tmp_path: Path) -> None:
+    repo, green = _repo(tmp_path)
+    (repo / "src/app.py").write_text("VALUE = 3\n", encoding="utf-8")
+    _commit(repo, release.VERSION_FILE.as_posix(), '__version__ = "1.0.0"\n', "chore: undo cut")
+    _release(repo)
+
+    ok, reason = reuse.reusable(repo, "v1.0.1", green=lambda sha: sha == green)
+
+    assert not ok
+    assert "changes more than the ledger and the release files" in reason
+
+
 def test_a_merge_after_the_green_run_needs_the_full_checks(tmp_path: Path) -> None:
     repo, green = _repo(tmp_path)
     _git(repo, "checkout", "-q", "-b", "side")

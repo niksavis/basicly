@@ -62,6 +62,11 @@ def _stray(root: Path, sha: str) -> list[str]:
     ]
 
 
+def _release_only(root: Path, sha: str) -> bool:
+    parents = _git(root, "rev-list", "--parents", "-n", "1", sha).split()
+    return len(parents) == 2 and not _stray(root, sha)
+
+
 def green_in_ci(sha: str) -> bool:
     done = subprocess.run(  # nosec B603 B607
         ["gh", "run", "list", "--workflow", WORKFLOW, "--commit", sha, "--json", "conclusion"],
@@ -86,10 +91,13 @@ def reusable(root: Path, tag: str, green: Callable[[str], bool] = green_in_ci) -
         if green(sha):
             return True, (
                 f"{sha[:12]} passed {WORKFLOW}, and every later commit is the release commit "
-                "or touches only the ledger or CHANGELOG.md"
+                "or touches only the ledger, CHANGELOG.md or the release files"
             )
-        if not _quiet(root, sha):
-            return False, f"{sha[:12]} changes more than the ledger and has no passing {WORKFLOW}"
+        if not (_quiet(root, sha) or _release_only(root, sha)):
+            return False, (
+                f"{sha[:12]} changes more than the ledger and the release files "
+                f"and has no passing {WORKFLOW}"
+            )
     return False, f"no commit within {LIMIT} of {tag} passed {WORKFLOW}"
 
 
