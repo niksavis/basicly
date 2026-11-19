@@ -7,11 +7,63 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
 
 SESSION = "BASICLY_TRACKER_SESSION"
+
+NOQA_S603 = re.compile(r"  # noqa: S603[^\n]*")
+RUFF_FILES = (".ruff.toml", "ruff.toml", "pyproject.toml")
+
+
+def _ruff_lint(path: Path) -> dict | None:
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except OSError, tomllib.TOMLDecodeError:
+        return None
+    if path.name == "pyproject.toml":
+        data = data.get("tool", {}).get("ruff")
+        if not isinstance(data, dict):
+            return None
+    lint = data.get("lint", {})
+    return {**data, **lint} if isinstance(lint, dict) else data
+
+
+def _matches(codes: object, rule: str) -> bool:
+    return isinstance(codes, list) and any(
+        isinstance(code, str) and (code == "ALL" or rule.startswith(code)) for code in codes
+    )
+
+
+def ruff_selects(root: Path, rule: str = "S603") -> bool:
+    for name in RUFF_FILES:
+        lint = _ruff_lint(root / name)
+        if lint is None:
+            continue
+        chosen = _matches(lint.get("select"), rule) or _matches(lint.get("extend-select"), rule)
+        return chosen and not _matches(lint.get("ignore"), rule)
+    return False
+
+
+def bootstrap_noqa_drift(root: Path) -> str | None:
+    target = root / ".basicly/tracker-bootstrap.py"
+    if not target.is_file():
+        return None
+    text = target.read_text(encoding="utf-8")
+    if 'BOOTSTRAP_OWNER = "basicly-tracker"' not in text:
+        return None
+    has = bool(NOQA_S603.search(text))
+    wants = ruff_selects(root)
+    if has == wants:
+        return None
+    state = "carries" if has else "lacks"
+    need = "enables" if wants else "does not enable"
+    return (
+        f".basicly/tracker-bootstrap.py {state} the S603 noqa, but this repository's ruff "
+        f"{need} S603; fix: basicly install"
+    )
 
 
 def _run(
@@ -65,6 +117,8 @@ def write_launch(root: Path, *, version: str, tool: str = "basicly-tracker") -> 
         source_line = f"SOURCE = (\n    {literal}\n)"
     text = text.replace('SOURCE = ""', source_line)
     text = text.replace('TOOL = "basicly-tracker"', f"TOOL = {json.dumps(tool)}")
+    if not ruff_selects(root):
+        text = NOQA_S603.sub("", text)
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.is_file() or target.read_text("utf-8") != text:
         target.write_text(text, encoding="utf-8")

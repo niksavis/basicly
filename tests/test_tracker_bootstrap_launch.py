@@ -11,6 +11,67 @@ import pytest
 
 from basicly import tracker_agent
 
+RUFF_CONFIGS = [
+    (None, "", False),
+    ("pyproject.toml", '[project]\nname = "x"\n', False),
+    ("pyproject.toml", '[tool.ruff.lint]\nselect = ["E", "F", "RUF100"]\n', False),
+    ("pyproject.toml", '[tool.ruff.lint]\nselect = ["S"]\n', True),
+    ("pyproject.toml", '[tool.ruff]\nselect = ["ALL"]\nignore = ["S603"]\n', False),
+    ("ruff.toml", '[lint]\nselect = ["S603"]\n', True),
+    (".ruff.toml", '[lint]\nextend-select = ["S6"]\n', True),
+]
+
+
+def _consumer(root: Path, name: str | None, text: str) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    if name is not None:
+        (root / name).write_text(text, encoding="utf-8")
+    return tracker_agent.write_launch(root, version="0.45.0")
+
+
+@pytest.mark.parametrize(("name", "text", "enabled"), RUFF_CONFIGS)
+def test_the_bootstrap_noqa_follows_the_consumers_ruff_selection(
+    tmp_path: Path, name: str | None, text: str, enabled: bool
+) -> None:
+    written = _consumer(tmp_path, name, text).read_text(encoding="utf-8")
+
+    assert ("# noqa: S603" in written) is enabled
+    assert tracker_agent.bootstrap_noqa_drift(tmp_path) is None
+
+
+@pytest.mark.parametrize(("select", "enabled"), [("RUF100", False), ("RUF100,S", True)])
+def test_the_generated_bootstrap_passes_ruff_with_and_without_the_s_rules(
+    tmp_path: Path, select: str, enabled: bool
+) -> None:
+    text = f'[lint]\nselect = ["{select.rsplit(",", maxsplit=1)[-1]}"]\n' if enabled else ""
+    path = _consumer(tmp_path, "ruff.toml" if enabled else None, text)
+
+    result = subprocess.run(
+        ["ruff", "check", "--isolated", "--select", select, str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "state"),
+    [("", '[lint]\nselect = ["S"]\n', "lacks"), ('[lint]\nselect = ["S"]\n', "", "carries")],
+)
+def test_check_names_the_bootstrap_noqa_drift_in_both_directions(
+    tmp_path: Path, before: str, after: str, state: str
+) -> None:
+    _consumer(tmp_path, "ruff.toml", before)
+    (tmp_path / "ruff.toml").write_text(after, encoding="utf-8")
+
+    drift = tracker_agent.bootstrap_noqa_drift(tmp_path)
+
+    assert drift is not None
+    assert f"{state} the S603 noqa" in drift
+    assert drift.endswith("fix: basicly install")
+
 
 def _launcher(root: Path) -> ModuleType:
     path = tracker_agent.write_launch(root, version="0.45.0")
