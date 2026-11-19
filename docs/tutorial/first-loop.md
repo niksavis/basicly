@@ -117,7 +117,7 @@ Hooks
 ┃ manager ┃ specs ┃ projection ┃ activation ┃
 ┡━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━┩
 │ git     │ 16    │ in sync    │ installed  │
-│ claude  │ 9     │ in sync    │ active     │
+│ claude  │ 10    │ in sync    │ active     │
 │ copilot │ 2     │ in sync    │ active     │
 └─────────┴───────┴────────────┴────────────┘
 agent hooks: active on claude, copilot; the git hooks stay the commit-time floor
