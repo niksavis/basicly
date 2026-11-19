@@ -66,6 +66,9 @@
    "sha256:e234d5c9c799d303dcf719a827a7cbcb84a5570010cb6fb03c74adff80ca4b8e",
    "sha256:f67dc5f972728286c641fc785aa3ce3196a1ce9fbb39b42a2cf185da80394590"
   ],
+  "agents/orchestrator/agent.yaml": [
+   "sha256:c38242e6a8e2fcba322732aca52a387a323507731dfe1ac3e5d84cd58154f040"
+  ],
   "agents/researcher/agent.yaml": [
    "sha256:4f79a6311c9aef8b9b281e8189fb3f056e75a8f12fa4a13f131a430896f6e236",
    "sha256:e2f74730080e9f95c16bd29fb8991ab6e4a39cff37c8a60c1b9d4633d42b6adf",
@@ -99,6 +102,9 @@
    "sha256:49881aa9a88269ad216a352648b3b4ac72675c77fe131e1c148051ac4e00fbbe",
    "sha256:5e0e255eedebdda2d31363665abe8e708c4a822d88c44e5a91bc4f853775d90b",
    "sha256:9ee4e512a6dd947643b646b1db2ad858c312df9b55179ddafd1f89a7c8c53583"
+  ],
+  "fragments/boundaries/orchestrated-session.fragment.yaml": [
+   "sha256:e95c50a12292a957f39076c7d67d17a83ca76fb1d70c6a63a2a1df4b265d954d"
   ],
   "fragments/boundaries/require-explicit-confirmation.fragment.yaml": [
    "sha256:4c48ee14dd86dc8505c6cae632ab0180751b2befefb3611c35bc7258b285b66d",
@@ -474,6 +480,7 @@
    "sha256:4795e8f0520548169e8295a33240efa9c9cbdd62efe3e89b1ad4f78c34290b39",
    "sha256:5efd8dbbb58e4b2de3157f12be41fe3ae3b48cacbe5d325e7b9a6aa8e2fcf7cc",
    "sha256:68f1abc6baf3a244a13c1548592112512f56174356adb1ace469cfd6de92d298",
+   "sha256:a7afec72952cfb6d647992714a941fd6b7a164d355538599ab796df19bded6cc",
    "sha256:ab1b8c7a781089dae651848d69f3259567e1ac1f4c4334381a5346fecd1de439",
    "sha256:b5029021520d5c2cfcbcbac1f71d680b7d80538df1c92d6b48d435fd6a5b586d",
    "sha256:d0e0361c85075b31bdc7d59bb745b171016073ce446365efb073debafc8e4ce2",
@@ -752,6 +759,57 @@
   ],
   "kit/install_hook.py": [
    "sha256:af1a795f230238798d60337851fbc3b9f4dccaa11b5117ec79a7c8eb6a226e59"
+  ],
+  "kit/orch/orch_guard/__init__.py": [
+   "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  ],
+  "kit/orch/orch_guard/hook.py": [
+   "sha256:60d83dadf8bb50900a999dbe175c060a85eaa5e8356c326aaf00dee4e132479e"
+  ],
+  "kit/orch/orch_lessons/__init__.py": [
+   "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  ],
+  "kit/orch/orch_lessons/cli.py": [
+   "sha256:915471d2368fdad1a57ae6607be13de068424fc77574524f16e51d960e024b70"
+  ],
+  "kit/orch/orch_lessons/doctor.py": [
+   "sha256:67f13f40e03ba11be9fb2102144f5f5fbe8a2620ed71520158dc7f1fce60881c"
+  ],
+  "kit/orch/orch_lessons/log.py": [
+   "sha256:7815141649e1af658cdb214556406d617f1f456b01c5fa0cba33d241063876cf"
+  ],
+  "kit/orch/orch_lessons/ruleset.json": [
+   "sha256:08f76d20303e23c1511dc2bc443e7a0324686181b0ab0227e6f235cddf81d987"
+  ],
+  "kit/orch/orch_relay/__init__.py": [
+   "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  ],
+  "kit/orch/orch_relay/classes.py": [
+   "sha256:207a4e57ec59fced47b28e0a8a88413130416d1ef73df6de73564ae138495de9"
+  ],
+  "kit/orch/orch_relay/fields.py": [
+   "sha256:95d1e65634f751321da32cadc0970cdb795f767e225c67986b646dca24c05285"
+  ],
+  "kit/orch/orch_relay/messages.py": [
+   "sha256:43a67255ba3d542369ae78e8f4ced1f284c95098e2a4cd726e26e673be3f810a"
+  ],
+  "kit/orch/orch_relay/record.py": [
+   "sha256:741bec75971fc319d8700342e82571f34b4d46a13002a647106800e26073e2cd"
+  ],
+  "kit/orch/orch_relay/start.py": [
+   "sha256:febc9873fb9fbc8b2e88aebffe0608cecc11e1a31375fcf0709d77a604913487"
+  ],
+  "kit/orch/orch_state/__init__.py": [
+   "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  ],
+  "kit/orch/orch_state/herdr.py": [
+   "sha256:8232ba6a04aa760daf7eab440990e6876fdda00661a84f53cb4e7fb8fa5b676e"
+  ],
+  "kit/orch/orch_state/reporter.py": [
+   "sha256:c695b38def550944d569c4105dc344a2d9611dfa3267331de7241e442c9ad7b6"
+  ],
+  "kit/orch/runner.py": [
+   "sha256:85fbdad05e5522a608c8b1279e2a735085ae2235f8892b9b4126446bf01cafb5"
   ],
   "kit/tier/GUIDANCE.md": [
    "sha256:4f14efa2a04218cc54695db7b249abb328eaa9168016bc00c4a2581eddaf5023",
@@ -1144,6 +1202,7 @@
    "sha256:0338329b26047f7c6d0115a7517060564e32b47890f1c0c308849e00fb555aa1",
    "sha256:04c90d12fe0f826ac1259c9c72048691e150b98dfacbf3d0646e62158be26078",
    "sha256:0a3f4dc734d09d93cac496423851af31c6c5ef4053b3b4926b1121b7f87b2ce1",
+   "sha256:0cb7f64fdc6bfcaf737680265e85341e05fe2c0c0b3dcf871df6921948b1ed82",
    "sha256:0d8d68485a9af073df3f426f00c6b85355257858fb5b2ccf1925ab984f3c3aab",
    "sha256:0ddc8f5463b44de00eec9ddc43453e1c5b743d7c339bd4ac5d9100dc26718310",
    "sha256:133b31771c108dcf1b91db3a80f717550a02acb0cf1714dc218bc93eae8494ca",
@@ -1489,6 +1548,7 @@
    "sha256:52d18a79cb16f7d543c0852c05467fd69f6a0ba13c1d6f20be251cea1faf7da1",
    "sha256:5f85bb26d23a14eed9339ba4a4f223e2fe2abea3cd2925dba3be1dca919f1ed7",
    "sha256:84eccf9ab8ae89530a05b8fe24ca7ded009203d5f045e71cf5c6f44d6a1329ec",
+   "sha256:c1b71d5a596df293cb3e20936b6b8b7410d2937b61713d6aeea32037a299934d",
    "sha256:d9fb12f06ba3b48f94d166d23ce388b7203634ac9a7e5a019a8b9482862c2bf4",
    "sha256:e678019a79afdee2ec7aa30002f4124db970add602ab60a908b7624797484640",
    "sha256:ffc15409b343b45c9ae0443b44aa880e1771367110a252d7cee7af43a3d1634a"
@@ -1510,7 +1570,8 @@
   "schemas/agent.schema.json": [
    "sha256:0b6276bc9ea800a933733ee7c37e1ae4af67d89c1e52487e92adc49565a290ee",
    "sha256:3f3e8398ef1a8051429a9c3ffd380cdd954af7799aa8bfecf64825e4be54e9ef",
-   "sha256:9553641bdfd746c08ece5dc2b04cc8d6bd1b3feb26495c92da27177ccdc457c6"
+   "sha256:9553641bdfd746c08ece5dc2b04cc8d6bd1b3feb26495c92da27177ccdc457c6",
+   "sha256:db60d7cdcc3a3ae0c8ff465cc987a1f74ee51a1ee09931c84feaad68f0a89bc8"
   ],
   "schemas/block.schema.json": [
    "sha256:acb760d8b2f960ecad773424cefc1805d67422979a88154e28292f50d8a3d33d"
@@ -1537,6 +1598,7 @@
    "sha256:cf442de0d4dbed83f9938ccbe27ea4a810ea321c2ad958b46749ddd47ea353b9"
   ],
   "schemas/fragment.schema.json": [
+   "sha256:0397a8ade8a9c45bc42a1e8f156af9920ad9e120abda353588e86d3924afdcbf",
    "sha256:09e519233930817de556a76dd13a18953856b5736fd33a092ec565d79ea7d34d",
    "sha256:3792da9121e104a5d5d8266f8ad6dcb54e531047bd3307363d29b791b9d94e64",
    "sha256:7e6bd1e0a17c15d7f24475d292df504216a92de8a5e82cc23b8fbf350cd1cf29",
@@ -1556,6 +1618,7 @@
   "schemas/skill.schema.json": [
    "sha256:2aa3c39024e692fdfa8009a4fe7dc3d121a3ae0f6ae3af15db4b66608e6703b7",
    "sha256:47949a9f29628d86cb34510585468714ff875abec84a94a05c09a99c0dcff92d",
+   "sha256:48a6219bbe861fc1f6c14982b653549f244295c9727d5329d929802b1fbc9858",
    "sha256:89b9e839281ba30e88d6dda0ea0d46c0154a1ba1b0e5f7df010cf730251efd86",
    "sha256:b8d373883eae9928ea99c7c1465877889b074b53f4763909e3a0a96a6260f7b7",
    "sha256:ba300a4969ab8c17a3e5a8e635352aff1a7315d9e40fdc366b5659a6cc3c212f",
@@ -1571,6 +1634,7 @@
   ],
   "skills/README.md": [
    "sha256:1c433acdff7394901fbd963c642e16c1fcde3ca7eb002c018a296c88e1ed4812",
+   "sha256:20569e1ddb755017f7e45576715c3431888a93cacb440b4fcbde633ecb6212a3",
    "sha256:2ff93fbb337205e3ca254db4c760214174be3b65e03c394170c9b49f10cbbbdb",
    "sha256:35ce93cb89c6c4a42f5891063eb75985ad9fd13d469f31c0f98b3ff64ed07d98",
    "sha256:451c4dc1ab880d09c425bea4f25ecffec812d5d896abc339264f4a8536518873",
@@ -1975,6 +2039,12 @@
    "sha256:a67fc60ccbb461ddea27cd8a9712e85242cb5c871a99acb4810de659e9266d0c",
    "sha256:e1e5bd3c7fd11ffb5b6357604cf7624c1808f2644c0ea57cfbb650b11bc23afb",
    "sha256:f20cd134b72dbd07e02f0b25bc5b053fc7029081cc26dcbabb8338a18a413e4e"
+  ],
+  "skills/orchestration/evals.yaml": [
+   "sha256:31c5f80fc264b1c5937ce82a6b72adcf0c1303eb667797e31d37b8cb4c8243f5"
+  ],
+  "skills/orchestration/skill.yaml": [
+   "sha256:02c4307d9e8271d5a86a3b89d2b3791b15a2a932ba339a36b595a02b096e20cb"
   ],
   "skills/plain-english/evals.yaml": [
    "sha256:38539a459cd6f2210fd1ae836787b376080f081292a3c9341f78ec3078bef1ea"
@@ -2771,6 +2841,7 @@
   "v0.46.0",
   "v0.46.1",
   "v0.46.3",
-  "v0.46.4"
+  "v0.46.4",
+  "v0.46.5"
  ]
 }
