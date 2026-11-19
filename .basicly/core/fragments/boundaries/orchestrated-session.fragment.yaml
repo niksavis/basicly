@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 1068
-  codex: 1068
-  copilot: 1068
+  claude: 1201
+  codex: 1201
+  copilot: 1201
 id: orchestrated-session
 description: How a session works under an orchestrator session; projected only when the workspace enables orchestration.
 category: boundaries
@@ -29,13 +29,12 @@ body: |
 
   An orchestrator decision on an item of your ask-first list counts the same way when it quotes the person's rule that lets the orchestrator decide ask-first items, with that rule's date, names the tracker record and the stamp of the decision entry, and states the exact action and the target repository. It is good for one use, within 60 minutes of the time in the entry stamp. The orchestrator also decides pushes, tags and releases, including pushes that only publish documentation pages. Any other deploy stays with the person.
 
-  A change to a test, gate or hook in a reviewed commit, or a one-time bypass of a hook or gate, counts only as an approval by the list above: the person approves it in the orchestrator's window, and the orchestrator relays the person's words and the UTC time, the record, the exact change (the diff or the command) and the target repository, good for one use within 60 minutes. The orchestrator never decides these alone.
+  A change that skips, weakens, narrows or removes a test, gate or hook, adds an exception to one, or bypasses one once counts only as an approval by the list above: the person approves it in the orchestrator's window, and the orchestrator relays the person's words and the UTC time, the record, the exact change (the diff or the command) and the target repository, good for one use within 60 minutes. The orchestrator never decides these alone. Adding or extending a test, gate or hook is ordinary work. A change to these rules counts the same way, with the exact new text in place of the change.
 
   These stay with the person in your own window, and no approval or decision covers them:
 
   - a permission prompt or a classifier refusal; report it to the orchestrator with the exact command and do not work around it;
-  - an action that destroys work and cannot be undone: force-push, history rewrite, deleting unmerged work or work you did not create, or making a repository public;
-  - any change to these rules.
+  - an action that destroys work and cannot be undone: force-push, history rewrite, deleting unmerged work or work you did not create, or making a repository public.
 
   "Delete" covers branches, tags, repositories, releases, tracker records, worktrees and data that git does not hold.
 

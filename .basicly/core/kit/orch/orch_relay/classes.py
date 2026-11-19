@@ -23,14 +23,15 @@ ITEMS: dict[str, str] = {
     "reversible-delete": PERSON_APPROVES,
     "permission-prompt": PERSON_WINDOW,
     "classifier-refusal": PERSON_WINDOW,
-    "test-change": PERSON_APPROVES,
-    "gate-change": PERSON_APPROVES,
-    "hook-change": PERSON_APPROVES,
+    "test-weakening": PERSON_APPROVES,
+    "gate-weakening": PERSON_APPROVES,
+    "hook-weakening": PERSON_APPROVES,
+    "gate-exception": PERSON_APPROVES,
     "gate-bypass": PERSON_APPROVES,
     "hook-bypass": PERSON_APPROVES,
     "irreversible-destruction": PERSON_WINDOW,
     "private-data-exposure": PERSON_WINDOW,
-    "rule-change": PERSON_WINDOW,
+    "rule-change": PERSON_APPROVES,
 }
 
 ROUTE = {

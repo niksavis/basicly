@@ -320,7 +320,7 @@
     },
     {
       "id": "person-items",
-      "rule": "Permission prompts, irreversible destruction and rule changes stay with the person in the worker's window.",
+      "rule": "Permission prompts and irreversible destruction stay with the person in the worker's window.",
       "source": "ARCHITECTURE.md:264",
       "place": "fragment",
       "file": ".basicly/core/fragments/boundaries/orchestrated-session.fragment.yaml",
@@ -334,7 +334,7 @@
     },
     {
       "id": "relayed-gate-change",
-      "rule": "A test, gate or hook change or a one-time bypass counts only as the person's approval relayed in the full format; the orchestrator never decides it alone.",
+      "rule": "A change that skips, weakens, narrows or removes a test, gate or hook, adds an exception or bypasses one once, and a change to these rules, count only as the person's approval relayed in the full format; adding or extending a test, gate or hook is ordinary work.",
       "source": "ARCHITECTURE.md:294",
       "place": "fragment",
       "file": ".basicly/core/fragments/boundaries/orchestrated-session.fragment.yaml",
