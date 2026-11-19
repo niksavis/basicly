@@ -164,13 +164,21 @@ def lesson_lines(cwd: Path, environ: dict[str, str]) -> tuple[list[str], bool]:
         root = log.find_root(cwd, environ)
     except log.RefusedError as missing:
         return [f"lessons: not checked, {missing}"], False
+    empty = log.empty_session_ends(root)
+    flagged = [
+        f"session of {event.get('member')} ended {event.get('time')} with no lesson"
+        for event in empty
+    ]
     old = log.stale(root)
     lines = [
-        f"lesson {lesson.id} open since {lesson.time.date()}: {lesson.requirement}"
-        for lesson in old
+        *flagged,
+        *(
+            f"lesson {lesson.id} open since {lesson.time.date()}: {lesson.requirement}"
+            for lesson in old
+        ),
     ]
     lines.append(f"lessons: {len(old)} open longer than {log.STALE_AFTER.days} days")
-    return lines, bool(old)
+    return lines, bool(old) or bool(empty)
 
 
 def run(cwd: Path, environ: dict[str, str], runner: Runner = run_codex) -> Report:

@@ -1,1 +1,1 @@
-- `orch doctor` refuses a Claude Code allow rule that lets a session run `orch`, such as `Bash(orch:*)` or a blanket `Bash`, and names the file and rule. It also reports the active wake adapter, and it runs where no lessons folder exists.
+- `orch doctor` refuses a Claude Code allow rule that lets a session run `orch`, and reports the wake adapter. The orchestrator agent, the `orchestrated-session` fragment and the `orchestration` skill carry the full orchestration ruleset, and `orch lessons end-session` refuses a session that wrote no lesson.

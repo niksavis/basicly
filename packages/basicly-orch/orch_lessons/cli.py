@@ -28,6 +28,7 @@ def parser() -> argparse.ArgumentParser:
     export = many.add_parser("export")
     export.add_argument("--target", type=Path, required=True)
     export.add_argument("--out", required=True)
+    many.add_parser("end-session")
     groups.add_parser("doctor")
     groups.add_parser("record")
     for name in ("decide", "approve"):
@@ -103,6 +104,26 @@ def run_relay(args: argparse.Namespace, cwd: Path) -> int | None:
     return 0
 
 
+def _add(args: argparse.Namespace, writer: log.Writer) -> str:
+    return f"lesson {writer.add(args.what, args.requirement, args.enforcement, args.record)} added"
+
+
+def _close(args: argparse.Namespace, writer: log.Writer) -> str:
+    writer.close(args.id, args.change)
+    return f"lesson {args.id} closed"
+
+
+def _end_session(_args: argparse.Namespace, writer: log.Writer) -> str:
+    return f"session ended with {writer.end_session()} lesson(s)"
+
+
+WRITES = {
+    ("lesson", "add"): _add,
+    ("lesson", "close"): _close,
+    ("lessons", "end-session"): _end_session,
+}
+
+
 def run(argv: list[str], cwd: Path, environ: dict[str, str]) -> int:
     args = parser().parse_args(argv)
     if args.group == "lessons" and args.action == "init":
@@ -117,14 +138,8 @@ def run(argv: list[str], cwd: Path, environ: dict[str, str]) -> int:
         return 1 if report.failed else 0
     root = log.find_root(cwd, environ)
     scan = log.scanner(log.repo_root(cwd))
-    if args.group == "lesson" and args.action == "add":
-        writer = log.Writer(root, scan, log.member(environ))
-        lesson_id = writer.add(args.what, args.requirement, args.enforcement, args.record)
-        print(f"lesson {lesson_id} added")
-        return 0
-    if args.group == "lesson" and args.action == "close":
-        log.Writer(root, scan, log.member(environ)).close(args.id, args.change)
-        print(f"lesson {args.id} closed")
+    if (args.group, args.action) in WRITES:
+        print(WRITES[args.group, args.action](args, log.Writer(root, scan, log.member(environ))))
         return 0
     repo = log.repo_root(cwd)
     target = args.target.resolve()

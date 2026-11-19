@@ -16,6 +16,7 @@ SCANNER = Path(".basicly/core/hooks/secret-scan.py")
 ROOT_ENV = "ORCH_LESSONS_ROOT"
 MEMBER_ENV = "ORCH_MEMBER"
 STALE_AFTER = timedelta(days=14)
+SESSION_END = "session-end"
 
 Clock = Callable[[], datetime]
 
@@ -132,6 +133,20 @@ class Writer:
         )
         return lesson_id
 
+    def end_session(self) -> int:
+        added = lessons_since_last_end(self.root, self.member)
+        if added == 0:
+            raise RefusedError(
+                f"{self.member} wrote no lesson in this session; record each lesson with "
+                "orch lesson add, then run orch lessons end-session again"
+            )
+        stamp = self.clock().isoformat(timespec="seconds")
+        append(
+            self.root,
+            {"event": SESSION_END, "time": stamp, "member": self.member, "lessons": added},
+        )
+        return added
+
     def close(self, lesson_id: str, change: str) -> None:
         if lesson_id not in {lesson.id for lesson in lessons(self.root)}:
             raise RefusedError(
@@ -165,6 +180,33 @@ def lessons(root: Path) -> list[Lesson]:
             old = found[event["id"]]
             found[event["id"]] = Lesson(**{**old.__dict__, "closed_by": event["change"]})
     return list(found.values())
+
+
+def events(root: Path) -> list[dict[str, object]]:
+    path = root / LOG
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def lessons_since_last_end(root: Path, member: str) -> int:
+    added = 0
+    for event in events(root):
+        if event.get("member") != member:
+            continue
+        if event.get("event") == SESSION_END:
+            added = 0
+        elif event.get("event") == "add":
+            added += 1
+    return added
+
+
+def empty_session_ends(root: Path) -> list[dict[str, object]]:
+    return [
+        event
+        for event in events(root)
+        if event.get("event") == SESSION_END and not event.get("lessons")
+    ]
 
 
 def export(root: Path, scan: Callable[[str], str | None], target: Path, relative: str) -> str:

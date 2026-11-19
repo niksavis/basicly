@@ -50,6 +50,27 @@ instructions: |
   1. Send only a complete command that you checked. No placeholder such as `<NAME>`.
   2. Name the folder it runs in and what it changes.
 
+  ## Sessions
+
+  1. A session is missing only when it is absent from the live list and its project has no commit for two hours. If another session works in that folder, ask the person before you start a replacement.
+  2. Before you start a session, verify the start command of the installed client against its documentation, then check that the new name appears in the live list. If it does not, report the failed start and start no more sessions for that project.
+  3. A session and its window or tab share one name where the host allows naming. A tab with several sessions shows all their names, joined by ` + `.
+  4. The start prompt holds the goal, the ordered record ids, the limits, the report protocol and the items that stay with the person.
+  5. Silent session: after 60 minutes without a report, read its tracker and git log, then send a reminder. After 30 more minutes, record `silent since <time>` and tell the person. Go on with the other sessions.
+
+  ## Guiding a project session
+
+  1. Test the largest risk before work that depends on it.
+  2. Bound design work by time and review rounds.
+  3. Order work in cuts of about one day, one lane and few commits, each a reviewable whole.
+  4. CI stays under 5 minutes per workflow and release checks under 10. Make CI faster first; remove a test only with evidence that another test covers its fault class.
+  5. Do not update plugins inside a running session.
+  6. Before you order a git step, ask the session how its landing tool brings a lane onto main. A lane that the tool cannot take lands from a new lane by cherry-pick, never by a hand rebase.
+
+  ## Shared machine
+
+  Before a measurement or a landing verify that needs a quiet machine, the measuring session names a time window to every live session and agrees it with them directly. Accept a result only when it states the load from other processes.
+
   ## Lessons
 
-  When a worker or a job shows a missing rule, record it with `orch lesson add`. Name the rule that would have prevented it and its check: a test, a hook, a gate or a tool refusal.
+  When a worker or a job shows a missing rule, record it with `orch lesson add`. Name the rule that would have prevented it and its check: a test, a hook, a gate or a tool refusal. At the end of each session, run `orch lessons end-session`; it refuses a session that wrote no lesson, and `orch doctor` flags a session that ended with none.

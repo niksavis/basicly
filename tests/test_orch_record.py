@@ -104,7 +104,7 @@ def test_risk_without_a_check_line_in_the_action_is_refused_by_name(
     repo: Path, command: str
 ) -> None:
     fake = FakeTracker([])
-    item = "ci-edit" if command == "decide" else "push"
+    item = "ci-edit" if command == "decide" else "deploy"
     bad = act(item, ["red CI => gh run view 1"])
     with pytest.raises(log.RefusedError, match=r"risk 'red CI' maps to no check line"):
         if command == "decide":
@@ -140,7 +140,8 @@ def test_report_accepts_only_three_states_with_a_record(repo: Path, state: str) 
 @pytest.mark.parametrize(
     ("item", "refusal"),
     [
-        ("push", None),
+        ("deploy", None),
+        ("push", "an ask-first item"),
         ("ci-edit", "an ask-first item"),
         ("gate-bypass", "stays with the person in the worker's own window"),
     ],

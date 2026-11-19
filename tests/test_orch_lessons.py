@@ -165,6 +165,24 @@ def test_export_writes_only_open_requirements_and_changes_no_file(repo: Path) ->
     assert target.read_text(encoding="utf-8") == "name: orchestrator\n"
 
 
+def test_end_session_refuses_a_session_with_no_lesson_and_the_doctor_flags_one(
+    tmp_path: Path,
+) -> None:
+    root = log.init(tmp_path)
+    writer = log.Writer(root, clean, "o", lambda: T0)
+    with pytest.raises(log.RefusedError, match=r"wrote no lesson in this session"):
+        writer.end_session()
+    writer.add("w", "r", "e", "x")
+    assert writer.end_session() == 1
+    with pytest.raises(log.RefusedError, match=r"wrote no lesson"):
+        writer.end_session()
+    assert log.empty_session_ends(root) == []
+    log.append(root, {"event": log.SESSION_END, "time": "t", "member": "p", "lessons": 0})
+    environ = {"ORCH_LESSONS_ROOT": str(root)}
+    lines, failed = doctor.lesson_lines(tmp_path, environ)
+    assert failed and lines[0] == "session of p ended t with no lesson"
+
+
 def test_doctor_names_open_lessons_older_than_14_days(tmp_path: Path) -> None:
     root = log.init(tmp_path)
     log.Writer(root, clean, "o", lambda: T0).add("w", "old", "e", "x")
