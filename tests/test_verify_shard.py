@@ -44,6 +44,8 @@ def test_every_shard_runs_its_own_part_of_the_suite() -> None:
             *SUITE.command,
             "--shard",
             f"{index}/3",
+            "--dist",
+            "worksteal",
             "--junitxml",
             f"build/shard-junit/{index}-of-3.xml",
             "-o",

@@ -70,7 +70,16 @@ def place_checks(
 
 def _suite_options(index: int, total: int) -> tuple[str, ...]:
     report = (JUNIT_DIR / f"{index}-of-{total}.xml").as_posix()
-    return (OPTION, f"{index}/{total}", "--junitxml", report, "-o", "junit_family=xunit1")
+    return (
+        OPTION,
+        f"{index}/{total}",
+        "--dist",
+        "worksteal",
+        "--junitxml",
+        report,
+        "-o",
+        "junit_family=xunit1",
+    )
 
 
 def select(
