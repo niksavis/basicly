@@ -78,6 +78,7 @@ from . import (
     user_skills,
     validate_gate,
     verify,
+    verify_shard,
     working_set,
     worktree,
     write_preflight,
@@ -3348,7 +3349,7 @@ def _cmd_policy_rework(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
-    if getattr(args, "ci", False):
+    if getattr(args, "ci", False) or getattr(args, "shard", None):
         if refusal := _ci_refusal(args):
             ui.fail(refusal)
             return 1
@@ -3382,12 +3383,19 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def _ci_refusal(args: argparse.Namespace) -> str:
+    if not getattr(args, "ci", False):
+        return "--shard runs only in CI: basicly verify --mode full --ci --shard K/N"
     if args.mode != "full" or args.issue or args.fix or getattr(args, "affected", False):
         return (
             "--ci runs only as `basicly verify --mode full --ci`: CI never records a gate "
             "with --issue, repairs files with --fix or selects --affected checks. "
             "Run those in the local landing verify."
         )
+    if shard := getattr(args, "shard", None):
+        try:
+            verify_shard.parse(shard)
+        except ValueError as exc:
+            return str(exc)
     return ""
 
 
@@ -3400,6 +3408,9 @@ def _verify_ci(repo_root: Path, args: argparse.Namespace) -> verify.VerifyReport
         if check.local_only:
             print(f"[verify] {check.name}: local only (reads tracker records); not run in CI")
     kept = tuple(check for check in config.checks if not check.local_only)
+    if shard := getattr(args, "shard", None):
+        weights = verify_shard.load_weights(repo_root / verify_shard.WEIGHTS)
+        kept = verify_shard.select(kept, *verify_shard.parse(shard), weights)
     return verify.run_verify(repo_root, args.mode, replace(config, checks=kept))
 
 
@@ -5027,6 +5038,10 @@ def _add_verify_parser(subparsers: argparse._SubParsersAction) -> None:
         "--ci",
         action="store_true",
         help="CI mode: read no tracker record, skip local_only checks and the landing guard",
+    )
+    verify_parser.add_argument(
+        "--shard",
+        help="CI only: run shard K/N of the checks and of the pytest suite",
     )
     verify_parser.add_argument(
         "--gate",

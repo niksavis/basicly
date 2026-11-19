@@ -20,6 +20,9 @@ from basicly.config import WORK_TYPES, SizingConfig
 from basicly.skill_source import SKILLS_SOURCE_DIR
 from tests import flipped_tracker
 
+HISTORY_NOTES = 20
+HISTORY_NOTE_CHARS = 1000
+
 SIZING = SizingConfig(
     working_set_min=9_000,
     working_set_max=70_000,
@@ -302,14 +305,21 @@ def test_issue_curation_does_not_authorize_release_publication() -> None:
     assert "does not tag, publish or push a release" in prompt
 
 
-def test_large_history_keeps_the_envelope_bounded_and_delivers_early_corrections(
-    tmp_path: Path,
-) -> None:
+def _history_repo(tmp_path: Path, notes: int) -> Path:
     repo = flipped_tracker.flipped_repo(tmp_path)
     flipped_tracker.seed(repo, "basicly-task", title="bounded task", requirements="界" * 6000)
     tracker.add_comment(repo, "basicly-task", "Active correction: preserve whitespace.")
-    for index in range(1000):
-        tracker.add_comment(repo, "basicly-task", f"Historical note {index}: " + "x" * 30)
+    for index in range(notes):
+        tracker.add_comment(
+            repo, "basicly-task", f"Historical note {index}: " + "x" * HISTORY_NOTE_CHARS
+        )
+    return repo
+
+
+def test_large_history_keeps_the_envelope_bounded_and_delivers_early_corrections(
+    tmp_path: Path,
+) -> None:
+    repo = _history_repo(tmp_path, HISTORY_NOTES)
     current = dispatch_brief.task_view(repo, "basicly-task", view="current")
     full = dispatch_brief.task_view(repo, "basicly-task", view="full")
     history = dispatch_brief.task_view(repo, "basicly-task", view="history")
@@ -320,9 +330,26 @@ def test_large_history_keeps_the_envelope_bounded_and_delivers_early_corrections
     assert '"required_hydration": []' in prompt
     assert prompt.count("bounded task") == 1
     assert "Active correction: preserve whitespace." in prompt
-    assert "Historical note 999:" in prompt
+    assert f"Historical note {HISTORY_NOTES - 1}:" in prompt
     assert "界" * 6000 in prompt
-    assert len(history["comments"]) == 1001
+    assert len(history["comments"]) == HISTORY_NOTES + 1
+    comments = json.dumps(history["comments"], ensure_ascii=False, indent=2, sort_keys=True)
+    assert len(comments.encode("utf-8")) > dispatch_brief.CURRENT_ENVELOPE_BYTES
+
+
+def test_only_a_history_over_the_envelope_needs_the_comment_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        dispatch_brief,
+        "OMISSION_ORDER",
+        tuple(field for field in dispatch_brief.OMISSION_ORDER if field != "comments"),
+    )
+    small = _history_repo(tmp_path / "small", 1)
+    assert dispatch_brief.task_view(small, "basicly-task", view="current")["required_hydration"]
+    large = _history_repo(tmp_path / "large", HISTORY_NOTES)
+    with pytest.raises(ValueError, match="exceeds 16 KiB"):
+        dispatch_brief.task_view(large, "basicly-task", view="current")
 
 
 def test_small_contract_is_inline_and_stale_snapshot_is_refused(tmp_path: Path) -> None:

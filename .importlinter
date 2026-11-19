@@ -50,7 +50,7 @@ layers =
     handoff
     process_confirmation
     plan_gate | policy | routing_evals | tuning | verify
-    verify_execution | verify_parallel
+    verify_execution | verify_parallel | verify_shard
     invest
     worktree
     landing_guard
@@ -97,7 +97,7 @@ layers =
     verify_log
     lefthook_config | lefthook_binary
     lefthook_artifacts
-    automode_trust | base_lock | catalog_routing | catalog_source | checkout | ci_records | copilot_tools | dropin | integrity | needs_input | plan_record | legacy_hooks | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact | verify_cache | write_preflight
+    automode_trust | base_lock | macos_gate | catalog_routing | catalog_source | checkout | ci_records | copilot_tools | dropin | integrity | needs_input | plan_record | legacy_hooks | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact | verify_cache | write_preflight
     tracker_paths
     verify_receipt
     affected

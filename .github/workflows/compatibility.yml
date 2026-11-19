@@ -9,6 +9,13 @@ name: compatibility
     branches: [main]
     paths-ignore: [".basicly/ledger/**"]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      macos:
+        type: boolean
+        default: true
+  schedule:
+    - cron: "17 3 * * *"
 
 permissions:
   contents: read
@@ -20,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.macos) && '["ubuntu-latest", "windows-latest", "macos-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
         python: ["3.14"]
         include:
           - os: ubuntu-latest

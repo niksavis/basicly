@@ -428,6 +428,23 @@ def test_cli_verify_ci_refuses_every_tracker_write_and_partial_run(
     assert "basicly verify --mode full --ci" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [["--mode", "full", "--shard", "1/8"], ["--mode", "full", "--ci", "--shard", "9/8"]],
+)
+def test_cli_verify_refuses_a_shard_outside_ci_or_out_of_range(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: pytest.fail("checks must not run"))
+
+    assert cli.main(["verify", *argv]) == 1
+    assert "basicly verify --mode full --ci" in capsys.readouterr().err
+
+
 def test_cli_verify_returns_nonzero_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

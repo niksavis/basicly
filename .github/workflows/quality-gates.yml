@@ -83,20 +83,13 @@ jobs:
           exit "${failed}"
 
   quality-gates:
-    name: Quality gates on ${{ matrix.os }}
-    needs: commit-messages
-    # ubuntu runs this in ~3 minutes, so 30 is headroom rather than a
-    # budget. It exists because a job with no timeout runs to the runner's 6-hour limit,
-    # and GitHub serves no log for a job until its whole run finishes: windows-latest sat
-    # at 5h57m on every push for two days, and the ubuntu failure underneath it was
-    # unreadable the entire time. A slow job must fail while somebody is still looking
-    # (basicly-t31pvf).
-    timeout-minutes: 45
+    name: Quality gates shard ${{ matrix.shard }}/12
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -118,11 +111,13 @@ jobs:
       # the binary being on PATH, so they skip here and run only on a developer machine
       # until the harness reads its own store (basicly-vkh0.29).
       - name: Lint markdown
+        if: matrix.shard == 1
         run: npx --no-install markdownlint-cli2
       - name: Lint catalog sources
+        if: matrix.shard == 2
         run: uv run python -m basicly.cli catalog lint
       # Only the full (pre-push) gate runs: it is a superset of the fast
       # (pre-commit) checks — ruff, format, pyright, bandit — plus pytest, so
       # running pre-commit too just repeated that work (basicly-5uo6).
-      - name: Run full checks with no tracker read (ruff, format, pyright, bandit, pytest)
-        run: uv run python -m basicly.cli verify --mode full --ci
+      - name: Run shard ${{ matrix.shard }}/12 of the full checks with no tracker read
+        run: uv run python -m basicly.cli verify --mode full --ci --shard ${{ matrix.shard }}/12
