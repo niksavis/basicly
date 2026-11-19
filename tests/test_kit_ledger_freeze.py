@@ -66,7 +66,7 @@ def _ledger(tmp_path: Path) -> Path:
 
 def test_freezing_preserves_history_and_installs_a_portable_file(tmp_path: Path) -> None:
     ledger = _ledger(tmp_path)
-    original = {path.name: path.read_bytes() for path in ledger.iterdir() if path.is_file()}
+    original = {name: (ledger / name).read_bytes() for name in freeze.fingerprint(ledger)}
     expected = freeze.fingerprint(ledger)
 
     report = freeze.freeze(ledger, "local-vault.git", "demo", expected)
@@ -414,3 +414,26 @@ def test_freeze_refuses_a_template_that_has_not_been_imported(
     assert "template" in report["refused"]
     assert freeze.fingerprint(ledger) == before
     assert not ledger.with_name("ledger-archive").exists()
+
+
+def test_the_archive_keeps_only_source_files_and_reads_back_without_caches(
+    tmp_path: Path,
+) -> None:
+    ledger = _ledger(tmp_path)
+    before, _ = events.read_events(ledger)
+    snapshot = freeze._load("snapshot")
+    (ledger / "snapshot.jsonl").write_text("{}\n", encoding="utf-8")
+    (ledger / "checkpoint-2026-11.jsonl").write_text("{}\n", encoding="utf-8")
+    expected = freeze.fingerprint(ledger)
+
+    freeze.freeze(ledger, "local-vault.git", "demo", expected)
+
+    archive = ledger.with_name("ledger-archive")
+    kept = {path.name for path in archive.iterdir()}
+    assert kept == set(expected)
+    assert not snapshot.snapshot_path(archive).exists()
+    assert snapshot.checkpoint_paths(archive) == []
+    assert not (archive / ".events.lock").exists()
+    after, quarantined = events.read_events(archive)
+    assert quarantined == []
+    assert [event.id for event in after] == [event.id for event in before]

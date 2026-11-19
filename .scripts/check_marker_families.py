@@ -2,15 +2,33 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import json
 import re
 import sys
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
+
+
+def _sibling(name: str) -> ModuleType:
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(name, SCRIPT_DIR / f"{name}.py")
+    if spec is None or spec.loader is None:
+        raise ImportError(f"{name}.py is missing beside this script")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+frozen_ledger = _sibling("frozen_ledger")
 
 LABEL = "marker-families"
 SELF = f"{SCRIPT_DIR.name}/{Path(__file__).name}"
@@ -129,16 +147,39 @@ def declared_families(repo: Path) -> dict[str, tuple[str, ...]]:
     return {marker: tuple(sorted(paths)) for marker, paths in sorted(sites.items())}
 
 
+def _comment(event: dict[str, object]) -> str | None:
+    if event.get("kind") != "comment":
+        return None
+    payload = event.get("payload")
+    return str(payload.get("text") or "") if isinstance(payload, dict) else ""
+
+
+def _store_globs(repo: Path) -> tuple[str, ...]:
+    if not frozen_ledger.frozen(repo):
+        return STORE_GLOBS
+    base = frozen_ledger.archive(repo).relative_to(repo).as_posix()
+    return tuple(f"{base}/{Path(glob).name}" for glob in STORE_GLOBS)
+
+
 def _log_bodies(repo: Path) -> Iterator[tuple[str, str]]:
-    for path in sorted(found for glob in STORE_GLOBS for found in repo.glob(glob)):
+    if frozen_ledger.frozen(repo):
+        frozen_ledger.archive(repo)
+        read = frozen_ledger.vault_events(repo)
+        print(f"{LABEL}: {read.note}")
+        if read.events:
+            for event in read.events:
+                text = _comment(event)
+                if text is not None:
+                    yield "vault", text
+            return
+    for path in sorted(found for glob in _store_globs(repo) for found in repo.glob(glob)):
         store = path.relative_to(repo).as_posix()
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             if not line.strip():
                 continue
-            event = json.loads(line)
-            if event.get("kind") == "comment":
-                payload = event.get("payload") or {}
-                yield store, str(payload.get("text") or "")
+            text = _comment(json.loads(line))
+            if text is not None:
+                yield store, text
 
 
 def logged_families(repo: Path) -> Census:
@@ -153,7 +194,7 @@ def logged_families(repo: Path) -> Census:
         if found:
             rows[found.group(1)] = rows.get(found.group(1), 0) + 1
     if not stores:
-        raise FamilyError(f"no store to read at {' or '.join(STORE_GLOBS)}")
+        raise FamilyError(f"no store to read at {' or '.join(_store_globs(repo))}")
     if comments and not rows:
         raise FamilyError(f"read {comments} comment bodies and matched no family: bad probe")
     return Census(rows=dict(sorted(rows.items())), comments=comments, stores=tuple(sorted(stores)))
@@ -269,7 +310,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         findings, declared, census = collect(args.repo)
-    except FamilyError as exc:
+    except (FamilyError, frozen_ledger.FrozenLedgerError) as exc:
         print(f"{LABEL}: {exc}", file=sys.stderr)
         return 1
     except json.JSONDecodeError as exc:

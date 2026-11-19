@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -139,3 +140,55 @@ def test_the_check_leaves_the_ledger_byte_identical(kit: Any, tmp_path: Path) ->
     assert _run_check(ledger).returncode == 1
 
     assert {path.name: path.read_bytes() for path in sorted(ledger.iterdir())} == before
+
+
+def _frozen_repo(kit: Any, tmp_path: Path, records: dict[str, tuple[str, ...]]) -> Path:
+    repo = tmp_path / "repo"
+    kit_link = repo / KIT_RELATIVE
+    kit_link.parent.mkdir(parents=True)
+    kit_link.symlink_to(REPO_ROOT / KIT_RELATIVE, target_is_directory=True)
+    ledger = repo / ".basicly" / "ledger"
+    _write_ledger(kit, ledger, records)
+    ledger.rename(repo / ".basicly" / "ledger-archive")
+    ledger.write_text('{"schema": "moved"}\n', encoding="utf-8")
+    vault = tmp_path / "vault.git"
+    vault.mkdir()
+    (repo / ".basicly-tracker.toml").write_text(
+        f'vault = "{vault.as_posix()}"\nprefix = "basicly"\n', encoding="utf-8"
+    )
+    return repo
+
+
+def _run_frozen(repo: Path, state: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--repo", str(repo)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "BASICLY_TRACKER_STATE": str(state)},
+    )
+
+
+def test_a_frozen_ledger_is_checked_through_its_archive(kit: Any, tmp_path: Path) -> None:
+    repo = _frozen_repo(
+        kit, tmp_path, {"basicly-aaaa.1": ("created",), "basicly-aaaa.2": WORK_LOG_KINDS}
+    )
+
+    completed = _run_frozen(repo, tmp_path / "state")
+
+    assert completed.returncode == 1
+    assert "vault: no local clone" in completed.stdout
+    assert "basicly-aaaa.2" in completed.stderr
+    assert "1 of 2 record(s)" in completed.stderr
+
+
+def test_a_frozen_ledger_with_an_empty_archive_is_refused_not_passed(
+    kit: Any, tmp_path: Path
+) -> None:
+    repo = _frozen_repo(kit, tmp_path, {})
+
+    completed = _run_frozen(repo, tmp_path / "state")
+
+    assert completed.returncode == 1
+    assert "nothing was checked" in completed.stderr
+    assert "all 0 record(s)" not in completed.stdout

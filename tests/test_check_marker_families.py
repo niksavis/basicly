@@ -252,3 +252,57 @@ def test_the_gate_is_wired_as_a_verify_check() -> None:
     assert [check["name"] for check in wired] == ["marker-families"]
     assert wired[0]["command"][:3] == ["uv", "run", "python"]
     assert wired[0]["modes"] == ["fast", "full"]
+
+
+def _freeze(repo: Path) -> Path:
+    ledger = repo / ".basicly" / "ledger"
+    archive = repo / ".basicly" / "ledger-archive"
+    ledger.rename(archive)
+    ledger.write_text('{"schema": "moved"}\n', encoding="utf-8")
+    return archive
+
+
+def test_a_frozen_ledger_reads_the_archive_and_the_vault_clone(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, bodies=("[harness-ghost] only in the archive",))
+    _freeze(repo)
+    vault = tuple(
+        {"kind": "comment", "payload": {"text": f"{m} payload"}} for m in (*LIVE, *RETIRED)
+    )
+    read = gate.frozen_ledger.VaultRead(vault, "vault: 1 event(s) of prefix basicly")
+    monkeypatch.setattr(gate.frozen_ledger, "vault_events", lambda _repo: read)
+
+    code, out, err = _run(repo, capsys)
+
+    assert code == 0, err
+    assert "vault: 1 event(s) of prefix basicly" in out
+    assert "across 1 stores" in out
+
+
+def test_a_frozen_ledger_with_no_vault_clone_reads_the_archive(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path)
+    _freeze(repo)
+    read = gate.frozen_ledger.VaultRead((), "vault: no local clone, so only the archive was read")
+    monkeypatch.setattr(gate.frozen_ledger, "vault_events", lambda _repo: read)
+
+    code, out, err = _run(repo, capsys)
+
+    assert code == 0, err
+    assert "no local clone" in out
+    assert "across 1 stores" in out
+
+
+def test_a_frozen_ledger_without_its_archive_is_refused_by_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path)
+    archive = _freeze(repo)
+    archive.rename(tmp_path / "elsewhere")
+
+    code, _out, err = _run(repo, capsys)
+
+    assert code == 1
+    assert ".basicly/ledger-archive is missing" in err
