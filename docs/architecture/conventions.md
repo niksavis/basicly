@@ -241,6 +241,13 @@ The [deepseek-harness plugin review](../research/deepseek-harness-plugin-review.
 concept of that harness one disposition with its source and the record that carries it
 (basicly-gtb19bg.28). It is evidence for the plugin composition work, not a specification.
 
+The [T3 Code review](../research/t3-code.md) checks T3 Code against the meta harness requirements
+and names the patterns that basicly-qpr2xmr adopts (basicly-upnhikm). It is evidence, not a specification.
+
+The [meta harness note](../research/meta-harness.md) gives the state of basicly-qpr2xmr, the
+self-improving loop of basicly-1dpggot with its cut plan, and the deepseek concepts not yet built
+(basicly-upnhikm). It is evidence for planning, not a specification.
+
 **Three companion files sit beside the architecture document, and none is reference
 material.**
 
