@@ -6,9 +6,26 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _sibling(name: str) -> ModuleType:
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(name, (REPO_ROOT / ".scripts") / f"{name}.py")
+    if spec is None or spec.loader is None:
+        raise ImportError(f"{name}.py is missing beside this script")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+frozen_ledger = _sibling("frozen_ledger")
 
 KIT_DIR = Path(".basicly") / "core" / "kit" / "tracker"
 LEDGER_DIR = Path(".basicly") / "ledger"
@@ -53,6 +70,19 @@ def measure(kit: Any, ledger: Path) -> Bodies:
     return Bodies(records=len(held), bodyless=tuple(sorted(held - bodied)))
 
 
+def measure_frozen(kit: Any, repo: Path) -> Bodies:
+
+    created = kit.events.KIND_CREATED
+    archive = frozen_ledger.archive(repo)
+    read = frozen_ledger.vault_events(repo)
+    print(f"{_LABEL}: {read.note}")
+    if read.events:
+        held = {str(event.get("record")) for event in read.events}
+        bodied = {str(e.get("record")) for e in read.events if e.get("kind") == created}
+        return Bodies(records=len(held), bodyless=tuple(sorted(held - bodied)))
+    return measure(kit, archive)
+
+
 def report(bodies: Bodies, ledger: Path) -> None:
 
     for record in bodies.bodyless:
@@ -94,9 +124,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         kit = load_kit(args.repo / KIT_DIR)
-        bodies = measure(kit, args.repo / args.ledger)
-    except LedgerBodyError as exc:
+        ledger = args.repo / args.ledger
+        frozen = ledger.is_file() and frozen_ledger.frozen(args.repo)
+        bodies = measure_frozen(kit, args.repo) if frozen else measure(kit, ledger)
+    except (LedgerBodyError, frozen_ledger.FrozenLedgerError) as exc:
         print(f"{_LABEL}: {exc}", file=sys.stderr)
+        return 1
+
+    if frozen and not bodies.records:
+        print(
+            f"{_LABEL}: the ledger is frozen and neither the archive nor the vault clone "
+            f"held a record; nothing was checked. Restore {frozen_ledger.ARCHIVE.as_posix()}",
+            file=sys.stderr,
+        )
         return 1
 
     if bodies.bodyless:
