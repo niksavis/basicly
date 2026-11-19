@@ -461,6 +461,8 @@ def cmd_check(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     for line in docstring_contradictions(repo_root):
         print(line, file=sys.stderr)
+    workflow_problems = ci_records.workflow_problems(repo_root)
+    sys.stderr.write("".join(f"{problem}\n" for problem in workflow_problems))
     paths = load_project_paths(repo_root)
     if _report_provenance_notes(repo_root, paths):
         return 1
@@ -507,8 +509,6 @@ def cmd_check(_args: argparse.Namespace) -> int:
             _manifest_digest(recorded),
         ))
 
-    workflow_problems = ci_records.workflow_problems(repo_root)
-    sys.stderr.write("".join(f"{problem}\n" for problem in workflow_problems))
     if mismatches:
         _report_stale(repo_root, mismatches)
         return 1

@@ -75,6 +75,30 @@ def test_basicly_check_names_each_workflow_line_that_reads_records_and_its_fix(
     assert err.count("fix: remove the line, or add --ci to verify --mode full") == 2
 
 
+def test_basicly_check_names_workflow_lines_even_when_it_refuses_for_version_skew(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = tmp_path / ".github" / "workflows"
+    folder.mkdir(parents=True)
+    (folder / "gates.yml").write_text(
+        "        run: uvx basicly verify --mode full\n", encoding="utf-8"
+    )
+    state = tmp_path / ".basicly" / "state" / "install.json"
+    state.parent.mkdir(parents=True)
+    state.write_text(
+        '{"schema_version": 1, "basicly_version": "0.45.0", '
+        '"installed_at": "2026-07-23T00:00:00+00:00", "core": {}}',
+        encoding="utf-8",
+    )
+
+    code = _check(tmp_path, monkeypatch)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "Version skew" in err
+    assert ".github/workflows/gates.yml:1: runs verify without --ci" in err
+
+
 def test_basicly_check_passes_a_repo_whose_workflows_read_no_records(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
