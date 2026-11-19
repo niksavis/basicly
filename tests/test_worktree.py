@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from basicly import cli, loop_state, tracker, worktree
+from basicly import cli, lefthook_artifacts, loop_state, merge, tracker, verify, worktree
 from basicly.tracker_paths import LEDGER_DIR_NAME as LEDGER_DIR
 from tests import flipped_tracker
 
@@ -781,3 +784,96 @@ def test_cli_create_binds_nothing_for_a_name_that_is_not_a_record(
     assert worktree.load_session("not-a-record", tracked_repo) is not None
     assert tracker.read_record(tracked_repo, "not-a-record") is None
     assert flipped_tracker.ledger_events(tracked_repo) == []
+
+
+def _pin_lefthook(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> bytes:
+    data = b"lefthook-binary"
+    manifest = {
+        "version": "9.9.9",
+        "assets": [
+            {
+                "name": "lefthook.gz",
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "url": "https://example.invalid/lefthook.gz",
+            }
+        ],
+    }
+    metadata = tmp_path / "pinned"
+    metadata.mkdir()
+    (metadata / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(lefthook_artifacts, "METADATA", metadata)
+    monkeypatch.setattr(lefthook_artifacts, "MANIFEST", manifest)
+    monkeypatch.setattr(lefthook_artifacts, "VERSION", "9.9.9")
+    return data
+
+
+def _lefthook_checkout(root: Path, artifact: bytes | None = None) -> Path:
+    assets = root / "src" / "basicly" / "lefthook_assets"
+    assets.mkdir(parents=True)
+    pinned = lefthook_artifacts.METADATA / "manifest.json"
+    (assets / "manifest.json").write_bytes(pinned.read_bytes())
+    if artifact is not None:
+        build = root / "build" / "lefthook" / "9.9.9"
+        build.mkdir(parents=True)
+        (build / "lefthook.gz").write_bytes(artifact)
+    return root
+
+
+def test_a_new_lane_gets_verified_lefthook_artifacts_from_a_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = _pin_lefthook(monkeypatch, tmp_path)
+    broken = _lefthook_checkout(tmp_path / "broken", b"tampered")
+    main = _lefthook_checkout(tmp_path / "main", data)
+    lane = _lefthook_checkout(tmp_path / "lane")
+    monkeypatch.setattr(worktree, "main_checkout", lambda _root: broken)
+    monkeypatch.setattr(worktree, "list_sessions", lambda _root: [_live(main)])
+    monkeypatch.setattr(worktree, "provision_deps", lambda *_a: [])
+    monkeypatch.setattr(worktree, "install_worktree_hooks", lambda _path: "hooks")
+
+    session = worktree.Session("lane", "harness/lane", "main", "abc", str(lane), "2026-11-19")
+
+    notes = worktree._provision_worktree(session, None)
+
+    assert "lefthook: 9.9.9 artifacts copied from main" in notes
+    assert (lane / "build/lefthook/9.9.9/lefthook.gz").read_bytes() == data
+
+
+def test_a_new_lane_without_a_lefthook_donor_names_the_prepare_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pin_lefthook(monkeypatch, tmp_path)
+    main = _lefthook_checkout(tmp_path / "main")
+    lane = _lefthook_checkout(tmp_path / "lane")
+
+    notes = lefthook_artifacts.provision_lane(lane, [main])
+
+    assert notes == [
+        "lefthook: no checkout holds verified artifacts; "
+        f"run {lefthook_artifacts.PREPARE} in the lane"
+    ]
+    assert not (lane / "build").exists()
+
+
+def test_a_fresh_lane_landing_prepares_lefthook_before_its_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = _pin_lefthook(monkeypatch, tmp_path)
+    main = _lefthook_checkout(tmp_path / "main", data)
+    lane = _lefthook_checkout(tmp_path / "lane")
+    ready: list[bool] = []
+
+    def _checks(path: Path, *_a: object, **_k: object) -> verify.VerifyReport:
+        ready.append((path / "build/lefthook/9.9.9/lefthook.gz").is_file())
+        return verify.VerifyReport("full", ())
+
+    monkeypatch.setattr(verify, "run_verify", _checks)
+    monkeypatch.setattr(verify, "release_note_debt", lambda *_a: "")
+    clock = merge._Landing(main, "basicly-x1")
+
+    assert merge._verify_for_landing("lane", lane, "full", clock) is None
+    assert ready == [True]
+
+
+def _live(path: Path) -> SimpleNamespace:
+    return SimpleNamespace(path=path, name=path.name, stale=False)

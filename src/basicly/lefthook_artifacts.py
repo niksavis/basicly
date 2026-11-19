@@ -6,6 +6,7 @@ import json
 import shutil
 import tempfile
 import urllib.request
+from collections.abc import Sequence
 from pathlib import Path
 
 METADATA = Path(__file__).with_name("lefthook_assets")
@@ -63,6 +64,32 @@ def prepare(root: Path, source: Path | None) -> Path:
             shutil.rmtree(destination)
         staged.replace(destination)
     return destination
+
+
+def _verified(directory: Path) -> bool:
+    try:
+        validate_artifacts(directory)
+    except OSError, ValueError:
+        return False
+    return True
+
+
+def provision_lane(lane: Path, donors: Sequence[Path]) -> list[str]:
+    manifest = lane / "src/basicly/lefthook_assets/manifest.json"
+    if not manifest.is_file() or (manifest.parent / VERSION).is_dir():
+        return []
+    if _verified(prepared_directory(lane)):
+        return []
+    if manifest.read_bytes() != (METADATA / "manifest.json").read_bytes():
+        return [f"lefthook: the lane pins another Lefthook; run {PREPARE} in the lane"]
+    for donor in donors:
+        if _verified(prepared_directory(donor)):
+            try:
+                prepare(lane, prepared_directory(donor))
+            except OSError, ValueError:
+                continue
+            return [f"lefthook: {VERSION} artifacts copied from {donor.name}"]
+    return [f"lefthook: no checkout holds verified artifacts; run {PREPARE} in the lane"]
 
 
 def main() -> int:

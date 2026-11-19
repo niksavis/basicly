@@ -8,7 +8,14 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import checkout, tracker_paths, verify_log, worktree_contents, worktree_preservation
+from . import (
+    checkout,
+    lefthook_artifacts,
+    tracker_paths,
+    verify_log,
+    worktree_contents,
+    worktree_preservation,
+)
 from .checkout import (
     current_branch,
     git,
@@ -178,6 +185,7 @@ def _provision_worktree(session: Session, repo_root: Path | str | None) -> list[
         if not item.stale and item.name != session.name
     ]
     notes += provision_deps(worktree, [main, *live])
+    notes += lefthook_artifacts.provision_lane(worktree, [main, *live])
     notes.append(install_worktree_hooks(worktree))
     return notes
 
