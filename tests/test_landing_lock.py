@@ -97,3 +97,13 @@ def test_basicly_worktree_merge_refuses_by_name_while_another_landing_holds_the_
         assert cli.main(["worktree", "merge", "lane-b", "--bead", "acme-2"]) == 1
         assert cli.main(["worktree", "merge-queue", "lane-b:acme-2"]) == 1
     assert capsys.readouterr().err.count("lane-a") == 2
+
+
+def test_a_landing_leaves_a_lock_that_another_landing_took_after_an_unlock(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / landing_lock.LOCK_FILE
+    with landing_lock.hold(tmp_path, lane="lane-a", record="acme-1"):
+        landing_lock.unlock(tmp_path, "lane-a")
+        path.write_text(json.dumps({"lane": "lane-b", "record": "acme-2", "pid": 1}))
+    assert json.loads(path.read_text(encoding="utf-8"))["lane"] == "lane-b"

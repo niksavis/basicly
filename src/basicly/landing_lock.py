@@ -99,6 +99,15 @@ def hold(
     try:
         yield
     finally:
+        _release(path)
+
+
+def _release(path: Path) -> None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return
+    if isinstance(data, dict) and data.get("pid") == os.getpid():
         path.unlink(missing_ok=True)
 
 
