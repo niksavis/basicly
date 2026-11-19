@@ -1,0 +1,1 @@
+- `basicly consumer-proof` builds a wheel of HEAD and, in a fresh clone of each `[[release.consumers]]` entry of `basicly.toml`, runs install, a real commit through the consumer's hooks and the consumer's own CI commands. `basicly release` refuses a cut until a passing proof of the exact commit is recorded.

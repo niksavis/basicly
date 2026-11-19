@@ -410,6 +410,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
     "tracker": Table(keys=frozenset({"mode", "prefix", "fold_on_merge"})),
     "orchestration": Table(keys=frozenset({"enabled"})),
     "privacy": Table(arrays={"denied": Table(keys=frozenset({"name", "token"}))}),
+    "release": Table(arrays={"consumers": Table(keys=frozenset({"name", "ci", "path"}))}),
 }
 
 _ROOT_TABLE = Table(tables=CONFIG_SCHEMA)
