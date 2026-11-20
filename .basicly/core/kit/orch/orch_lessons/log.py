@@ -168,6 +168,26 @@ class Writer:
         event = {"event": "close", "id": lesson_id, "time": stamp, "member": self.member}
         append(self.root, {**event, "change": change})
 
+    def scope(self, lesson_id: str, scope: str) -> None:
+        if lesson_id not in {lesson.id for lesson in lessons(self.root)}:
+            raise RefusedError(
+                f"no lesson {lesson_id!r}; list them with: orch lessons export --out -"
+            )
+        if scope not in SCOPES:
+            raise RefusedError(
+                "a lesson scope is local or basicly: basicly when its fix changes a file that "
+                "basicly install writes, local otherwise"
+            )
+        stamp = self.clock().isoformat(timespec="seconds")
+        event = {"event": "scope", "id": lesson_id, "time": stamp, "member": self.member}
+        append(self.root, {**event, "scope": scope})
+
+
+def unscoped(root: Path) -> list[str]:
+    return [
+        lesson.id for lesson in lessons(root) if lesson.closed_by is None and lesson.scope is None
+    ]
+
 
 def lessons(root: Path) -> list[Lesson]:
     path = root / LOG
@@ -188,6 +208,9 @@ def lessons(root: Path) -> list[Lesson]:
                 None,
                 event.get("scope"),
             )
+        elif event.get("event") == "scope" and event.get("id") in found:
+            old = found[event["id"]]
+            found[event["id"]] = Lesson(**{**old.__dict__, "scope": event["scope"]})
         elif event.get("event") == "close" and event.get("id") in found:
             old = found[event["id"]]
             found[event["id"]] = Lesson(**{**old.__dict__, "closed_by": event["change"]})
@@ -223,7 +246,7 @@ def empty_session_ends(root: Path) -> list[dict[str, object]]:
 
 def export(root: Path, scan: Callable[[str], str | None], target: Path, relative: str) -> str:
     open_lessons = [
-        lesson for lesson in lessons(root) if lesson.closed_by is None and lesson.scope != "local"
+        lesson for lesson in lessons(root) if lesson.closed_by is None and lesson.scope == "basicly"
     ]
     added = [
         f"- {lesson.requirement} Enforced by: {lesson.enforcement}\n" for lesson in open_lessons

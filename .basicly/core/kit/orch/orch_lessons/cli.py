@@ -24,6 +24,9 @@ def parser() -> argparse.ArgumentParser:
     close = lesson.add_parser("close")
     close.add_argument("id")
     close.add_argument("--change", required=True)
+    rescope = lesson.add_parser("scope")
+    rescope.add_argument("id")
+    rescope.add_argument("value")
     many = groups.add_parser("lessons").add_subparsers(dest="action", required=True)
     init = many.add_parser("init")
     init.add_argument("folder", type=Path)
@@ -124,6 +127,11 @@ def _close(args: argparse.Namespace, writer: log.Writer) -> str:
     return f"lesson {args.id} closed"
 
 
+def _scope(args: argparse.Namespace, writer: log.Writer) -> str:
+    writer.scope(args.id, args.value)
+    return f"lesson {args.id} scoped {args.value}"
+
+
 def _end_session(_args: argparse.Namespace, writer: log.Writer) -> str:
     return f"session ended with {writer.end_session()} lesson(s)"
 
@@ -131,6 +139,7 @@ def _end_session(_args: argparse.Namespace, writer: log.Writer) -> str:
 WRITES = {
     ("lesson", "add"): _add,
     ("lesson", "close"): _close,
+    ("lesson", "scope"): _scope,
     ("lessons", "end-session"): _end_session,
 }
 
@@ -159,6 +168,12 @@ def run(argv: list[str], cwd: Path, environ: dict[str, str]) -> int:
     repo = log.repo_root(cwd)
     target = args.target.resolve()
     patch = log.export(root, scan, target, target.relative_to(repo).as_posix())
+    if missing := log.unscoped(root):
+        print(
+            f"{len(missing)} open lesson(s) have no scope and were left out: {', '.join(missing)}; "
+            "scope each with: orch lesson scope ID local|basicly",
+            file=sys.stderr,
+        )
     if args.out == "-":
         sys.stdout.write(patch)
     else:

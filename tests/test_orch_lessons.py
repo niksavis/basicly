@@ -435,3 +435,55 @@ def test_every_kit_caller_of_orch_lesson_add_passes_a_scope() -> None:
         if "orch lesson add" in line and "--scope" not in line
     ]
     assert missing == [], f"orch lesson add without --scope: {missing}"
+
+
+def _unscoped(repo: Path, rule: str) -> str:
+    root = repo / ".orchestrator" / "lessons"
+    log.append(
+        root,
+        {
+            "event": "add",
+            "id": rule[:8].lower().replace(" ", "-"),
+            "time": T0.isoformat(),
+            "member": "o",
+            "what": "w",
+            "requirement": rule,
+            "enforcement": "t",
+            "record": "x",
+        },
+    )
+    return rule[:8].lower().replace(" ", "-")
+
+
+def test_export_leaves_out_and_names_a_lesson_without_scope(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = repo / "agent.yaml"
+    target.write_text("name: orchestrator\n", encoding="utf-8")
+    lesson = _unscoped(repo, "Unscoped rule.")
+    out = repo / "lessons.patch"
+    assert run(repo, "lessons", "export", "--target", str(target), "--out", str(out)) == 0
+    assert "Unscoped rule." not in out.read_text(encoding="utf-8")
+    assert lesson in capsys.readouterr().err
+
+
+def test_scope_event_sets_the_scope_of_an_old_lesson(repo: Path) -> None:
+    lesson = _unscoped(repo, "Later shared.")
+    assert run(repo, "lesson", "scope", lesson, "basicly") == 0
+    (only,) = log.lessons(repo / ".orchestrator" / "lessons")
+    assert only.scope == "basicly"
+    assert log.unscoped(repo / ".orchestrator" / "lessons") == []
+
+
+@pytest.mark.parametrize(
+    ("lesson", "value", "match"),
+    [("nope", "local", "no lesson"), (None, "global", "local or basicly")],
+)
+def test_scope_event_refuses_by_name_and_appends_nothing(
+    repo: Path, lesson: str | None, value: str, match: str
+) -> None:
+    known = _unscoped(repo, "Some rule.")
+    before = events(repo)
+    with pytest.raises(log.RefusedError, match=match):
+        run(repo, "lesson", "scope", lesson or known, value)
+    assert events(repo) == before
