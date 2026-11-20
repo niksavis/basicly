@@ -15,6 +15,8 @@ from tests.test_kit_vault_view import cli
 
 __all__ = ["bare"]
 
+pytestmark = pytest.mark.usefixtures("migration_identity")
+
 
 @pytest.fixture(autouse=True)
 def _isolated_working_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -265,3 +267,56 @@ def test_stacked_path_markers_collapse_to_one_home_marker() -> None:
     rule = migration_cli._redactor(args, inherited, {"login": "ada"})
 
     assert rule("any") == "<redacted:home-path>/work"
+
+
+def test_migrate_refuses_by_name_when_the_git_identity_does_not_resolve(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "source"
+    _source(source)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "no-such-config"))
+
+    code, report = _run(capsys, str(source), "--to-vault", "--preview")
+
+    assert code == 1
+    assert "user.name or user.email does not resolve" in report["refused"]
+    assert "git config user.name" in report["refused"]
+
+
+def test_the_identity_is_read_from_the_source_repository_not_the_working_folder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "project" / "ledger"
+    _source(source)
+    migration_cli = vault_migrate.sys.modules["basicly_tracker_kit_vault_migration_cli"]
+    seen: list[Path] = []
+    real = migration_cli.identity
+
+    def record(folder: Path) -> dict[str, str]:
+        seen.append(folder)
+        return real(folder)
+
+    monkeypatch.setattr(migration_cli, "identity", record)
+
+    code, _report = _run(capsys, str(source), "--to-vault", "--preview")
+
+    assert code == 0
+    assert seen == [source.resolve()]
+
+
+def test_a_short_login_or_host_is_not_redacted_as_a_common_word(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    migration_cli = vault_migrate.sys.modules["basicly_tracker_kit_vault_migration_cli"]
+    monkeypatch.setattr(migration_cli, "_login", lambda: "dev")
+    monkeypatch.setattr(migration_cli.platform, "node", lambda: "box")
+
+    found = migration_cli.identity(tmp_path)
+
+    assert "login" not in found
+    assert "host" not in found
+    assert found["name"] == "Migration Tester"

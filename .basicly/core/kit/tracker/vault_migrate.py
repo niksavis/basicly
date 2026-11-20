@@ -38,6 +38,7 @@ migrate = _load("migrate.py", "basicly_tracker_kit_migrate")
 beans = _load("beans.py", "basicly_tracker_kit_beans")
 vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
 vault_view = _load("vault_view.py", "basicly_tracker_kit_vault_view")
+vault_personal = _load("vault_personal.py", "basicly_tracker_kit_vault_personal")
 vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
 canonical = _load("vault_canonical.py", "basicly_tracker_kit_vault_canonical")
 private_map = _load("vault_private.py", "basicly_tracker_kit_vault_private")
@@ -298,13 +299,8 @@ def to_vault(
 ) -> dict[str, object]:
     prepared = prepare(found, template or {}, plan.redactor, redact_holders=plan.redact_holders)
     result, writer, lines = prepared.result, prepared.writer, prepared.lines
-    found_personal = {k: v for k, v in (plan.scan(lines) if plan.scan else {}).items() if v}
-    if found_personal:
-        counts = ", ".join(f"{label} {count}" for label, count in sorted(found_personal.items()))
-        raise MigrateError(
-            f"the import still carries personal data ({counts}); nothing was published. "
-            "Add --redact-name for each remaining form and preview again"
-        )
+    if refused := vault_personal.in_import(plan.scan, lines):
+        raise MigrateError(refused)
     citations = (
         vault_citations.census(
             plan.code, {row["old"] for row in result.mapping if row["old"] != row["new"]}
@@ -326,6 +322,9 @@ def to_vault(
     for _attempt in range(vault_share.BULK_ATTEMPTS):
         fetched = vault_clone.fetch(plan.clone, clock=plan.clock, runner=plan.runner)
         if _refuse_a_second_import(plan.clone, result.events):
+            held = vault_clone.valid_events(plan.clone)
+            if refused := vault_personal.in_vault_copy(plan.scan, held, result.events):
+                raise MigrateError(refused)
             return {
                 "already_migrated": True,
                 "events": len(result.events),

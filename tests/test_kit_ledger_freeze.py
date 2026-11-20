@@ -20,6 +20,8 @@ __all__ = ["bare"]
 
 KIT = Path(__file__).resolve().parents[1] / ".basicly/core/kit/tracker"
 
+pytestmark = pytest.mark.usefixtures("migration_identity")
+
 
 def _load() -> Any:
     if "basicly_tracker_kit_ledger_freeze" in sys.modules:

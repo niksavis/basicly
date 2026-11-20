@@ -91,18 +91,37 @@ def _login() -> str:
         return ""
 
 
+MIN_IDENTITY_LENGTH = 4
+
+
+def _repository(source: Path) -> Path:
+    folder = source if source.is_dir() else source.parent
+    return folder if folder.exists() else Path.cwd()
+
+
 def identity(cwd: Path) -> dict[str, str]:
     name, email = _git_value("user.name", cwd), _git_value("user.email", cwd)
+    if not name.strip() or not email.strip():
+        raise ValueError(
+            "git user.name or user.email does not resolve in "
+            "the source repository, so migrate cannot redact them; "
+            "set both with git config user.name and git config user.email, then preview again"
+        )
     host = platform.node().split(".")[0]
     found = {
-        "name and email": f"{name} <{email}>" if name and email else "",
+        "name and email": f"{name} <{email}>",
         "email": email,
         "name": name,
         "login": _login(),
         "host": host,
         "home": str(Path.home()),
     }
-    return {label: value for label, value in found.items() if value.strip()}
+    short = {"login", "host"}
+    return {
+        label: value
+        for label, value in found.items()
+        if value.strip() and (label not in short or len(value) >= MIN_IDENTITY_LENGTH)
+    }
 
 
 HANDLE = r"(?<!github\.com/)(?<!github\.com:)"
@@ -214,7 +233,7 @@ def run(
     if args.overwrite_private_map and args.private_map is None:
         raise ValueError("--overwrite-private-map requires --private-map FILE")
     found, template = _source(args)
-    personal = identity(Path.cwd())
+    personal = identity(_repository(Path(args.source or args.directory).resolve()))
     rule = _redactor(args, inherited, personal)
     scan = scanner(personal)
     if args.preview:
@@ -286,7 +305,7 @@ def _freeze(
         raise ValueError(
             "source history changed during freeze preflight; stop writers and try again"
         )
-    personal = identity(Path.cwd())
+    personal = identity(_repository(ledger))
     prepared = migrate.prepare(
         found, template, _redactor(args, inherited, personal), redact_holders=True
     )

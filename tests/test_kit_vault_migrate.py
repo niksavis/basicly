@@ -253,6 +253,22 @@ def test_a_prefix_exports_in_vault_order_and_folds_as_the_view(tmp_path: Path, b
         vault_migrate.from_vault(clone, "acme", target, clock=time.time)
 
 
+def test_a_rerun_over_an_unredacted_vault_copy_refuses_by_name(tmp_path: Path, bare: Path) -> None:
+    ledger = _ledger(tmp_path / "ledger")
+    vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
+    before = _head(bare)
+
+    calls: list[int] = []
+
+    def scan(lines: Any) -> dict[str, int]:
+        calls.append(len(lines))
+        return {"login": 0 if len(calls) == 1 else json.dumps(lines).count("by ada")}
+
+    with pytest.raises(vault_migrate.MigrateError, match=r"copy holds personal data \(login 1\)"):
+        vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare, scan=scan))
+    assert _head(bare) == before
+
+
 def test_an_import_that_still_carries_personal_data_publishes_nothing(
     tmp_path: Path, bare: Path
 ) -> None:

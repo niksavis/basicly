@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 HOOK = ROOT / ".basicly" / "core" / "hooks" / "tracker-commit-msg.py"
 KIT_CLI = ROOT / ".basicly" / "core" / "kit" / "tracker" / "cli.py"
 
+pytestmark = pytest.mark.usefixtures("migration_identity")
+
 
 def _run(cwd: Path, env: dict[str, str], *argv: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603
