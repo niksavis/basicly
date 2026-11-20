@@ -19,3 +19,9 @@
 name = "marker-families"
 command = ["uv", "run", "python", ".scripts/check_marker_families.py"]
 modes = ["fast", "full"]
+local_only = true
+
+[[verify.checks]]
+name = "marker-families-source"
+command = ["uv", "run", "python", ".scripts/check_marker_families.py", "--source-only"]
+modes = ["fast", "full"]

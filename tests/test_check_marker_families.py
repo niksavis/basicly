@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -250,9 +251,12 @@ def test_the_gate_is_wired_as_a_verify_check() -> None:
     checks = config["verify"]["checks"]
 
     wired = [check for check in checks if SCRIPT.name in " ".join(check["command"])]
-    assert [check["name"] for check in wired] == ["marker-families"]
-    assert wired[0]["command"][:3] == ["uv", "run", "python"]
-    assert wired[0]["modes"] == ["fast", "full"]
+    assert [check["name"] for check in wired] == ["marker-families", "marker-families-source"]
+    assert all(check["command"][:3] == ["uv", "run", "python"] for check in wired)
+    assert all(check["modes"] == ["fast", "full"] for check in wired)
+    assert wired[0]["local_only"] is True
+    assert "local_only" not in wired[1]
+    assert wired[1]["command"][-1] == "--source-only"
 
 
 def _freeze(repo: Path) -> Path:
@@ -307,3 +311,44 @@ def test_a_frozen_ledger_without_its_archive_is_refused_by_name(
 
     assert code == 1
     assert ".basicly/ledger-archive is missing" in err
+
+
+def test_the_source_only_gate_reads_no_store_and_reports_the_frozen_counts(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(REPO_ROOT / gate.SRC_ROOT, repo / gate.SRC_ROOT)
+    (repo / gate.ROSTER_DOC).parent.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / gate.ROSTER_DOC, repo / gate.ROSTER_DOC)
+    completed = subprocess.run(  # nosec B603 B607
+        [sys.executable, str(SCRIPT), "--source-only", "--repo", str(repo)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == (
+        f"{gate.LABEL}: {len(LIVE)} declared, {len(RETIRED)} retired "
+        f"({len(gate.FROZEN)} frozen), source only\n"
+    )
+    assert not (repo / ".basicly").exists()
+
+
+def test_the_source_only_gate_refuses_a_declared_family_the_frozen_list_lacks(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(REPO_ROOT / gate.SRC_ROOT, repo / gate.SRC_ROOT)
+    (repo / gate.ROSTER_DOC).parent.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / gate.ROSTER_DOC, repo / gate.ROSTER_DOC)
+    (repo / gate.SRC_ROOT / "unfrozen_family.py").write_text(
+        'MARKER = "[harness-brand-new] "\n', encoding="utf-8"
+    )
+    completed = subprocess.run(  # nosec B603 B607
+        [sys.executable, str(SCRIPT), "--source-only", "--repo", str(repo)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "[harness-brand-new]" in completed.stderr

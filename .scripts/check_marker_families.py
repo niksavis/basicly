@@ -200,19 +200,13 @@ def logged_families(repo: Path) -> Census:
     return Census(rows=dict(sorted(rows.items())), comments=comments, stores=tuple(sorted(stores)))
 
 
-def population_findings(declared: dict[str, tuple[str, ...]], census: Census) -> Iterator[Finding]:
+def source_findings(declared: dict[str, tuple[str, ...]]) -> Iterator[Finding]:
     frozen = {family.marker: family for family in FROZEN}
     for marker in sorted(set(declared) - set(frozen)):
         yield Finding(
             key=marker,
             detail=f"declared in {', '.join(declared[marker])} and not in the frozen list",
             remedy=f'add Family("{marker}") to FROZEN in {SELF}',
-        )
-    for marker in sorted(set(census.rows) - set(frozen) - set(declared)):
-        yield Finding(
-            key=marker,
-            detail=f"{census.rows[marker]} rows in the stores and not in the frozen list",
-            remedy=f'add Family("{marker}", retired="...") to FROZEN — its rows are permanent',
         )
     for marker, family in sorted(frozen.items()):
         if family.retired is None and marker not in declared:
@@ -227,6 +221,21 @@ def population_findings(declared: dict[str, tuple[str, ...]], census: Census) ->
                 detail=f"frozen as retired and declared in {', '.join(declared[marker])}",
                 remedy="drop its retired reason: the family has a producer again",
             )
+
+
+def census_findings(declared: dict[str, tuple[str, ...]], census: Census) -> Iterator[Finding]:
+    frozen = {family.marker for family in FROZEN}
+    for marker in sorted(set(census.rows) - frozen - set(declared)):
+        yield Finding(
+            key=marker,
+            detail=f"{census.rows[marker]} rows in the stores and not in the frozen list",
+            remedy=f'add Family("{marker}", retired="...") to FROZEN — its rows are permanent',
+        )
+
+
+def population_findings(declared: dict[str, tuple[str, ...]], census: Census) -> Iterator[Finding]:
+    yield from source_findings(declared)
+    yield from census_findings(declared, census)
 
 
 def _spelled(count: int) -> str:
@@ -290,6 +299,14 @@ def collect(repo: Path) -> tuple[list[Finding], dict[str, tuple[str, ...]], Cens
     return sorted(findings, key=lambda finding: finding.key), declared, census
 
 
+def collect_source(repo: Path) -> tuple[list[Finding], dict[str, tuple[str, ...]]]:
+
+    declared = declared_families(repo)
+    retired = sum(1 for family in FROZEN if family.retired is not None)
+    findings = [*source_findings(declared), *document_findings(repo, len(declared), retired)]
+    return sorted(findings, key=lambda finding: finding.key), declared
+
+
 def report(findings: Iterable[Finding]) -> None:
     for finding in findings:
         print(f"{LABEL}: {finding.key}: {finding.detail}", file=sys.stderr)
@@ -306,8 +323,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=REPO_ROOT,
         help="the checkout to measure (default: this script's repository)",
     )
+    parser.add_argument(
+        "--source-only",
+        action="store_true",
+        help="compare the engine source and the roster document with the frozen list only",
+    )
     args = parser.parse_args(argv)
 
+    if args.source_only:
+        return _source_only(args.repo)
     try:
         findings, declared, census = collect(args.repo)
     except (FamilyError, frozen_ledger.FrozenLedgerError) as exc:
@@ -325,6 +349,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"{LABEL}: {len(declared)} declared, {retired} retired ({len(FROZEN)} frozen), "
         f"{rows} rows across {len(census.stores)} stores"
+    )
+    return 0
+
+
+def _source_only(repo: Path) -> int:
+    try:
+        findings, declared = collect_source(repo)
+    except FamilyError as exc:
+        print(f"{LABEL}: {exc}", file=sys.stderr)
+        return 1
+    if findings:
+        report(findings)
+        return 1
+    retired = sum(1 for family in FROZEN if family.retired is not None)
+    print(
+        f"{LABEL}: {len(declared)} declared, {retired} retired ({len(FROZEN)} frozen), source only"
     )
     return 0
 
