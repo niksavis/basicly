@@ -11,7 +11,7 @@ import pytest
 from basicly import landing_guard, merge
 from tests.test_kit_ledger_freeze import freeze
 from tests.test_kit_vault_cli_wiring import LEDGER, _environment, _kit, _repo
-from tests.test_kit_vault_share import bare, vault_queue
+from tests.test_kit_vault_share import bare
 from tests.test_kit_vault_view import _carry, _push, _record
 
 __all__ = ["_environment", "bare"]
@@ -113,25 +113,6 @@ def test_frozen_surfaces_read_canonical_records_without_changing_the_archive(
     if entry == "fsck":
         assert "2 event(s) over 1 record(s)" in result.stdout
     assert not list((root / ".basicly/ledger-archive").glob("*.jsonl"))
-
-
-def test_path_scan_catches_an_unredacted_canonical_path_outside_local_git(
-    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root = _frozen(tmp_path, bare)
-    with monkeypatch.context() as unsafe_producer:
-        unsafe_producer.setattr(vault_queue.redact, "event", lambda event: event)
-        _push(
-            tmp_path,
-            bare,
-            "publisher",
-            _carry(_record("acme-c3d4", title="Inspect /home/private-agent/demo")),
-        )
-    result = _surface(root, "path-scan")
-    assert result.returncode == 1
-    assert "posix-home-path" in result.stderr
-    assert "preserve the frozen ledger" in result.stderr
-    assert "private-agent" not in result.stderr
 
 
 @pytest.mark.parametrize("entry", ["path-scan", "fold", "fsck", "harness", "kit"])

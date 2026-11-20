@@ -58,6 +58,30 @@ def vault_ledger() -> Path | None:
     return _harness(module).harness_ledger(root, time.time)
 
 
+def vault_queue_text() -> str:
+    source = Path(__file__).resolve().parent.parent / "kit/tracker/locate.py"
+    spec = importlib.util.spec_from_file_location("basicly_tracker_kit_locate", source)
+    if spec is None or spec.loader is None:
+        raise ImportError("the tracker kit is missing; reinstall basicly")
+    module: Any = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    reader = getattr(_harness(module), "harness_queue_text", None)
+    if not callable(reader):
+        raise ImportError("the tracker kit lacks the vault queue reader")
+    return str(reader(Path.cwd()))
+
+
+def vault_findings(vault: Path) -> list[tuple[str, int, str]]:
+    try:
+        return findings("vault/queue.jsonl", vault_queue_text())
+    except ValueError, OSError, ImportError:
+        return [
+            finding
+            for path in sorted(vault.glob("*.jsonl"))
+            for finding in findings(f"vault/{path.name}", path.read_text(encoding="utf-8"))
+        ]
+
+
 def configured_holder() -> str:
     source = Path(__file__).resolve().parent.parent / "kit/tracker/holders.py"
     spec = importlib.util.spec_from_file_location("basicly_tracker_kit_holders", source)
@@ -191,11 +215,7 @@ def main() -> int:
         print(f"tracker-path-scan: {exc}", file=sys.stderr)
         return 1
     hits = (
-        [
-            finding
-            for path in sorted(vault.glob("*.jsonl"))
-            for finding in findings(f"vault/{path.name}", path.read_text(encoding="utf-8"))
-        ]
+        vault_findings(vault)
         if vault is not None
         else [
             finding
