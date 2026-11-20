@@ -198,7 +198,10 @@ def part1(args: argparse.Namespace, module: Any, env: dict[str, str]) -> dict[st
         run(["git", "clone", "-q", "--bare", str(genesis), str(bare)], out, env, out)
         clone = module.vault_clone.locate(out / f"state-{index}", str(bare))
         imported = module.ledger_to_vault(
-            source, module.Import(clone, lambda i=index: 1000.0 + i, True)
+            source,
+            module.Import(
+                clone, lambda i=index: 1000.0 + i, True, module.vault_personal.email_scan
+            ),
         )
         if imported["mapping"] != "not-kept":
             raise ValueError("a private mapping was kept")
@@ -272,7 +275,9 @@ def human_fixture(module: Any, out: Path) -> dict[str, object]:
         clock=lambda: 1000.0,
     )
     clone = module.vault_clone.locate(out / "human-state", str(out / "vault-0.git"))
-    module.ledger_to_vault(fixture, module.Import(clone, lambda: 1000.0, True))
+    module.ledger_to_vault(
+        fixture, module.Import(clone, lambda: 1000.0, True, module.vault_personal.email_scan)
+    )
     human = module.vault_view.carried(
         module.vault_clone.valid_events(clone), module.vault_view.Want("humanproof")
     )

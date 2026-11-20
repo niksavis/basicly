@@ -329,7 +329,12 @@ def _migration(tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch) -> t
     monkeypatch.delenv("BASICLY_TRACKER_EPHEMERAL", raising=False)
     monkeypatch.chdir(project)
     clone = vault_migrate.vault_clone.locate(state, str(bare))
-    vault_migrate.ledger_to_vault(ledger, vault_migrate.Import(clone, lambda: 1700000000.0, True))
+    vault_migrate.ledger_to_vault(
+        ledger,
+        vault_migrate.Import(
+            clone, lambda: 1700000000.0, True, vault_migrate.vault_personal.email_scan
+        ),
+    )
     return ledger, state
 
 

@@ -43,6 +43,7 @@ By default the tool redacts the git `user.name`, `user.email`, the "Name <email>
 Before it publishes, it scans the prepared events for those values and the home path, and refuses with the count per kind when any remains.
 A preview reports the same counts as `personal_data`.
 The tool reads `user.name` and `user.email` from the source repository and refuses when either does not resolve.
+It also replaces every email address whose domain is not example.invalid, example.com, users.noreply.github.com or github.com with `<redacted:email>`, including an address that an earlier redaction only partly replaced; the scan counts any such address that remains as `other email`.
 A login or host name shorter than 4 characters is not redacted, because it would replace common words.
 The tool knows only the current identity: names from older commits or other contributors stay unless you add each one with `--redact-name`.
 List them with `git log --format='%an%n%ae%n%cn%n%ce' | sort -u`.

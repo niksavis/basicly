@@ -185,7 +185,7 @@ def test_preview_redacts_the_git_identity_by_default_and_scans_to_zero(
 
     assert code == 0
     assert PRIVATE not in json.dumps(report)
-    assert report["personal_data"] == {"name": 0}
+    assert report["personal_data"] == {"name": 0, "other email": 0}
 
 
 def test_the_identity_reads_git_config_and_never_a_blank_value(
@@ -210,7 +210,7 @@ def test_the_scan_respects_word_bounds() -> None:
     migration_cli = vault_migrate.sys.modules["basicly_tracker_kit_vault_migration_cli"]
     scan = migration_cli.scanner({"login": "ada"})
 
-    assert scan([{"text": "github.com/adavis and ada"}]) == {"login": 1}
+    assert scan([{"text": "github.com/adavis and ada"}])["login"] == 1
 
 
 def test_the_login_is_redacted_but_the_public_handle_in_a_github_url_stays() -> None:
@@ -223,7 +223,7 @@ def test_the_login_is_redacted_but_the_public_handle_in_a_github_url_stays() -> 
     assert rule(text) == (
         "contributor wrote https://github.com/ada/repo and git@github.com:ada/repo.git"
     )
-    assert scan([{"text": rule(text)}]) == {"login": 0}
+    assert scan([{"text": rule(text)}])["login"] == 0
 
 
 @pytest.mark.parametrize("path", ["/home/ada/src/app.py", "C:\\Users\\ada\\src\\app.py"])
@@ -320,3 +320,31 @@ def test_a_short_login_or_host_is_not_redacted_as_a_common_word(
     assert "login" not in found
     assert "host" not in found
     assert found["name"] == "Migration Tester"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "mail <redacted:machine-username>.surname@employer.com today",
+            "mail <redacted:email> today",
+        ),
+        ("mail first.last@employer.co.uk today", "mail <redacted:email> today"),
+        ("pinned basicly@v0.46 and claude@2.1.329", "pinned basicly@v0.46 and claude@2.1.329"),
+        ("tester@example.invalid and git@github.com", "tester@example.invalid and git@github.com"),
+        ("123+ada@users.noreply.github.com", "123+ada@users.noreply.github.com"),
+        ("@pytest.mark.parametrize", "@pytest.mark.parametrize"),
+    ],
+)
+def test_an_email_outside_the_public_domains_is_redacted_and_counted(
+    text: str, expected: str
+) -> None:
+    migration_cli = vault_migrate.sys.modules["basicly_tracker_kit_vault_migration_cli"]
+    args = migration_cli.argparse.Namespace(redact_name=[])
+    rule = migration_cli._redactor(args, None, {"login": "nobody-here"})
+    scan = migration_cli.scanner({"login": "nobody-here"})
+
+    assert rule(text) == expected
+    assert scan([{"text": rule(text)}])["other email"] == 0
+    leaked = 0 if text == expected else 1
+    assert scan([{"text": text}])["other email"] == leaked

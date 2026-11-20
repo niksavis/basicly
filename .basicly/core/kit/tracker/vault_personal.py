@@ -1,9 +1,41 @@
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 LEDGER_FIELD = "ledger"
+MIN_IDENTITY_LENGTH = 4
+PUBLIC_MAIL_DOMAINS = frozenset({
+    "example.invalid",
+    "example.com",
+    "users.noreply.github.com",
+    "github.com",
+})
+EMAIL_MARKER = "<redacted:email>"
+EMAIL = re.compile(
+    r"(?<![\\A-Za-z0-9._%+-])(?:<redacted:[a-z][a-z0-9-]*>)?[A-Za-z0-9._%+-]*"
+    r"[A-Za-z0-9_%+-]@(?P<domain>[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})(?![A-Za-z0-9-])"
+)
+
+
+def _private(found: re.Match[str]) -> bool:
+    return found.group("domain").lower() not in PUBLIC_MAIL_DOMAINS
+
+
+def redact_emails(text: str) -> str:
+    return EMAIL.sub(lambda found: EMAIL_MARKER if _private(found) else found.group(0), text)
+
+
+def count_emails(text: str) -> int:
+    return sum(1 for found in EMAIL.finditer(text) if _private(found))
+
+
+def email_scan(lines: Sequence[Mapping[str, object]]) -> dict[str, int]:
+    text = "\n".join(json.dumps(line, ensure_ascii=False) for line in lines)
+    return {"other email": count_emails(text)}
+
 
 Scan = Callable[[Sequence[Mapping[str, object]]], dict[str, int]]
 
@@ -13,7 +45,12 @@ def _counts(found: dict[str, int]) -> str:
 
 
 def in_import(scan: Scan | None, lines: Sequence[Mapping[str, object]]) -> str | None:
-    counts = _counts(scan(lines)) if scan is not None else ""
+    if scan is None:
+        return (
+            "an import needs a personal-data scan; "
+            "pass scan=vault_personal.email_scan or a stricter one"
+        )
+    counts = _counts(scan(lines))
     if not counts:
         return None
     return (

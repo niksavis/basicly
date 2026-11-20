@@ -27,7 +27,9 @@ def test_independent_imports_have_identical_canonical_wrappers_with_different_cl
     outputs = []
     for index, target in enumerate((bare, second)):
         clone, _ = _machine(tmp_path, target, f"import-{index}")
-        plan = vault_migrate.Import(clone, lambda at=1000.0 + index: at, True)
+        plan = vault_migrate.Import(
+            clone, lambda at=1000.0 + index: at, True, vault_migrate.vault_personal.email_scan
+        )
         vault_migrate.ledger_to_vault(source, plan)
         valid = vault_migrate.vault_clone.valid_events(clone)
         outputs.append(json.dumps(valid, sort_keys=True, ensure_ascii=False))

@@ -28,6 +28,7 @@ def _load(name: str) -> Any:
 migrate = _load("vault_migrate")
 config = _load("vault_config")
 git_runner = _load("git_runner")
+vault_personal = _load("vault_personal")
 ledger_freeze = _load("ledger_freeze")
 
 
@@ -91,9 +92,6 @@ def _login() -> str:
         return ""
 
 
-MIN_IDENTITY_LENGTH = 4
-
-
 def _repository(source: Path) -> Path:
     folder = source if source.is_dir() else source.parent
     return folder if folder.exists() else Path.cwd()
@@ -120,7 +118,8 @@ def identity(cwd: Path) -> dict[str, str]:
     return {
         label: value
         for label, value in found.items()
-        if value.strip() and (label not in short or len(value) >= MIN_IDENTITY_LENGTH)
+        if value.strip()
+        and (label not in short or len(value) >= vault_personal.MIN_IDENTITY_LENGTH)
     }
 
 
@@ -146,6 +145,7 @@ def scanner(found: dict[str, str]) -> Callable[[Any], dict[str, int]]:
     def scan(lines: Any) -> dict[str, int]:
         text = "\n".join(json.dumps(line, ensure_ascii=False) for line in lines)
         found = {label: len(pattern.findall(text)) for label, pattern in patterns.items()}
+        found["other email"] = vault_personal.count_emails(text)
         if "home" in found:
             found["home"] += len(HOME_FORM.findall(text.replace("\\\\", "\\")))
         return found
@@ -175,7 +175,7 @@ def _redactor(
     own = _bounded(login, "login") if login.strip() else None
 
     def apply(value: str) -> str:
-        text = value if inherited is None else inherited(value)
+        text = vault_personal.redact_emails(value if inherited is None else inherited(value))
         text = STACKED.sub(_one_marker, HOME_FORM.sub(HOME_MARKER, text))
         text = text if pattern is None else pattern.sub("contributor", text)
         return text if own is None else own.sub("contributor", text)
@@ -260,11 +260,11 @@ def run(
         _clone(args, state_root),
         clock,
         True,
+        scan,
         rule,
         args.private_map,
         args.overwrite_private_map,
         code=Path.cwd(),
-        scan=scan,
     )
     return migrate.to_vault(found, plan, template=template)
 

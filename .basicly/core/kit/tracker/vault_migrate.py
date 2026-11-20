@@ -65,12 +65,12 @@ class Import:
     clone: Any
     clock: Callable[[], float]
     redact_holders: bool
+    scan: Callable[[Sequence[Mapping[str, object]]], dict[str, int]] | None
     redactor: Redactor | None = None
     private_map: Path | None = None
     overwrite_private_map: bool = False
     runner: Runner = git_runner.run
     code: Path | None = None
-    scan: Callable[[Sequence[Mapping[str, object]]], dict[str, int]] | None = None
 
 
 @dataclass(frozen=True)

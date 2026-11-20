@@ -51,7 +51,10 @@ def _ledger(folder: Path) -> Path:
 
 def _plan(tmp_path: Path, bare: Path, **options: Any) -> Any:
     clone, _state = _machine(tmp_path, bare, "importer")
-    return vault_migrate.Import(clone, time.time, options.pop("redact_holders", True), **options)
+    scan = options.pop("scan", vault_migrate.vault_personal.email_scan)
+    return vault_migrate.Import(
+        clone, time.time, options.pop("redact_holders", True), scan, **options
+    )
 
 
 def _head(bare: Path) -> str:
@@ -148,7 +151,12 @@ def test_a_vault_that_already_holds_a_record_refuses_by_both_digests(
         actor="contributor",
         clock=lambda: 1000.0,
     )
-    first = vault_migrate.Import(_machine(tmp_path, bare, "first")[0], time.time, True)
+    first = vault_migrate.Import(
+        _machine(tmp_path, bare, "first")[0],
+        time.time,
+        True,
+        vault_migrate.vault_personal.email_scan,
+    )
     vault_migrate.to_vault(events.read_events(source)[0], first)
     before = _head(bare)
 
@@ -266,6 +274,15 @@ def test_a_rerun_over_an_unredacted_vault_copy_refuses_by_name(tmp_path: Path, b
 
     with pytest.raises(vault_migrate.MigrateError, match=r"copy holds personal data \(login 1\)"):
         vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare, scan=scan))
+    assert _head(bare) == before
+
+
+def test_an_import_without_a_personal_data_scan_refuses_by_name(tmp_path: Path, bare: Path) -> None:
+    ledger = _ledger(tmp_path / "ledger")
+    before = _head(bare)
+
+    with pytest.raises(vault_migrate.MigrateError, match="needs a personal-data scan"):
+        vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare, scan=None))
     assert _head(bare) == before
 
 
