@@ -746,6 +746,7 @@ def _replay_verify_merge(
     name, base, branch = session.name, session.base, session.branch
     worktree_path = session.path
 
+    lefthook_artifacts.provision_lane(worktree_path, (repo_root,))
     replayed = rebase.replay(repo_root, worktree_path, base, branch)
     clock.mark("rebase")
     if not replayed.ok:

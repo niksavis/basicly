@@ -129,6 +129,7 @@ append_only_paths = []
 # — so base's fragments would be written over the lane's own and committed as a regen.
 [worktree.regenerate_commands]
 ".basicly/generated-manifest.json" = ["uv", "run", "basicly", "build"]
+".basicly/lefthook.yml" = ["uv", "run", "basicly", "hooks-build", "--no-install"]
 "docs/architecture/status.md" = [
   "uv",
   "run",

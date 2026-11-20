@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from basicly import cli, lefthook_artifacts, loop_state, merge, tracker, verify, worktree
+from basicly import cli, lefthook_artifacts, loop_state, merge, rebase, tracker, verify, worktree
 from basicly.tracker_paths import LEDGER_DIR_NAME as LEDGER_DIR
 from tests import flipped_tracker
 
@@ -872,6 +872,30 @@ def test_a_fresh_lane_landing_prepares_lefthook_before_its_checks(
     clock = merge._Landing(main, "basicly-x1")
 
     assert merge._verify_for_landing("lane", lane, "full", clock) is None
+    assert ready == [True]
+
+
+def test_a_landing_prepares_lefthook_before_its_rebase_can_rebuild_lefthook_yml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = _pin_lefthook(monkeypatch, tmp_path)
+    main = _lefthook_checkout(tmp_path / "main", data)
+    lane = _lefthook_checkout(tmp_path / "lane")
+    ready: list[bool] = []
+
+    def _replay(_root: Path, path: Path, *_a: object) -> rebase.ReplayOutcome:
+        ready.append((path / "build/lefthook/9.9.9/lefthook.gz").is_file())
+        return rebase.ReplayOutcome("rebase-conflicts", "stop here")
+
+    monkeypatch.setattr(rebase, "replay", _replay)
+    session = worktree.Session("lane", "harness/lane", "main", "abc", str(lane), "2026-11-20")
+    clock = merge._Landing(main, "basicly-x1")
+
+    result = merge._replay_verify_merge(
+        session, verify_mode="full", override_gate=False, clock=clock
+    )
+
+    assert result.status == "rebase-conflicts"
     assert ready == [True]
 
 
