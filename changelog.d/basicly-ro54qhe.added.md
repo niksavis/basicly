@@ -1,0 +1,1 @@
+- `mark-ready` now works in a vault repository too: on a claimed record that was started with `update --status in_progress`, it appends the ready mark through the vault writer with no local event, with the same refusals by name; `list --ready-for-delivery` lists the vault's marked records oldest first.

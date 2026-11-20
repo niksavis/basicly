@@ -71,9 +71,9 @@ The engine and standalone kit use the same admission and write adapter.
 
 | Class | Forms | Vault behavior |
 | --- | --- | --- |
-| Ordinary writes | `create`, `child`, `update`, `close`, `comment`, `review`, `confirm`, `dep`, `undep` | Keep their ledger-form arguments and existing checks. |
+| Ordinary writes | `create`, `child`, `update`, `close`, `comment`, `review`, `confirm`, `dep`, `undep`, `mark-ready` | Keep their ledger-form arguments and existing checks. |
 | Canonical protocol | `claim`, `unassign` | Compatible ledger aliases use the native handler, report schema and exit codes. |
-| Refused | `assign`, `resolve`, `acknowledge-loss`, `delete`, `mark-ready` | Write nothing and name a real remedy. |
+| Refused | `assign`, `resolve`, `acknowledge-loss`, `delete` | Write nothing and name a real remedy. |
 
 Use native `claim RECORD-ID` to reserve work in the vault, then
 `update .basicly/ledger RECORD-ID --status in_progress` to start it after its readiness checks.

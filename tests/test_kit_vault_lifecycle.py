@@ -31,9 +31,9 @@ __all__ = ["_environment", "bare"]
 
 CRITERION = "When the fixture check runs, it shall report the saved result."
 TRIGGER = "When a team shares a task, I want to save its progress, so I can complete it."
-WORKS = ("update", "comment", "child", "dep", "undep", "review", "confirm", "close")
+WORKS = ("update", "comment", "child", "dep", "undep", "review", "confirm", "close", "mark-ready")
 PROTOCOL = ("claim", "unassign")
-REFUSED = ("assign", "resolve", "acknowledge-loss", "delete", "mark-ready")
+REFUSED = ("assign", "resolve", "acknowledge-loss", "delete")
 
 
 def test_every_record_write_form_has_one_vault_contract_class() -> None:
@@ -107,10 +107,13 @@ def test_a_vault_born_record_can_complete_each_ordinary_write_without_local_even
     record = _create(root, "A vault-born task")
     other = _create(root, "A dependency")
     review = _review()
-    if verb in {"confirm", "close"}:
+    if verb in {"confirm", "close", "mark-ready"}:
         _run(root, "review", LEDGER, record, "--evidence", json.dumps(review))
-    if verb == "close":
+    if verb in {"close", "mark-ready"}:
         _run(root, "claim", record)
+    if verb == "mark-ready":
+        _run(root, "update", LEDGER, record, "--status", "in_progress")
+    if verb == "close":
         _run(root, "confirm", LEDGER, record, "--evidence", json.dumps(_confirm(review)))
     if verb == "undep":
         _run(root, "dep", LEDGER, record, other, "--type", "blocks")
@@ -123,6 +126,7 @@ def test_a_vault_born_record_can_complete_each_ordinary_write_without_local_even
         "review": ["--evidence", json.dumps(review)],
         "confirm": ["--evidence", json.dumps(_confirm(review) if verb == "confirm" else {})],
         "close": ["--reason", "The fixture check reported the saved result"],
+        "mark-ready": [],
     }
 
     local_before = {p.name: p.read_bytes() for p in (root / LEDGER).iterdir() if p.is_file()}
@@ -144,6 +148,7 @@ def test_a_vault_born_record_can_complete_each_ordinary_write_without_local_even
         "review": lambda: bool(shown["fields"].get("process_review")),
         "confirm": lambda: bool(shown["fields"].get("process_confirmation")),
         "close": lambda: shown["status"] == "closed",
+        "mark-ready": lambda: shown["fields"].get("ready_for_delivery") == "ready",
     }
     assert checks[verb](), shown
     ledger = root / LEDGER
@@ -166,7 +171,6 @@ def test_a_retired_or_unsupported_vault_write_names_a_real_remedy_and_writes_not
         "resolve": [],
         "acknowledge-loss": ["--sequence", "1", "--reason", "lost", "--evidence", "proof"],
         "delete": [],
-        "mark-ready": [],
     }
 
     done = _kit(root, verb, LEDGER, record, *extra[verb])
@@ -185,8 +189,6 @@ def test_a_retired_or_unsupported_vault_write_names_a_real_remedy_and_writes_not
         parsed = parser.parse_args([*remedy, "--vault", "vault.git"])
         if verb == "assign":
             assert parsed.command in {"claim-vault", "unassign-vault"}
-        elif verb == "mark-ready":
-            assert parsed.command == "comment-vault"
         else:
             assert parsed.command == "fsck-vault" and parsed.repair
 
