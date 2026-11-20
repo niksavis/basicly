@@ -183,6 +183,18 @@ def _write_admission(repo_root: Path) -> tuple[Any, Path, Any, Any]:
     return adapter, ledger, context, context.target
 
 
+def land_drafts(repo_root: Path, drafts: Sequence[Any], what: str) -> None:
+    kit_module = owned_store.kit(repo_root)
+    events = kit_module.events
+    adapter, ledger, context, target = _write_admission(repo_root)
+    with events.LedgerLock(ledger) as lock:
+        refuse_a_write_to_an_absent_record(kit_module, ledger, what, drafts)
+        if target is not None:
+            adapter.land(adapter.Write(ledger, context, lock, os.environ), drafts)
+            return
+        events.append(ledger, drafts, redact=redact.redact_committed, held_lock=lock)
+
+
 def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
 
     if args and args[0] in ("review", "confirm"):
