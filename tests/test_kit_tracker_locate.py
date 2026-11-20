@@ -193,9 +193,19 @@ def test_the_user_install_on_path_runs_the_claim_check(repo: Path, tmp_path: Pat
 
 
 def test_typed_in_names_the_repository_path_or_the_installed_command(tmp_path: Path) -> None:
-    inside = tmp_path / "repo" / ".basicly" / "kit" / "tracker" / "cli.py"
+    repo = tmp_path / "repo"
+    inside = repo / ".basicly" / "kit" / "tracker" / "cli.py"
+    inside.parent.mkdir(parents=True)
+    inside.write_text("", encoding="utf-8")
+    (repo / ".git").mkdir()
+    sub = repo / "src" / "app"
+    sub.mkdir(parents=True)
+    (tmp_path / "elsewhere").mkdir()
 
-    assert locate.typed_in(inside, tmp_path / "repo") == "python3 .basicly/kit/tracker/cli.py"
+    assert locate.typed_in(inside, repo) == "python3 .basicly/kit/tracker/cli.py"
+    typed = locate.typed_in(inside, sub)
+    assert typed == "python3 ../../.basicly/kit/tracker/cli.py"
+    assert (sub / typed.split(" ")[1]).resolve() == inside.resolve()
     assert locate.typed_in(inside, tmp_path / "elsewhere") == "basicly-tracker"
 
 
@@ -246,3 +256,67 @@ def test_a_refusal_remedy_never_names_a_path_outside_the_repository(
 
     assert f"next: {runner} review .basicly/ledger {record}" in refused
     assert str(tmp_path) not in refused
+
+
+def test_no_tracker_output_names_an_absolute_path_from_a_repository_subfolder(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    kit = repo / ".basicly" / "kit" / "tracker"
+    shutil.copytree(KIT_DIR, kit, ignore=shutil.ignore_patterns("__pycache__"))
+    clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, env=clean)  # nosec B603 B607
+    sub = repo / "src" / "app"
+    sub.mkdir(parents=True)
+    ledger = "../../.basicly/ledger"
+
+    def run(*argv: str) -> str:
+        done = subprocess.run(  # nosec B603 — the copied kit under test
+            [sys.executable, str(kit / "cli.py"), *argv],
+            cwd=sub,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return done.stdout
+
+    outputs = [run("create", ledger, "--title", "No prefix yet")]
+    created = run(
+        "create",
+        ledger,
+        "--prefix",
+        "acme",
+        "--title",
+        "A bug",
+        "--field",
+        "issue_type=bug",
+        "--description",
+        "## Context\nIt breaks.",
+        "--acceptance",
+        "- it works",
+    )
+    outputs.append(created)
+    assert "record" in json.loads(created), outputs
+    record = json.loads(created)["record"]
+    outputs.extend(
+        run(*argv)
+        for argv in (
+            ("show", ledger, record),
+            ("close", ledger, record, "--reason", "done"),
+            ("claim", ledger, record, "--to", "a-holder"),
+            ("claim", ledger, "acme-none", "--to", "a-holder"),
+            ("update", ledger, record, "--status", "in_progress"),
+            ("ready", ledger),
+            ("blocked", ledger),
+            ("stats", ledger),
+            ("refine", ledger),
+            ("dor", ledger, record),
+            ("fsck", ledger),
+            ("list", ledger),
+        )
+    )
+
+    assert all(outputs), outputs
+    leaked = [one for one in outputs if str(tmp_path) in one or str(repo.resolve()) in one]
+    assert leaked == []
+    assert any("python3 ../../.basicly/kit/tracker/cli.py" in one for one in outputs)
