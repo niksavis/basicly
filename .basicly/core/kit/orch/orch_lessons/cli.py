@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from orch_relay import classes, messages, record, start
-from orch_state import commands
+from orch_state import commands, relay_guard
 
 from orch_lessons import doctor, log
 
@@ -96,12 +96,15 @@ def run_relay(args: argparse.Namespace, cwd: Path, environ: dict[str, str]) -> i
         return 0
     if args.group not in ("record", "decide", "approve", "report"):
         return None
+    session = (
+        relay_guard.check(args.group, cwd, environ) if args.group in ("decide", "approve") else ""
+    )
     repo = log.repo_root(cwd)
     tracker = record.Tracker(repo)
     if args.group == "record":
         print(record.find(tracker))
         return 0
-    writer = messages.Writer(tracker, log.scanner(repo))
+    writer = messages.Writer(tracker, log.scanner(repo), session=session)
     if args.group == "report":
         print(writer.report(args.record, args.state, args.summary, args.recommend))
     else:

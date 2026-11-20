@@ -213,7 +213,10 @@ def test_doctor_refuses_an_allow_rule_that_lets_a_session_run_orch_approve(
 
 
 @pytest.fixture
-def worker(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+def worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, dict[str, str]]:
+    monkeypatch.setattr(
+        doctor, "guard_self_test", lambda: (False, "orch approve guard: self-test FAILED")
+    )
     (tmp_path / ".git").mkdir()
     home = tmp_path / "home"
     home.mkdir()
@@ -234,13 +237,34 @@ def test_doctor_names_the_file_and_rule_and_reports_no_wake_adapter(
     path = settings(repo, {"allow": ["Bash(orch-wait)", "Bash(orch:*)"]})
     report = doctor.run(repo, environ)
     assert report.failed
-    assert report.lines[0] == (
+    assert report.lines[0] == "orch approve guard: self-test FAILED"
+    assert report.lines[1] == (
         f"{path}: allow rule 'Bash(orch:*)' lets a session run orch approve; add the deny rule "
         "'Bash(orch approve *)', which wins over every allow rule"
     )
-    assert report.lines[1].startswith("rule parity: not checked")
-    assert report.lines[2].startswith("wake adapter: none")
-    assert report.lines[3].startswith("lessons: not checked")
+    assert report.lines[2].startswith("rule parity: not checked")
+    assert report.lines[3].startswith("relay entries: not checked")
+    assert report.lines[4].startswith("wake adapter: none")
+    assert report.lines[5].startswith("lessons: not checked")
+
+
+def test_a_passing_guard_self_test_needs_no_deny_rule(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    environ = {"HOME": str(home), "PATH": str(home), "ORCH_LESSONS_ROOT": str(home)}
+    settings(tmp_path, {"allow": ["Bash(orch:*)"]})
+
+    report = doctor.run(tmp_path, environ)
+
+    assert report.lines[0].startswith("orch approve guard: self-test refused all 5 probes")
+    assert not any("add the deny rule" in line for line in report.lines)
+
+
+def test_the_guard_self_test_passes_on_the_shipped_kit() -> None:
+    passed, line = doctor.guard_self_test()
+
+    assert passed, line
 
 
 def test_doctor_passes_a_blanket_allow_when_a_deny_rule_covers_orch_approve(
@@ -250,7 +274,7 @@ def test_doctor_passes_a_blanket_allow_when_a_deny_rule_covers_orch_approve(
     settings(repo, {"allow": ["Bash"], "deny": ["Bash(orch approve *)"]})
     report = doctor.run(repo, environ)
     assert not report.failed
-    assert report.lines[0].startswith("claude: deny rule 'Bash(orch approve *)'")
+    assert report.lines[1].startswith("claude: deny rule 'Bash(orch approve *)'")
 
 
 @pytest.mark.parametrize(("decision", "refused"), [("allow", True), ("forbidden", False)])
