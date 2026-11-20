@@ -272,3 +272,37 @@ def test_apply_keeps_the_imported_description(
     _, shown = _run(capsys, "show", str(ledger), "smp-1")
     assert kept in shown["fields"]["description"]
     assert shown["fields"]["description"].startswith("## Context\n")
+
+
+def test_a_record_owing_only_context_keeps_its_criteria(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = _imported(
+        tmp_path, capsys, [_issue(1, description="", acceptance_criteria="- It has one.")]
+    )
+    sheet = tmp_path / "sheet.txt"
+    _run(capsys, "refine-sheet", str(ledger), "--out", str(sheet))
+    text = sheet.read_text(encoding="utf-8")
+    assert "acceptance:\n- It has one.\n" in text
+    sheet.write_text(text.replace("context: \n", "context: Why it matters.\n"), encoding="utf-8")
+
+    code, applied = _run(capsys, "apply-sheet", str(ledger), str(sheet))
+
+    assert code == cli.EXIT_OK, applied
+    _, shown = _run(capsys, "show", str(ledger), "smp-1")
+    assert shown["fields"]["acceptance_criteria"] == "- It has one."
+    assert applied["ready"] == ["smp-1"]
+
+
+def test_refine_sheet_writes_no_file_when_nothing_owes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = _imported(tmp_path, capsys, [_issue(1, acceptance_criteria="It works.")])
+    sheet = tmp_path / "sheet.txt"
+
+    code, written = _run(capsys, "refine-sheet", str(ledger), "--out", str(sheet))
+
+    assert code == cli.EXIT_OK
+    assert written["records"] == []
+    assert written["next"] == "ready"
+    assert not sheet.exists()

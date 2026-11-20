@@ -70,6 +70,8 @@ def write(directory: Path | str, out: Path) -> dict[str, object]:
         raise ValueError(f"{out} exists; name a new sheet file")
     states = record_view.queries.folded(directory)
     rows = _owing(directory)
+    if not rows:
+        return {"written": "", "records": [], "next": "ready"}
     blocks = []
     for row in rows:
         fields = states[str(row["record"])].fields
@@ -77,13 +79,19 @@ def write(directory: Path | str, out: Path) -> dict[str, object]:
             str(fields.get("description") or ""), shaping.CONTEXT_HEADING
         )
         head = f"## {row['record']}\n{TITLE} {row['title']}\n{CONTEXT} {context.strip()}"
-        blocks.append(f"{head}\n{ACCEPTANCE}\n- \n")
+        blocks.append(f"{head}\n{ACCEPTANCE}\n{_criteria_lines(fields)}\n")
     out.write_text("\n".join(blocks), encoding="utf-8")
     return {
         "written": out.as_posix(),
         "records": [row["record"] for row in rows],
         "next": f"fill each acceptance line in {out.as_posix()}, then: apply-sheet {directory}",
     }
+
+
+def _criteria_lines(fields: Mapping[str, object]) -> str:
+    stated = str(fields.get("acceptance_criteria") or "")
+    lines = [line.strip().removeprefix("- ").strip() for line in stated.splitlines()]
+    return "\n".join(f"- {line}" for line in lines if line) or "- "
 
 
 def parse(text: str) -> dict[str, dict[str, object]]:
@@ -112,7 +120,7 @@ def parse(text: str) -> dict[str, dict[str, object]]:
 
 def _updates(fields: Mapping[str, object], entry: Mapping[str, object]) -> dict[str, object]:
     criteria = list(entry["acceptance"]) if isinstance(entry["acceptance"], list) else []
-    updates: dict[str, object] = {"acceptance_criteria": "\n".join(criteria)}
+    updates: dict[str, object] = {"acceptance_criteria": "\n".join(f"- {one}" for one in criteria)}
     described = str(fields.get("description") or "")
     if entry["context"] and not shaping.section_text(described, shaping.CONTEXT_HEADING).strip():
         kept = [line for line in described.splitlines() if line.strip() != shaping.CONTEXT_HEADING]
@@ -124,13 +132,18 @@ def _updates(fields: Mapping[str, object], entry: Mapping[str, object]) -> dict[
     return updates
 
 
-def apply(directory: Path | str, sheet: Path, *, context: Any = None) -> dict[str, object]:
+def apply(
+    directory: Path | str, sheet: Path, *, context: Any = None, view: Any = None
+) -> dict[str, object]:
+    seen = view or (lambda: directory)
     if not sheet.is_file():
         raise ValueError(f"no sheet at {sheet}; write one with refine-sheet LEDGER --out {sheet}")
     entries = parse(sheet.read_text(encoding="utf-8"))
     if not entries:
-        raise ValueError(f"{sheet} names no record; write one with refine-sheet {directory}")
-    states = record_view.queries.folded(directory)
+        raise ValueError(
+            f"{sheet} names no record; delete it, then write one with refine-sheet {directory}"
+        )
+    states = record_view.queries.folded(seen())
     unknown = sorted(record for record in entries if record not in states)
     empty = sorted(record for record, entry in entries.items() if not entry["acceptance"])
     if unknown or empty:
@@ -142,11 +155,10 @@ def apply(directory: Path | str, sheet: Path, *, context: Any = None) -> dict[st
             directory, record, fields=_updates(states[record].fields, entry), context=context
         )
     left = {
-        str(row["record"]): row["blocking"]
-        for row in record_view.refine_queue(directory)["records"]
+        str(row["record"]): row["blocking"] for row in record_view.refine_queue(seen())["records"]
     }
     sheet.unlink()
-    ranked = {str(row["record"]) for row in record_view.queries.ready(directory)["records"]}
+    ranked = {str(row["record"]) for row in record_view.queries.ready(seen())["records"]}
     return {
         "applied": sorted(entries),
         "shaped": sorted(record for record in entries if record not in left),

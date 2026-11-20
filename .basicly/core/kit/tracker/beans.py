@@ -263,7 +263,7 @@ def _ready_summary(snapshot: Any, imported: list, directory: Path | str) -> dict
     for record in snapshot.records:
         if not isinstance(record, dict) or record.get("id") not in wanted:
             continue
-        if record.get("status") == "in_progress" and not record.get("assignee"):
+        if record.get("status") == "in_progress" and not record.get(migrate.events.HOLDER_FIELD):
             elsewhere.append(record["id"])
         if record.get("size") == "small":
             small.append(record["id"])

@@ -235,9 +235,10 @@ python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2 --take
 ### refine-sheet
 
 Write a sheet of the open records that still miss acceptance criteria or a context: one block per
-record with its id, title, context and an empty `acceptance:` list. The sheet goes inside the
+record with its id, title, context and its `acceptance:` list, which holds the record's criteria or
+one empty line. The sheet goes inside the
 repository's git folder, so it is never committed; `--out FILE` names another file. It refuses a
-file that exists.
+file that exists, and writes no file when no record owes criteria.
 An import of a backlog names this command when records still need criteria.
 
 ```sh

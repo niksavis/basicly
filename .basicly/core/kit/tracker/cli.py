@@ -186,7 +186,10 @@ _VIEWS: dict[str, Callable[[argparse.Namespace, Any], dict[str, object]]] = {
         a.directory, refine_sheet.sheet_path(a.directory, a.out)
     ),
     "apply-sheet": lambda a, c: refine_sheet.apply(
-        a.directory, refine_sheet.sheet_path(a.directory, a.sheet), context=c
+        a.directory,
+        refine_sheet.sheet_path(a.directory, a.sheet),
+        context=c,
+        view=lambda: vault_cli.view_of(a, c.clock),
     ),
     "sync": lambda a, _r: mirror.sync(a.directory, a.root, dry_run=a.dry_run),
     "scaffold": lambda a, _r: record_view.scaffold_of(a.directory, a.type),
