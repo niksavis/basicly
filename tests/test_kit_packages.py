@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import re
 import subprocess  # nosec B404
 import sys
 import zipfile
@@ -305,3 +307,67 @@ def test_status_names_the_managed_copy_as_the_one_in_use(kit: str, tmp_path: Pat
     (tmp_path / ".basicly" / "core" / "kit" / kit).mkdir(parents=True)
 
     assert installer.run(_kit(kit), ["status", "--into", str(tmp_path)]) == 0
+
+
+def _clean_env() -> dict[str, str]:
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
+
+@pytest.fixture(scope="module")
+def tracker_entry(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    where = tmp_path_factory.mktemp("wheel")
+    subprocess.run(  # nosec B603 B607
+        ["uv", "build", "--wheel", str(PACKAGES / "basicly-tracker"), "--out-dir", str(where)],
+        capture_output=True,
+        check=True,
+    )
+    venv = where / "venv"
+    subprocess.run(["uv", "venv", str(venv)], capture_output=True, check=True)  # nosec B603 B607
+    python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    wheel = next(where.glob("*.whl"))
+    subprocess.run(  # nosec B603 B607
+        ["uv", "pip", "install", "--python", str(python), "--no-deps", str(wheel)],
+        capture_output=True,
+        check=True,
+    )
+    return python.parent / ("basicly-tracker.exe" if os.name == "nt" else "basicly-tracker")
+
+
+def _entry(entry: Path, where: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(  # nosec B603
+        [str(entry), *args],
+        cwd=where,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+
+def test_the_installed_tracker_prints_its_package_version(
+    tracker_entry: Path, tmp_path: Path
+) -> None:
+    manifest = (PACKAGES / "basicly-tracker" / "pyproject.toml").read_text(encoding="utf-8")
+    version = re.search(r'^version = "([^"]+)"', manifest, re.MULTILINE)
+    assert version is not None
+
+    done = _entry(tracker_entry, tmp_path, "--version")
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == f"basicly-tracker {version.group(1)}\n"
+
+
+@pytest.mark.parametrize("repository", [False, True])
+def test_the_installed_tracker_top_help_lists_init_in_one_command_list(
+    tracker_entry: Path, tmp_path: Path, repository: bool
+) -> None:
+    if repository:
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, env=_clean_env())  # nosec B603 B607
+        installer.run(_kit("tracker"), ["init", "--into", str(tmp_path)])
+
+    done = _entry(tracker_entry, tmp_path, "--help")
+
+    assert done.returncode == 0, done.stderr
+    assert "<init|update|uninstall|status>" in done.stdout
+    assert "Record commands" in done.stdout and "create" in done.stdout
+    assert "usage: basicly-tracker [-h]" not in done.stdout

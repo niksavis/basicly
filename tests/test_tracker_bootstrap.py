@@ -82,7 +82,7 @@ def test_committed_onboarding_establishes_memory_after_clone_or_pull(
     _call(["git", "init", "--bare", "-q", "-b", "main", str(vault)], tmp_path, env)
     command = [sys.executable, "-I", "-S", "-c", BOOT, str(package / "__init__.py")]
     _call([*command, "vault-init", "--vault", str(vault), "--prefix", "demo", "--yes"], seed, env)
-    _call([*command, "init", "--scope", "project", "--sandbox"], seed, env)
+    _call([*command, "init", "--scope", "project", "--sandbox", "--with-instructions"], seed, env)
     created = _call(
         [
             *command,

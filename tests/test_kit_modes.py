@@ -293,3 +293,25 @@ def test_a_bare_update_refuses_and_names_both_forms(capsys: pytest.CaptureFixtur
     refusal = capsys.readouterr().err
     assert "basicly-tracker update <ledger> <record> --field name=value" in refusal
     assert "basicly-tracker init" in refusal
+
+
+@pytest.mark.parametrize("instructions", [False, True])
+def test_a_project_init_writes_instruction_files_only_with_with_instructions(
+    tmp_path: Path, instructions: bool
+) -> None:
+    request = tracker.installer.Request(
+        tracker.KIT._replace(directory=KIT_ROOT / "tracker"), tmp_path, io.StringIO(), instructions
+    )
+    package = tracker.PACKAGE._replace(kit=request.kit)
+
+    modes._write_guidance(package, request, "basicly-tracker", skill=True)
+
+    written = [
+        name
+        for name in ("AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md")
+        if (tmp_path / name).exists()
+    ]
+    assert written == (
+        ["AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"] if instructions else []
+    )
+    assert (tmp_path / ".claude" / "skills" / "tracker" / "SKILL.md").is_file()
