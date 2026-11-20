@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -9,8 +10,18 @@ from . import pyright_inputs
 _IGNORED = frozenset({"__pycache__", ".cache"})
 
 
-def _validate(path: Path, resolved: Path, canonical: Path, allowed: tuple[Path, ...]) -> None:
-    if not resolved.is_relative_to(canonical):
+def _key(path: Path) -> str:
+    return os.path.normcase(str(path))
+
+
+def _inside(key: str, base: str) -> bool:
+    return key == base or key.startswith(base if base.endswith(os.sep) else base + os.sep)
+
+
+def _validate(
+    path: Path, resolved: Path, canonical: Path, allowed: tuple[Path, ...], *, inside: bool
+) -> None:
+    if not inside:
         if path.suffix == ".pth" or not resolved.is_file():
             raise pyright_inputs.UnsupportedInputsError("external pytest dependency")
     elif path.suffix == ".pth":
@@ -45,6 +56,7 @@ def fingerprints(
         parent = min(parents, key=lambda path: len(path.parts))
         groups.setdefault(parent, []).append(root)
 
+    keys = {root: _key(canonical[root]) for root in roots}
     visited: set[Path] = set()
     for parent, members in groups.items():
         for directory, dirs, files in parent.walk(on_error=pyright_inputs._unreadable):
@@ -53,22 +65,24 @@ def fingerprints(
                 raise pyright_inputs.UnsupportedInputsError("symlinked pytest dependency directory")
             active = [root for root in members if directory.is_relative_to(root)]
             visited.update(root for root in active if directory == root)
+            prefixes = {root: directory.relative_to(root).as_posix() for root in active}
             for name in sorted(files):
                 path = directory / name
                 if name.startswith(".env"):
                     raise pyright_inputs.UnsupportedInputsError("protected pytest dependency")
                 resolved = path.resolve()
+                resolved_key = _key(resolved)
+                inside = {root: _inside(resolved_key, keys[root]) for root in active}
                 for root in active:
-                    _validate(path, resolved, canonical[root], allowed)
-                actual = path if resolved.is_relative_to(canonical[parent]) else resolved
+                    _validate(path, resolved, canonical[root], allowed, inside=inside[root])
+                actual = path if _inside(resolved_key, keys[parent]) else resolved
                 content = hashlib.sha256(actual.read_bytes()).digest()
                 for root in active:
-                    if resolved.is_relative_to(canonical[root]):
-                        digests[root].update(path.relative_to(root).as_posix().encode() + b"\0")
+                    relative = name if prefixes[root] == "." else f"{prefixes[root]}/{name}"
+                    if inside[root]:
+                        digests[root].update(relative.encode() + b"\0")
                     else:
-                        digests[root].update(
-                            f"{path.relative_to(root).as_posix()}\0{resolved}\0".encode()
-                        )
+                        digests[root].update(f"{relative}\0{resolved}\0".encode())
                     digests[root].update(content)
     if any(root not in visited or root.resolve() != canonical[root] for root in roots):
         raise pyright_inputs.UnsupportedInputsError("pytest dependency root changed")
