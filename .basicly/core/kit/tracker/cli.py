@@ -385,6 +385,11 @@ def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None)
     return code, {"schema": f"{SCHEMA_PREFIX}.{args.command}.v{version}", **report}
 
 
+def command_names() -> list[str]:
+    parser = arguments.parser(refine_sheet.add_parsers)
+    return sorted(next(one.choices for one in parser._actions if isinstance(one.choices, dict)))
+
+
 def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | None = None) -> int:
 
     argv = list(sys.argv[1:] if argv is None else argv)

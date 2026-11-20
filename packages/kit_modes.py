@@ -169,13 +169,13 @@ def _write_guidance(package: Package, request, typed: str, *, skill: bool) -> No
         rendered = _render(package, Path(scratch), typed)
         if skill or name == "tracker":
             installer.write_skill(rendered, request.target, name, request.stream)
-        if name == "tracker":
+        if name == "tracker" and request.instructions:
             for relative in ("AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"):
                 path = request.target / relative
                 if not path.exists():
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text("", encoding="utf-8")
-        if request.instructions or name == "tracker":
+        if request.instructions:
             installer.write_block(rendered, request.target, name, request.stream)
 
 

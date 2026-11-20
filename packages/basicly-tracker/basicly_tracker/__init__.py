@@ -5,6 +5,7 @@ import importlib.util
 import re
 import subprocess  # nosec B404
 import sys
+from importlib import metadata
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -294,6 +295,28 @@ def _run(kit, args: list, verbs: dict) -> int:
     return done.returncode
 
 
+def _version() -> str:
+    try:
+        return metadata.version("basicly-tracker")
+    except metadata.PackageNotFoundError:
+        return str(installer.read_kit_constant(KIT.directory, "pin.py", "KIT_VERSION"))
+
+
+def _print_version(_rest: list[str]) -> int:
+    sys.stdout.write(f"basicly-tracker {_version()}\n")
+    return 0
+
+
+def _help() -> int:
+    installer.run(KIT, [])
+    names = installer.load_kit_module(KIT.directory, KIT.cli_file, KIT.module).command_names()
+    sys.stdout.write(
+        "Record commands, run against a ledger (basicly-tracker COMMAND --help for one):\n"
+        f"  {', '.join(names)}\n"
+    )
+    return 0
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[:1] in (["--help"], ["-h"]):
@@ -306,9 +329,14 @@ def main(argv=None) -> int:
             "  bootstrap                 establish repository tracker memory before work\n"
             "  mcp-config --client NAME --repository ROOT  print client registration\n"
             "  plugin --out DIRECTORY     export a portable agent plugin\n"
-            "  bundle [--out FILE]         export the standalone Python archive\n\n"
+            "  bundle [--out FILE]         export the standalone Python archive\n"
+            "  --version                  print the package version\n\n"
         )
     exports = {
+        "--help": lambda _rest: _help(),
+        "-h": lambda _rest: _help(),
+        "--version": _print_version,
+        "-V": _print_version,
         "bundle": _bundle,
         "plugin": _plugin,
         "mcp": _mcp,
