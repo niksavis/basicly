@@ -115,7 +115,10 @@ def _updates(fields: Mapping[str, object], entry: Mapping[str, object]) -> dict[
     updates: dict[str, object] = {"acceptance_criteria": "\n".join(criteria)}
     described = str(fields.get("description") or "")
     if entry["context"] and not shaping.section_text(described, shaping.CONTEXT_HEADING).strip():
-        updates["description"] = f"{shaping.CONTEXT_HEADING}\n{entry['context']}"
+        kept = [line for line in described.splitlines() if line.strip() != shaping.CONTEXT_HEADING]
+        rest = "\n".join(kept).strip()
+        context = f"{shaping.CONTEXT_HEADING}\n{entry['context']}"
+        updates["description"] = f"{context}\n\n{rest}" if rest else context
     if fields.get("issue_type") in SMALL_TYPES and len(criteria) == 1:
         updates["size"] = "small"
     return updates
@@ -143,8 +146,10 @@ def apply(directory: Path | str, sheet: Path, *, context: Any = None) -> dict[st
         for row in record_view.refine_queue(directory)["records"]
     }
     sheet.unlink()
+    ranked = {str(row["record"]) for row in record_view.queries.ready(directory)["records"]}
     return {
         "applied": sorted(entries),
-        "ready": sorted(record for record in entries if record not in left),
+        "shaped": sorted(record for record in entries if record not in left),
+        "ready": sorted(record for record in entries if record in ranked),
         "still_owed": {record: left[record] for record in sorted(entries) if record in left},
     }

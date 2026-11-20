@@ -156,3 +156,119 @@ def test_refine_sheet_refuses_an_existing_file(
     assert code != cli.EXIT_OK
     assert "exists" in refused["refused"]
     assert sheet.read_text(encoding="utf-8") == "mine"
+
+
+def _filled(sheet: Path, criterion: str = "It works.") -> None:
+    text = sheet.read_text(encoding="utf-8")
+    sheet.write_text(
+        text.replace("acceptance:\n- \n", f"acceptance:\n- {criterion}\n"), encoding="utf-8"
+    )
+
+
+def test_apply_reports_shaped_records_apart_from_the_ready_ones(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = _imported(
+        tmp_path,
+        capsys,
+        [
+            _issue(1),
+            _issue(2, status="deferred"),
+            _issue(
+                3, dependencies=[{"issue_id": "smp-3", "depends_on_id": "smp-1", "type": "blocks"}]
+            ),
+        ],
+    )
+    sheet = tmp_path / "sheet.txt"
+    _run(capsys, "refine-sheet", str(ledger), "--out", str(sheet))
+    _filled(sheet)
+
+    code, applied = _run(capsys, "apply-sheet", str(ledger), str(sheet))
+
+    assert code == cli.EXIT_OK, applied
+    assert applied["shaped"] == ["smp-1", "smp-2", "smp-3"]
+    assert applied["ready"] == ["smp-1"]
+
+
+def test_an_in_progress_record_with_no_holder_is_held_out_of_ready_until_claimed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    capsys.readouterr()
+    export = tmp_path / "issues.jsonl"
+    issues = [_issue(4, status="in_progress", acceptance_criteria="It works.", issue_type="task")]
+    export.write_text("".join(json.dumps(issue) + "\n" for issue in issues), encoding="utf-8")
+    ledger = tmp_path / "ledger"
+
+    _, report = _run(capsys, "import", str(ledger), str(export), "--from", "beads")
+
+    assert report["in_progress_elsewhere"] == ["smp-4"]
+    assert _run(capsys, "ready", str(ledger))[1]["count"] == 0
+    _, blocked = _run(capsys, "blocked", str(ledger))
+    assert blocked["records"][0]["in_progress_elsewhere"] == {
+        "since": "2026-11-10T10:00:00Z",
+        "adopt": "claim smp-4",
+    }
+    code, _ = _run(capsys, "claim", str(ledger), "smp-4", "--to", "ada")
+    assert code == cli.EXIT_OK
+    _, mine = _run(capsys, "ready", str(ledger))
+    assert [(row["record"], row["holder"]["name"]) for row in mine["records"]] == [("smp-4", "ada")]
+
+
+def test_a_native_in_progress_record_with_no_holder_is_held_out_of_ready_too(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = _imported(tmp_path, capsys, [_issue(4, acceptance_criteria="It works.")])
+    assert _run(capsys, "ready", str(ledger))[1]["count"] == 1
+
+    _run(capsys, "update", str(ledger), "smp-4", "--status", "in_progress")
+
+    assert _run(capsys, "ready", str(ledger))[1]["count"] == 0
+    _, blocked = _run(capsys, "blocked", str(ledger))
+    assert blocked["records"][0]["in_progress_elsewhere"]["adopt"] == "claim smp-4"
+
+
+def test_an_imported_assignee_holds_the_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    issue = _issue(4, status="in_progress", assignee="ada", acceptance_criteria="It works.")
+    ledger = _imported(tmp_path, capsys, [issue])
+
+    _, ready = _run(capsys, "ready", str(ledger))
+
+    assert [(row["record"], row["holder"]["name"]) for row in ready["records"]] == [
+        ("smp-4", "ada")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("description", "context", "kept"),
+    [
+        ("Intro line.\n### Steps\n1. Run it.", "", "### Steps\n1. Run it."),
+        ("## Notes\nKeep me.", "Why it matters.", "## Notes\nKeep me."),
+        ("", "Why it matters.", ""),
+    ],
+)
+def test_apply_keeps_the_imported_description(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    description: str,
+    context: str,
+    kept: str,
+) -> None:
+    ledger = _imported(tmp_path, capsys, [_issue(1, description=description)])
+    sheet = tmp_path / "sheet.txt"
+    _run(capsys, "refine-sheet", str(ledger), "--out", str(sheet))
+    text = sheet.read_text(encoding="utf-8")
+    if context:
+        text = text.replace("context: \n", f"context: {context}\n")
+    sheet.write_text(
+        text.replace("acceptance:\n- \n", "acceptance:\n- It works.\n"), encoding="utf-8"
+    )
+
+    code, applied = _run(capsys, "apply-sheet", str(ledger), str(sheet))
+
+    assert code == cli.EXIT_OK, applied
+    assert applied["ready"] == ["smp-1"]
+    _, shown = _run(capsys, "show", str(ledger), "smp-1")
+    assert kept in shown["fields"]["description"]
+    assert shown["fields"]["description"].startswith("## Context\n")

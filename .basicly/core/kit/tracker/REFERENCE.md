@@ -250,8 +250,9 @@ Apply a filled refine sheet in one command. Each line that starts with a dash un
 one criterion.
 It refuses the whole sheet, naming each id, when an acceptance list is still empty or an id is not
 in the ledger, or when the sheet names no record. A task, bug or chore with exactly one criterion
-gets `size=small` and is ready at once; the report lists the records that still owe a section,
-such as a review. A sheet that applied is removed.
+gets `size=small`. The report lists the records the sheet shaped, the ones the scheduler now ranks
+ready (a blocked, deferred or parent record is shaped but not ready), and the records that still
+owe a section, such as a review. A sheet that applied is removed.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py apply-sheet .basicly/ledger
@@ -407,7 +408,8 @@ python3 .basicly/kit/tracker/cli.py sync --vault path/to/vault.git
 ### ready
 
 The ranked records that can be worked on now. It leaves out a record labelled `refine`,
-and a record created under the current rule that fails `dor`. Each row names its `holder`
+a record created under the current rule that fails `dor`, and an `in_progress` record that no
+one holds, which someone else may be working on. Each row names its `holder`
 when someone has reserved it, with `stale` when the record had no event for `stale_days`
 (14 by default, set in `template.json`) and `contested` when two people reserved it on
 different branches. `--mine` lists only the records you hold.
@@ -418,7 +420,9 @@ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger --limit 10
 
 ### blocked
 
-Each record that is not ready, and what holds it.
+Each record that is not ready, and what holds it. An `in_progress` record that no one holds
+shows `in_progress_elsewhere`: since when it is in progress, and the `claim` command that adopts
+it.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py blocked .basicly/ledger

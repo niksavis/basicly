@@ -190,7 +190,8 @@ def blocked(directory: Path | str) -> dict[str, object]:
         view = views[record]
         if view.tombstoned or not differential.is_dispatchable(view.status, vocabulary):
             continue
-        if differential.is_ready(view, views, children, vocabulary):
+        adrift = scheduler.elsewhere(states[record])
+        if differential.is_ready(view, views, children, vocabulary) and not adrift:
             continue
         rows.append({
             "record": record,
@@ -198,8 +199,23 @@ def blocked(directory: Path | str) -> dict[str, object]:
             "status": view.status,
             "blocked_by": _open_blockers(view, views, vocabulary),
             "children": differential.open_children(record, views, children, vocabulary),
+            **(_elsewhere(record, found) if adrift else {}),
         })
     return vault_pending.annotate(directory, {"count": len(rows), "records": rows})
+
+
+def _elsewhere(record: str, found: Any) -> dict[str, object]:
+    since = ""
+    for event in found:
+        if event.record == record and event.kind == "status":
+            started = event.payload.get("status") == "in_progress"
+            since = str(event.payload.get("updated_at") or event.ts) if started else ""
+    return {
+        "in_progress_elsewhere": {
+            "since": since,
+            "adopt": f"claim {record}",
+        }
+    }
 
 
 def _open_blockers(view: Any, views: Mapping[str, Any], vocabulary: Any) -> list:

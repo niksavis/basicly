@@ -156,9 +156,13 @@ def normalize(raw: Mapping[str, object]) -> tuple[dict[str, object] | None, str]
 SMALL_TYPES = ("task", "bug", "chore")
 
 
+def _has_context(description: str) -> bool:
+    return any(line.strip() == "## Context" for line in description.splitlines())
+
+
 def _shaped(record: dict[str, object]) -> dict[str, object]:
     description = record.get("description")
-    if isinstance(description, str) and description.strip() and "## " not in description:
+    if isinstance(description, str) and description.strip() and not _has_context(description):
         record["description"] = f"## Context\n{description.strip()}"
     accepted = record.get("acceptance_criteria")
     lines = accepted.splitlines() if isinstance(accepted, str) else []

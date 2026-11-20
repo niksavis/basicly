@@ -259,10 +259,12 @@ def import_backlog(
 
 def _ready_summary(snapshot: Any, imported: list, directory: Path | str) -> dict[str, object]:
     wanted = set(imported)
-    small, owing = [], []
+    small, owing, elsewhere = [], [], []
     for record in snapshot.records:
         if not isinstance(record, dict) or record.get("id") not in wanted:
             continue
+        if record.get("status") == "in_progress" and not record.get("assignee"):
+            elsewhere.append(record["id"])
         if record.get("size") == "small":
             small.append(record["id"])
         elif record.get("status") != "closed" and not record.get("acceptance_criteria"):
@@ -270,5 +272,6 @@ def _ready_summary(snapshot: Any, imported: list, directory: Path | str) -> dict
     return {
         "small": sorted(small),
         "needs_criteria": sorted(owing),
+        "in_progress_elsewhere": sorted(elsewhere),
         "next": f"refine-sheet {directory}" if owing else "ready",
     }
