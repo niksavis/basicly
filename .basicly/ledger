@@ -1,0 +1,12 @@
+{
+  "archive": "ledger-archive",
+  "files": {
+    "events-0001.jsonl": "95fccfb29773c36a569f15886f78289e11f6605003747bae5a069c209ae28b3d",
+    "pending-main.jsonl": "e582421eee9ebda586bf6b285760c90483ed4de5e8d11383c6af88da8d50f5e7",
+    "template.json": "4ac46a0e04e6465a5a542c534962391d356d11c64f69f5893336174507bc4bf7"
+  },
+  "notice": "Local history is archived and frozen; use basicly-tracker status and configured vault commands.",
+  "prefix": "basicly",
+  "schema": "basicly.tracker.frozen-ledger.v1",
+  "vault_digest": "e91ef3b24d99233494ae583cd284dbfe901c3674071d0cf4d2de5652283aa642"
+}
