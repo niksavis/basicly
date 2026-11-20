@@ -60,6 +60,7 @@ module docstring, and gated by `.scripts/docs_claims.py`.
 | `unsplit-loop-guard` | `pretooluse` | `claude` | [`unsplit-loop-guard.py`](unsplit-loop-guard.py) | Refuse a for-loop over an unsplit scalar (Claude Code PreToolUse hook, basicly-m2g3). |
 | `pipe-status-guard` | `pretooluse` | `claude` | [`pipe-status-guard.py`](pipe-status-guard.py) | Refuse reading a pipeline's exit status when a filter ends it (PreToolUse, xkqxp9). |
 | `pkill-self-match` | `pretooluse` | `claude` | [`pkill-self-match.py`](pkill-self-match.py) | Refuse pkill -f or pgrep -f whose pattern matches the command's own shell (PreToolUse, pm1dzrp). |
+| `lefthook-guard` | `pretooluse` | `claude` | [`lefthook-guard.py`](lefthook-guard.py) | Refuse a bare lefthook run or install that rewrites the shared git hooks (PreToolUse, qpr2xmr.3.32). |
 | `bare-var-guard` | `pretooluse` | `claude` | [`bare-var-guard.py`](bare-var-guard.py) | Refuse a command whose head is a bare `$VAR` that same command assigned a phrase. |
 | `rg-replace-guard` | `pretooluse` | `claude` | [`rg-replace-guard.py`](rg-replace-guard.py) | Refuse an `rg` short-flag cluster that swallows `-r`'s replacement value. |
 | `discard-guard` | `pretooluse` | `claude` | [`discard-guard.py`](discard-guard.py) | Refuse a shell command that discards uncommitted work unless it names a fresh approval (basicly-qpr2xmr.3.24). |

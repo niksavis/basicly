@@ -186,6 +186,12 @@ hooks:
     stage: pretooluse
     manager: claude
     matcher: Bash
+  - id: lefthook-guard
+    description: "Refuse a bare lefthook run or install that rewrites the shared git hooks (PreToolUse, qpr2xmr.3.32)."
+    script: lefthook-guard.py
+    stage: pretooluse
+    manager: claude
+    matcher: Bash
   # zsh does not word-split an unquoted expansion, so `W="uv run x --"; $W a b` looks for
   # one command literally named `uv run x --`, exits 127, and lets the chain run on. A
   # consumer who had read the always-on rule first still hit it eight times in a row

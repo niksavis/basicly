@@ -40,17 +40,20 @@ basicly-claude-pretooluse:
           [], "matcher": "Bash"}, {"id": "pkill-self-match", "script": ".basicly/core/hooks/pkill-self-match.py",
           "stage": "pretooluse", "pass_filenames": false, "always_run": false, "files":
           "", "manager": "claude", "technologies": [], "matcher": "Bash"}, {"id":
-          "bare-var-guard", "script": ".basicly/core/hooks/bare-var-guard.py", "stage":
+          "lefthook-guard", "script": ".basicly/core/hooks/lefthook-guard.py", "stage":
           "pretooluse", "pass_filenames": false, "always_run": false, "files": "",
-          "manager": "claude", "technologies": [], "matcher": "Bash"}, {"id": "rg-replace-guard",
-          "script": ".basicly/core/hooks/rg-replace-guard.py", "stage": "pretooluse",
+          "manager": "claude", "technologies": [], "matcher": "Bash"}, {"id": "bare-var-guard",
+          "script": ".basicly/core/hooks/bare-var-guard.py", "stage": "pretooluse",
           "pass_filenames": false, "always_run": false, "files": "", "manager": "claude",
-          "technologies": [], "matcher": "Bash"}, {"id": "discard-guard", "script":
-          ".basicly/core/hooks/discard-guard.py", "stage": "pretooluse", "pass_filenames":
+          "technologies": [], "matcher": "Bash"}, {"id": "rg-replace-guard", "script":
+          ".basicly/core/hooks/rg-replace-guard.py", "stage": "pretooluse", "pass_filenames":
           false, "always_run": false, "files": "", "manager": "claude", "technologies":
-          [], "matcher": "Bash"}, {"id": "headroom-guard", "script": ".basicly/core/hooks/headroom-guard.py",
+          [], "matcher": "Bash"}, {"id": "discard-guard", "script": ".basicly/core/hooks/discard-guard.py",
           "stage": "pretooluse", "pass_filenames": false, "always_run": false, "files":
-          "", "manager": "claude", "technologies": [], "matcher": ""}]'
+          "", "manager": "claude", "technologies": [], "matcher": "Bash"}, {"id":
+          "headroom-guard", "script": ".basicly/core/hooks/headroom-guard.py", "stage":
+          "pretooluse", "pass_filenames": false, "always_run": false, "files": "",
+          "manager": "claude", "technologies": [], "matcher": ""}]'
         BASICLY_FOLD_COMMAND: '["uvx", "--from", "https://github.com/niksavis/basicly/releases/download/v0.46.6/basicly-0.46.6-py3-none-any.whl",
           "basicly", "tracker", "fold"]'
 basicly-codex-pretooluse:
