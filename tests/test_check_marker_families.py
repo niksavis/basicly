@@ -227,12 +227,13 @@ def test_the_retired_family_has_rows_and_no_producer_in_this_repository() -> Non
     assert (len(LIVE), len(RETIRED)) == (11, 1)
 
 
-def test_the_gate_runs_on_this_repository_and_reports_its_two_counts() -> None:
+@pytest.mark.live_ledger
+def test_the_gate_runs_on_this_repository_and_reports_its_two_counts(work_repo: Path) -> None:
     completed = subprocess.run(  # nosec B603 B607
-        [sys.executable, str(SCRIPT)],
+        [sys.executable, str(work_repo / SCRIPT.relative_to(REPO_ROOT))],
         capture_output=True,
         text=True,
-        cwd=REPO_ROOT,
+        cwd=work_repo,
         check=False,
     )
 

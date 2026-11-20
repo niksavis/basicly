@@ -12,6 +12,7 @@ import pytest
 from basicly import runner, session
 from basicly.checkout import COLOUR_ENV_FORCING, GIT_ENV_KEPT
 from tests import ledger_guard
+from tests.committed_ledger import committed_ledger
 
 pytest_plugins = ["tests.pytest_shard"]
 
@@ -163,6 +164,18 @@ def _reset_process_globals():
 
 
 @pytest.fixture(autouse=True)
+def _outside_the_live_repository(
+    request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    if request.node.get_closest_marker("live_ledger"):
+        return
+    if request.node.get_closest_marker("repository_cwd"):
+        return
+    if Path.cwd().resolve() == REPO_ROOT.resolve():
+        request.getfixturevalue("monkeypatch").chdir(tmp_path_factory.mktemp("cwd"))
+
+
+@pytest.fixture(autouse=True)
 def _the_live_ledger_is_never_written(request: pytest.FixtureRequest) -> Iterator[None]:
 
     with ledger_guard.watching(LIVE_LEDGER, request.node.nodeid) as watch:
@@ -198,6 +211,8 @@ def _tracked_repo_files() -> tuple[Path, ...]:
 
 
 WORK_REPO_LEFT_OUT = ("tests",)
+LIVE_TRACKER_PATHS = frozenset({".basicly-tracker.toml"})
+LIVE_TRACKER_DIRS = frozenset({(".basicly", "ledger"), (".basicly", "ledger-archive")})
 
 
 @pytest.fixture
@@ -208,7 +223,7 @@ def work_repo(
     work = tmp_path / "repo"
     for relative in _tracked_repo_files:
         if relative.parts[0] in WORK_REPO_LEFT_OUT or (
-            relative.parts[:2] == (".basicly", "ledger")
+            (relative.as_posix() in LIVE_TRACKER_PATHS or relative.parts[:2] in LIVE_TRACKER_DIRS)
             and not request.node.get_closest_marker("live_ledger")
         ):
             continue
@@ -217,6 +232,12 @@ def work_repo(
         shutil.copy2(REPO_ROOT / relative, destination)
     if not request.node.get_closest_marker("live_ledger"):
         shutil.copytree(REPO_ROOT / "tests/fixtures/work_repo/ledger", work / ".basicly/ledger")
+    elif (REPO_ROOT / ".basicly/ledger").is_file():
+        for name in LIVE_TRACKER_PATHS:
+            (work / name).unlink(missing_ok=True)
+        (work / ".basicly/ledger").unlink()
+        shutil.rmtree(work / ".basicly/ledger-archive")
+        shutil.copytree(committed_ledger(REPO_ROOT), work / ".basicly/ledger")
     artifacts = REPO_ROOT / "build/lefthook"
     if artifacts.is_dir():
         shutil.copytree(artifacts, work / "build/lefthook")

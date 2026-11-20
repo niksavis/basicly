@@ -17,6 +17,8 @@ from tests.markdownlint_runtime_fixture import (
 )
 from tests.test_cli import run_basicly_consumer
 
+pytestmark = pytest.mark.repository_cwd
+
 
 def _files(root: Path) -> dict[str, bytes]:
     return {

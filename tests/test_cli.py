@@ -28,7 +28,7 @@ from basicly.config import (
 )
 from basicly.scaffolds import CONSUMER_CI_WORKFLOW, GENERATED_IGNORES, VSCODE_TASKS_JSON
 from basicly.skills import GENERATED_MARKER
-from tests.conftest import WORK_REPO_LEFT_OUT
+from tests.conftest import LIVE_TRACKER_DIRS, LIVE_TRACKER_PATHS, WORK_REPO_LEFT_OUT
 from tests.markdownlint_runtime_fixture import provision_markdownlint_double
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -93,7 +93,8 @@ def test_the_work_repo_fixture_copies_the_tracked_files_but_the_test_suite(
         for name in listing.stdout.split("\0")
         if name
         and name.split("/", 1)[0] not in WORK_REPO_LEFT_OUT
-        and not name.startswith(".basicly/ledger/")
+        and name not in LIVE_TRACKER_PATHS
+        and tuple(name.split("/")[:2]) not in LIVE_TRACKER_DIRS
     }
     tracked.update(
         f".basicly/ledger/{path.name}"

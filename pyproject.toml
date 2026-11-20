@@ -42,6 +42,7 @@ dev = [
 [tool.pytest.ini_options]
 markers = [
   "live_ledger: assertions whose input includes the changing repository ledger",
+  "repository_cwd: tests that run with the repository root as the working directory",
   "fresh_runtime: packaging checks that resolve build dependencies outside the cached runtime",
 ]
 pythonpath = ["src", "."]

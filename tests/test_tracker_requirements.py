@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from basicly import merge, policy, tracker, tracker_paths, verify
+from basicly import merge, policy, tracker, verify
 from tests import flipped_tracker
+from tests.committed_ledger import committed_ledger
 from tests.plan_fixtures import install_kit
 from tests.tracker_process_fixture import recorded_review
 
@@ -149,7 +150,7 @@ def test_r5_the_gate_resolves_an_imported_slug_id_and_a_dotted_child() -> None:
 def test_r5_the_ids_this_repo_mints_carry_no_internal_hyphen() -> None:
 
     seen = set()
-    for log in sorted((REPO_ROOT / tracker_paths.LEDGER_DIR_NAME).glob("events-*.jsonl")):
+    for log in sorted(committed_ledger(REPO_ROOT).glob("events-*.jsonl")):
         for line in log.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue

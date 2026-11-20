@@ -14,6 +14,8 @@ from basicly import cli
 from basicly.scaffolds import UVX_COMMAND
 from tests.kit_deployment_helpers import KIT_RELATIVE, REPO_ROOT, _load
 
+pytestmark = pytest.mark.repository_cwd
+
 INSTALLER = cli.TRACKER_HOOK_INSTALLER
 
 

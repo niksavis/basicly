@@ -4,10 +4,11 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    import pytest
+import pytest
+
+pytestmark = pytest.mark.repository_cwd
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "check_mermaid.py"

@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+from tests.committed_ledger import committed_ledger
+
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 BOARD_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "board"
@@ -117,7 +119,7 @@ def test_a_legacy_link_still_folds_and_a_new_one_is_refused(tmp_path: Path) -> N
 @pytest.mark.live_ledger
 def test_every_ledger_record_has_a_declared_type() -> None:
 
-    found, quarantined = events.read_events(REPO_ROOT / ".basicly" / "ledger")
+    found, quarantined = events.read_events(committed_ledger(REPO_ROOT))
     assert quarantined == []
     states = events.fold(found).records
     undeclared = sorted(

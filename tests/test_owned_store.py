@@ -83,25 +83,25 @@ def test_a_repo_with_no_kit_installed_is_refused_rather_than_degraded(tmp_path: 
         owned_store.kit(tmp_path)
 
 
-def test_the_filesystem_is_asked_before_the_cache(tmp_path: Path) -> None:
+def test_the_filesystem_is_asked_before_the_cache(tmp_path: Path, work_repo: Path) -> None:
 
-    assert owned_store.kit(REPO_ROOT).events is not None
+    assert owned_store.kit(work_repo).events is not None
 
     with pytest.raises(TrackerDivergenceError):
         owned_store.kit(tmp_path)
 
 
-def test_one_kit_module_object_per_repo_however_it_is_reached() -> None:
+def test_one_kit_module_object_per_repo_however_it_is_reached(work_repo: Path) -> None:
 
-    assert owned_store.kit(REPO_ROOT) is owned_store.kit(REPO_ROOT)
-    assert owned_store.kit(REPO_ROOT, owned_store.DEFAULT_KIT_MODULE) is owned_store.kit(REPO_ROOT)
+    assert owned_store.kit(work_repo) is owned_store.kit(work_repo)
+    assert owned_store.kit(work_repo, owned_store.DEFAULT_KIT_MODULE) is owned_store.kit(work_repo)
 
 
-def test_a_kit_module_beside_the_differential_is_reached_by_name() -> None:
-    scheduler = owned_store.kit(REPO_ROOT, owned_store.SCHEDULER_KIT_MODULE)
+def test_a_kit_module_beside_the_differential_is_reached_by_name(work_repo: Path) -> None:
+    scheduler = owned_store.kit(work_repo, owned_store.SCHEDULER_KIT_MODULE)
 
-    assert scheduler is not owned_store.kit(REPO_ROOT)
-    assert scheduler is owned_store.kit(REPO_ROOT, owned_store.SCHEDULER_KIT_MODULE)
+    assert scheduler is not owned_store.kit(work_repo)
+    assert scheduler is owned_store.kit(work_repo, owned_store.SCHEDULER_KIT_MODULE)
 
 
 def test_a_divergence_is_a_runtime_error_a_br_caller_already_handles() -> None:

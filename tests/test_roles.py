@@ -7,6 +7,8 @@ import pytest
 from basicly import roles
 from basicly.runner import BUILTIN_RUNNERS, format_command
 
+pytestmark = pytest.mark.repository_cwd
+
 
 def _spec(family: str):
     return next(spec for spec in BUILTIN_RUNNERS if spec.name == family)

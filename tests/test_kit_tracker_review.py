@@ -30,14 +30,16 @@ def _load(path: Path, name: str) -> Any:
 cli = _load(KIT_DIR / "cli.py", "tracker_cli_review")
 
 
-def _run(capsys: pytest.CaptureFixture[str], *argv: str) -> dict[str, Any]:
+def _run(capsys: pytest.CaptureFixture[str], *argv: str, kit: Any = cli) -> dict[str, Any]:
     capsys.readouterr()
-    cli.main(list(argv))
+    kit.main(list(argv))
     return json.loads(capsys.readouterr().out)
 
 
-def _create(capsys: pytest.CaptureFixture[str], ledger: Path, *extra: str) -> str:
-    made = _run(capsys, "create", str(ledger), "--prefix", "acme", "--title", "draft", *extra)
+def _create(capsys: pytest.CaptureFixture[str], ledger: Path, *extra: str, kit: Any = cli) -> str:
+    made = _run(
+        capsys, "create", str(ledger), "--prefix", "acme", "--title", "draft", *extra, kit=kit
+    )
     return made["record"]
 
 
@@ -299,14 +301,16 @@ def _evidence_shown(refused: str, verb: str) -> dict[str, Any]:
     return json.loads(words[words.index("--evidence") + 1])
 
 
+@pytest.mark.live_ledger
 def test_a_claim_refusal_names_the_review_then_the_claim_command(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    kit = cli
     ledger = tmp_path / "ledger"
-    record = _create(capsys, ledger)
+    record = _create(capsys, ledger, kit=kit)
     place = os.path.relpath(ledger)
 
-    refused = _run(capsys, "claim", str(ledger), record, "--to", "sam")["refused"]
+    refused = _run(capsys, "claim", str(ledger), record, "--to", "sam", kit=kit)["refused"]
 
     review, claim = f"review {place} {record} --evidence", f"claim {place} {record}"
     assert review in refused and claim in refused
@@ -315,17 +319,19 @@ def test_a_claim_refusal_names_the_review_then_the_claim_command(
     assert set(shown["checks"][0]) == {"criterion", "command", "expected"}
 
 
+@pytest.mark.live_ledger
 def test_a_close_refusal_names_the_confirm_then_the_close_command(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    kit = cli
     monkeypatch.setenv("AI_AGENT", "owner")
     ledger = tmp_path / "ledger"
-    record = _create(capsys, ledger, *SHAPED)
-    recorded_review(cli, ledger, record)
-    _run(capsys, "claim", str(ledger), record, "--to", "sam")
+    record = _create(capsys, ledger, *SHAPED, kit=kit)
+    recorded_review(kit, ledger, record)
+    _run(capsys, "claim", str(ledger), record, "--to", "sam", kit=kit)
     place = os.path.relpath(ledger)
 
-    refused = _run(capsys, "close", str(ledger), record, "--reason", "done")["refused"]
+    refused = _run(capsys, "close", str(ledger), record, "--reason", "done", kit=kit)["refused"]
 
     confirm, close = f"confirm {place} {record} --evidence", f"close {place} {record} --reason"
     assert confirm in refused and close in refused

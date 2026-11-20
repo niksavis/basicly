@@ -115,11 +115,11 @@ def test_the_ledger_is_folded_once_and_no_subprocess_is_spawned(
 
 
 @pytest.mark.live_ledger
-def test_a_build_on_this_repos_corpus_stays_under_the_cap() -> None:
+def test_a_build_on_this_repos_corpus_stays_under_the_cap(work_repo: Path) -> None:
     samples = []
     for _ in range(5):
         started = time.perf_counter()
-        board_snapshot.build_document(REPO_ROOT)
+        board_snapshot.build_document(work_repo)
         samples.append(time.perf_counter() - started)
     assert sorted(samples)[2] < BUILD_CAP_S, samples
 

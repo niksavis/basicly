@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from basicly import tracker
+from tests.committed_ledger import committed_ledger
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PARENT = "edge-1"
@@ -14,13 +15,13 @@ CHILD = "edge-1.1"
 PARENT_CHILD = "parent-child"
 
 
-def _kit() -> Any:
-    return tracker.kit(REPO_ROOT)
+def _kit(root: Path = REPO_ROOT) -> Any:
+    return tracker.kit(root)
 
 
-def _one_relation_stated_twice(ledger: Path) -> Any:
+def _one_relation_stated_twice(ledger: Path, root: Path) -> Any:
 
-    kit = _kit()
+    kit = _kit(root)
     events, migrate = kit.events, kit.migrate
     relation = {
         migrate.EDGE_FROM: CHILD,
@@ -47,9 +48,9 @@ def _one_relation_stated_twice(ledger: Path) -> Any:
     return kit
 
 
-def test_two_events_stating_one_relation_fold_to_one_edge(tmp_path: Path) -> None:
+def test_two_events_stating_one_relation_fold_to_one_edge(tmp_path: Path, work_repo: Path) -> None:
 
-    kit = _one_relation_stated_twice(tmp_path)
+    kit = _one_relation_stated_twice(tmp_path, work_repo)
     collected = kit.read_ledger(tmp_path)
 
     stated = [event for event in collected if event.kind == kit.migrate.KIND_EDGE]
@@ -59,9 +60,11 @@ def test_two_events_stating_one_relation_fold_to_one_edge(tmp_path: Path) -> Non
     assert views[CHILD].dependencies == (kit.Edge(target=PARENT, type=PARENT_CHILD),)
 
 
-def test_the_surviving_edge_carries_the_stronger_provenance_label(tmp_path: Path) -> None:
+def test_the_surviving_edge_carries_the_stronger_provenance_label(
+    tmp_path: Path, work_repo: Path
+) -> None:
 
-    kit = _kit()
+    kit = _kit(work_repo)
     events, provenance = kit.events, kit.provenance
     key = provenance.EdgeKey(source=CHILD, edge_type=PARENT_CHILD, target=PARENT)
     events.append(
@@ -89,7 +92,7 @@ def test_the_committed_ledger_folds_every_stated_relation_to_one_row() -> None:
 
     kit = _kit()
     labels = kit.provenance.labels
-    collected = kit.read_ledger(tracker.ledger_dir(REPO_ROOT))
+    collected = kit.read_ledger(committed_ledger(REPO_ROOT))
     edge_kinds = (kit.migrate.KIND_EDGE, kit.events.KIND_EDGE_RETRACTED)
 
     stated: collections.Counter[tuple[str, object, object]] = collections.Counter()

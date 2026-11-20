@@ -15,6 +15,8 @@ from typing import Any
 
 import pytest
 
+from tests.committed_ledger import committed_ledger
+
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 EVENTS_SOURCE = KIT_DIR / "events.py"
@@ -1094,7 +1096,7 @@ _KIND_CONSTANT = re.compile(r"^KIND_[A-Z0-9_]+$")
 @pytest.mark.live_ledger
 def test_the_live_ledger_holds_no_kind_outside_the_closed_set() -> None:
 
-    parsed, quarantined = events.read_events(REPO_ROOT / ".basicly" / "ledger")
+    parsed, quarantined = events.read_events(committed_ledger(REPO_ROOT))
     kinds = {event.kind for event in parsed}
     folded = events.fold(parsed)
 
