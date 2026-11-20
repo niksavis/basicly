@@ -1,0 +1,1 @@
+- `basicly verify --issue` and dispatch spend recording now write through the vault when `.basicly/ledger` is a vault pointer file, instead of failing with "File exists" after a repository moved its tracker to a vault.

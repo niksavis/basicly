@@ -461,13 +461,8 @@ def add_artifact(repo_root: Path, issue_id: str, kind: str, body: object) -> Non
             ARTIFACT_BODY_KEY: body,
         },
     )
-    ledger = ledger_dir(repo_root)
     try:
-        with events.LedgerLock(ledger) as lock:
-            owned_write.refuse_a_write_to_an_absent_record(
-                kit_module, ledger, f"the {kind} artifact for {issue_id}", [draft]
-            )
-            events.append(ledger, [draft], redact=redact.redact_committed, held_lock=lock)
+        owned_write.land_drafts(repo_root, [draft], f"the {kind} artifact for {issue_id}")
     except (events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(
             f"the {kind} artifact for {issue_id} did not reach the owned ledger: {exc}"
@@ -497,13 +492,8 @@ def add_dispatch(repo_root: Path, issue_id: str, reading: Mapping[str, object]) 
         events.KIND_DISPATCH,
         {kit_module.migrate.PROVENANCE_KEY: owned_write.OWNED_PROVENANCE, **reading},
     )
-    ledger = ledger_dir(repo_root)
     try:
-        with events.LedgerLock(ledger) as lock:
-            owned_write.refuse_a_write_to_an_absent_record(
-                kit_module, ledger, f"the dispatch spend for {issue_id}", [draft]
-            )
-            events.append(ledger, [draft], redact=redact.redact_committed, held_lock=lock)
+        owned_write.land_drafts(repo_root, [draft], f"the dispatch spend for {issue_id}")
     except (events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(
             f"the dispatch spend for {issue_id} did not reach the owned ledger: {exc}"
