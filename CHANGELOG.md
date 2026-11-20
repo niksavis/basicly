@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This minor release lands lanes on CI, gates a release on a consumer proof and makes the tracker easier to adopt. `basicly worktree merge --mode ci` proves a lane on GitHub runners under a landing lock, and main's push reuses that run (basicly-lzdvz7a, basicly-br1a0vq, basicly-1i3ggc6). `basicly release` refuses a cut until `basicly consumer-proof` passes on the exact commit (basicly-n5k3jv7). The vault migration removes personal data by default, and an imported beads backlog becomes workable in two commands (basicly-4zsx3bk.2.1, basicly-4zsx3bk.8). New hooks stop an agent from discarding uncommitted work, killing its own shell, or rewriting the repository git config or the shared git hooks (basicly-qpr2xmr.3.24, basicly-pm1dzrp, basicly-qpr2xmr.3.26, basicly-qpr2xmr.3.32). Every instruction file carries the Agentic Kanban rules (basicly-3c7haho).
+
+- Landing: CI-proved landings, a landing lock, and a new lane that gets its Lefthook artifact (basicly-lzdvz7a, basicly-br1a0vq, basicly-6c9ez7o).
+- Release: a consumer proof of the exact commit before every cut (basicly-n5k3jv7).
+- Tracker: safe migration defaults, beads import and refine sheets, mark-ready, and refusals that name the next command without a machine path (basicly-4zsx3bk.2.1, basicly-4zsx3bk.8, basicly-99qfiy3, basicly-lool8t1).
+- Safety hooks: discard guard, pkill self-match guard, git config guard and bare Lefthook guard (basicly-qpr2xmr.3.24, basicly-pm1dzrp, basicly-qpr2xmr.3.26, basicly-qpr2xmr.3.32).
+- Orchestration: one status list of every session, approvals bound to the Orchestrator session, and council-backed gate decisions (basicly-qpr2xmr.3.22, basicly-g8dccqh, basicly-qpr2xmr.3.28).
+
 ## v0.46.6 - 2026-11-19
 
 Delta: v0.46.5..v0.46.6
