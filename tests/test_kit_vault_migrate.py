@@ -277,6 +277,17 @@ def test_a_rerun_over_an_unredacted_vault_copy_refuses_by_name(tmp_path: Path, b
     assert _head(bare) == before
 
 
+def test_an_email_after_an_escaped_character_is_seen_in_a_vault_copy() -> None:
+    held = [{"ledger": {"id": "acme-a1#ev-1", "payload": {"text": "x\nname@corp.example.org"}}}]
+    event = type("Event", (), {"id": "acme-a1#ev-1"})()
+    personal = vault_migrate.vault_personal
+
+    assert personal.email_scan(held) == {"other email": 1}
+    refused = personal.in_vault_copy(personal.email_scan, held, [event])
+    assert refused is not None
+    assert "other email 1" in refused
+
+
 def test_an_import_without_a_personal_data_scan_refuses_by_name(tmp_path: Path, bare: Path) -> None:
     ledger = _ledger(tmp_path / "ledger")
     before = _head(bare)

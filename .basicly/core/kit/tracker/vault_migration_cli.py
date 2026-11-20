@@ -143,11 +143,11 @@ def scanner(found: dict[str, str]) -> Callable[[Any], dict[str, int]]:
     patterns = {label: _bounded(value, label) for label, value in found.items()}
 
     def scan(lines: Any) -> dict[str, int]:
-        text = "\n".join(json.dumps(line, ensure_ascii=False) for line in lines)
+        text = vault_personal.decoded(lines)
         found = {label: len(pattern.findall(text)) for label, pattern in patterns.items()}
         found["other email"] = vault_personal.count_emails(text)
         if "home" in found:
-            found["home"] += len(HOME_FORM.findall(text.replace("\\\\", "\\")))
+            found["home"] += len(HOME_FORM.findall(text))
         return found
 
     return scan

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import json
+import importlib.util
 import re
+import sys
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 LEDGER_FIELD = "ledger"
@@ -32,9 +34,35 @@ def count_emails(text: str) -> int:
     return sum(1 for found in EMAIL.finditer(text) if _private(found))
 
 
+def _canonical() -> Any:
+    key = "basicly_tracker_kit_vault_canonical"
+    if key in sys.modules:
+        return sys.modules[key]
+    spec = importlib.util.spec_from_file_location(
+        key, Path(__file__).with_name("vault_canonical.py")
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError("vault_canonical.py is missing from beside vault_personal.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[key] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def decoded(lines: Sequence[Mapping[str, object]]) -> str:
+    found: list[str] = []
+
+    def keep(text: str) -> str:
+        found.append(text)
+        return text
+
+    for line in lines:
+        _canonical().walk(dict(line), keep)
+    return "\n".join(found)
+
+
 def email_scan(lines: Sequence[Mapping[str, object]]) -> dict[str, int]:
-    text = "\n".join(json.dumps(line, ensure_ascii=False) for line in lines)
-    return {"other email": count_emails(text)}
+    return {"other email": count_emails(decoded(lines))}
 
 
 Scan = Callable[[Sequence[Mapping[str, object]]], dict[str, int]]
