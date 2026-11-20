@@ -1,0 +1,1 @@
+- The orchestrated-session fragment names the core split (landing verify on cores 0-15, other tests on 16-31), cleanup after delivery, the state line, own-window confirmation for settings and CLAUDE.md edits, and rereading changed rules; `orch doctor` parity now also checks working rules and lessons.

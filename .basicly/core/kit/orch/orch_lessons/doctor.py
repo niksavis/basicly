@@ -25,7 +25,10 @@ COPILOT_PERMISSIONS = Path(".copilot/permissions-config.json")
 RULES_DOC_ENV = "ORCH_RULES_DOC"
 RULESET_ENV = "ORCH_RULESET"
 BUNDLED_RULESET = Path(__file__).with_name("ruleset.json")
-OWNER_LINE = re.compile(r'(?<!")\bOwner (?:rule|answer|addition)\b(?:[^.:"]*?(\d{4}-\d{2}-\d{2}))?')
+OWNER_LINE = re.compile(
+    r'(?<!")(?:\bOwner (?:rule|answer|addition)\b|\bWorking rule\b|\(lesson\b)'
+    r'(?:[^.:"]*?(\d{4}-\d{2}-\d{2}))?'
+)
 
 Runner = Callable[[list[str]], str]
 
