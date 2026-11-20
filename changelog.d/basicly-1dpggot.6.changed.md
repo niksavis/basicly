@@ -1,1 +1,0 @@
-- `orch lesson add` now requires `--scope local` or `--scope basicly` and refuses a lesson without one by name; `orch lessons export` exports only basicly-scope lessons and names the open lessons that have no scope; `orch lesson scope ID local|basicly` scopes an older lesson.

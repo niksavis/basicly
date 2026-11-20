@@ -1,1 +1,0 @@
-- **Cleanup no longer deletes a local branch whose rename did not land.** Before, `basicly worktree cleanup` compared paths with rename detection on. A lane that renamed a file counted as landed when the base held the new name but still had the old one, and cleanup deleted the local branch. It now compares with `--no-renames` and keeps that branch (basicly-uy4l48h).

@@ -1,1 +1,0 @@
-- `basicly-tracker --version` prints the package version, `basicly-tracker --help` prints one help whose command list includes `init`, and `init --scope project` writes `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` only when you pass `--with-instructions`.

@@ -1,1 +1,0 @@
-- `migrate --to-vault --freeze` removes the ledger's derived caches (`snapshot.jsonl`, `checkpoint-*.jsonl`, `.events.lock`) before it archives the ledger, so `ledger-archive` holds only tracked source files and no untracked file with a user name stays behind.

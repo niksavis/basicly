@@ -1,1 +1,0 @@
-- A tracker refusal now names the command to run next as `basicly-tracker VERB` when the tracker runs from an installed package, or as the repository-relative kit path, and never prints the machine-local install path that agents could copy into records.

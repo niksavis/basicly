@@ -1,1 +1,0 @@
-- **A landing rebuilds a conflicting lefthook.yml.** When two lanes each add a hook, the landing rebase rebuilt only declared generated files, and .basicly/lefthook.yml was not one, so the lane stopped. It is now rebuilt with basicly hooks-build --no-install, and the landing copies the Lefthook artifact in before the rebase (basicly-qpr2xmr.3.30).

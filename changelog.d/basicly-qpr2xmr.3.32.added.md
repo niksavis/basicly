@@ -1,1 +1,0 @@
-- **A bare lefthook run is refused in a basicly checkout.** A Claude Code hook refuses lefthook install, and lefthook run without --no-auto-install, because both rewrite the git hooks every worktree shares and break commit-msg. It names the safe command: python3 .basicly/core/hooks/HOOK.py FILE (basicly-qpr2xmr.3.32).

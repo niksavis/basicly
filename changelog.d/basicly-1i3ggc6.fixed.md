@@ -1,1 +1,0 @@
-- `basicly worktree merge --mode ci` now waits for a run that `gh` cannot read yet, refuses a new run on a tree whose earlier run failed or was cancelled, pushes a new `land/` branch after a changed lane, exits 1 when the base stays unverified or unpushed, and passes the landing guard; the worktree-isolation skill teaches the mode and its `--mode full` fallback.

@@ -1,1 +1,0 @@
-- In a vault repository, tracker-path-scan now scans only the events still waiting in the local queue, so an event already published to the vault no longer blocks every later commit; a queued event with a home path or the user name is still refused, and an unreadable queue is refused.

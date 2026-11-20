@@ -1,1 +1,0 @@
-- `orch approve` and `orch decide` refuse unless the calling session is the registered Orchestrator session (its Claude Code session id in the orch session store), log every call, and mark each entry with the session; `orch doctor` reports an approval or decision entry that lacks it.

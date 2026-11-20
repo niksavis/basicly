@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.47.0 - 2026-11-20
+
+Delta: v0.46.6..v0.47.0
+
 This minor release lands lanes on CI, gates a release on a consumer proof and makes the tracker easier to adopt. `basicly worktree merge --mode ci` proves a lane on GitHub runners under a landing lock, and main's push reuses that run (basicly-lzdvz7a, basicly-br1a0vq, basicly-1i3ggc6). `basicly release` refuses a cut until `basicly consumer-proof` passes on the exact commit (basicly-n5k3jv7). The vault migration removes personal data by default, and an imported beads backlog becomes workable in two commands (basicly-4zsx3bk.2.1, basicly-4zsx3bk.8). New hooks stop an agent from discarding uncommitted work, killing its own shell, or rewriting the repository git config or the shared git hooks (basicly-qpr2xmr.3.24, basicly-pm1dzrp, basicly-qpr2xmr.3.26, basicly-qpr2xmr.3.32). Every instruction file carries the Agentic Kanban rules (basicly-3c7haho).
 
 - Landing: CI-proved landings, a landing lock, and a new lane that gets its Lefthook artifact (basicly-lzdvz7a, basicly-br1a0vq, basicly-6c9ez7o).
@@ -13,6 +17,90 @@ This minor release lands lanes on CI, gates a release on a consumer proof and ma
 - Tracker: safe migration defaults, beads import and refine sheets, mark-ready, and refusals that name the next command without a machine path (basicly-4zsx3bk.2.1, basicly-4zsx3bk.8, basicly-99qfiy3, basicly-lool8t1).
 - Safety hooks: discard guard, pkill self-match guard, git config guard and bare Lefthook guard (basicly-qpr2xmr.3.24, basicly-pm1dzrp, basicly-qpr2xmr.3.26, basicly-qpr2xmr.3.32).
 - Orchestration: one status list of every session, approvals bound to the Orchestrator session, and council-backed gate decisions (basicly-qpr2xmr.3.22, basicly-g8dccqh, basicly-qpr2xmr.3.28).
+
+### Added
+
+- Every projected instruction file carries the Agentic Kanban rules: done means delivered, stop starting and start finishing, work-in-progress limits per agent and per repository, oldest first, pull, small batches, visible and measured flow, stop the line, help when idle, and explicit policy; the orchestrator kit points to them. (basicly-3c7haho)
+
+- The best-practices audit fetches the Opus 5.5 prompting guide and checks six of its rules on catalog text: no reasoning-in-reply or think-carefully instructions, a checklist for long tasks, named early stops, a confirmation step for risky actions, and tagged pasted text. (basicly-3i052o2)
+
+- An imported beads backlog becomes workable in two commands: the import puts each description under `## Context` and marks a task, bug or chore with one acceptance criterion `size=small`; `refine-sheet` writes a sheet of the records still missing criteria and `apply-sheet` applies the filled sheet in one step, refusing empty lines by id, so the definition of ready stays enforced. (basicly-4zsx3bk.8)
+
+- `swarm.py tally` and `swarm.py check` print one Mermaid diagram of their result, drawn from the result files: the question, each voter or lens, each vote or finding, the decision and the dissent. A voter or lens that did not run shows as not run. The swarm and council skills put it in the final report only. (basicly-86mmya6)
+
+- The tracker kit's `mark-ready RECORD` records that an in_progress record is built and waits for delivery, refused by name for a record that is not in progress, held by someone else or already marked (`--again`, `--clear`); `list --ready-for-delivery` prints the marking time, oldest first. A vault repository refuses it and names `comment` instead. (basicly-99qfiy3)
+
+- `basicly worktree merge` now takes a landing lock: a second landing is refused with the holder's lane, record and lock age, or waits with `--wait MINUTES`; a lock past its 60-minute limit is reported by name and removed only with `basicly worktree unlock --lane LANE`. (basicly-br1a0vq)
+
+- `basicly worktree merge --mode ci` proves a lane on GitHub runners instead of a local full verify: it runs only the checks that read tracker records locally, pushes the rebased lane to a `land/` branch, waits for a first-attempt green `quality-gates` run, merges, pushes the base and deletes the branch; main's push run then reuses that run. (basicly-lzdvz7a)
+
+- `basicly consumer-proof` builds a wheel of HEAD and, in a fresh clone of each `[[release.consumers]]` entry of `basicly.toml`, runs install, a real commit through the consumer's hooks and the consumer's own CI commands. `basicly release` refuses a cut until a passing proof of the exact commit is recorded. (basicly-n5k3jv7)
+
+- A new Claude hook, `pkill-self-match`, refuses `pkill -f` or `pgrep -f` with a plain pattern, which would match and kill the command's own shell. It names the bracket form (`'[m]argin'`) and kill by PID. The cli-tools skill gains four Code Mode lines: Read before edit, no self-matching pkill, a new scratch folder, and Poll instead of sleep loops. (basicly-pm1dzrp)
+
+- `orch status` lists every session in at most 40 columns, with its age and one of working, quiet, stale, dead or needs you, and first counts the open questions to the person. Sessions write their state with `orch state set` and through the Claude Code and Codex hooks; `orch ask` opens a question and `orch approve` closes it. (basicly-qpr2xmr.3.22)
+
+- **A shell command that discards uncommitted work is refused.** A Claude Code hook refuses git checkout --, git restore without --staged, git stash except list and show, git reset --hard and git clean except its dry run. A command that names a fresh approval as BASICLY_APPROVAL=record@stamp passes and is logged (basicly-qpr2xmr.3.24).
+
+- **A bare lefthook run is refused in a basicly checkout.** A Claude Code hook refuses lefthook install, and lefthook run without --no-auto-install, because both rewrite the git hooks every worktree shares and break commit-msg. It names the safe command: python3 .basicly/core/hooks/HOOK.py FILE (basicly-qpr2xmr.3.32).
+
+- `mark-ready` now works in a vault repository too: on a claimed record that was started with `update --status in_progress`, it appends the ready mark through the vault writer with no local event, with the same refusals by name; `list --ready-for-delivery` lists the vault's marked records oldest first. (basicly-ro54qhe)
+
+### Changed
+
+- The pipe-status-guard refusal also names the Code Mode REPL form: run the command with `.nothrow()` and cut its output in JavaScript, so `.exitCode` stays the command's own. (basicly-0eb0vna)
+
+- `orch lesson add` now requires `--scope local` or `--scope basicly` and refuses a lesson without one by name; `orch lessons export` exports only basicly-scope lessons and names the open lessons that have no scope; `orch lesson scope ID local|basicly` scopes an older lesson. (basicly-1dpggot.6)
+
+- `migrate --to-vault` redacts the git name, email, `Name <email>`, login, host and every email outside public domains by default (a github.com handle stays), refuses when the git identity does not resolve or a scan still finds personal data, and a rerun of a fully migrated source reports "already migrated" with exit 0 unless the vault copy holds personal data. (basicly-4zsx3bk.2.1)
+
+- `basicly-tracker --version` prints the package version, `basicly-tracker --help` prints one help whose command list includes `init`, and `init --scope project` writes `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` only when you pass `--with-instructions`. (basicly-4zsx3bk.9)
+
+- The orchestrated-session fragment names the core split (landing verify on cores 0-15, other tests on 16-31), cleanup after delivery, the state line, own-window confirmation for settings and CLAUDE.md edits, and rereading changed rules; `orch doctor` parity now also checks working rules and lessons. (basicly-lugw10r)
+
+- **Tracker refusals name the next exact commands.** The claim, confirm and close refusals now end with the commands to run next, in order (review then claim, confirm then close), with the ledger path, the record id and the shape of the `--evidence` JSON (basicly-qpr2xmr.3.21).
+
+- The orch state files carry `"v": 1` and a `platform` field. A session file holds `pid` and `pid_start` only on Linux and only as a pair, so a reader such as the handily board can rely on both or neither. (basicly-qpr2xmr.3.22)
+
+- **A refused commit subject is told where a record id goes.** When the commit-msg hook refuses a dot in the subject, it now adds that a record id goes only in the trailing (id), and that other records and versions go in the body (basicly-qpr2xmr.3.23).
+
+- The orchestrated-session rule keeps a relayed approval of an exact diff or commit good until that diff lands; any change to the diff voids it. A command or one-time bypass stays good for one use within 60 minutes. `orch approve --diff` states the until-landed limit. (basicly-qpr2xmr.3.25)
+
+- The orchestrated-session rule lets an orchestrator decision cover a change that weakens or bypasses a test, gate or hook when the decision names the council run that decided it (at least three blind voters) and its result. `orch decide --council` takes such an item and `orch approve` refuses it; a change to the rule itself still needs the person's relayed approval. (basicly-qpr2xmr.3.28)
+
+- `orch status` names a session that started before the state hook, from the newest custom title or agent name in its transcript, and uses the full terminal width (at least 40 columns) so the now text is no longer cut to a few characters. (basicly-syxnf0d)
+
+- **Cleanup removes landed branches from origin.** `basicly worktree cleanup` deletes the lane branch on origin when origin's base holds every path it changed, with a lease on the delete, and otherwise keeps it and names why. A `--mode ci` landing drops its `land/LANE/N` branches on every ending (basicly-uy4l48h).
+
+### Fixed
+
+- `basicly worktree merge --mode ci` now waits for a run that `gh` cannot read yet, refuses a new run on a tree whose earlier run failed or was cancelled, pushes a new `land/` branch after a changed lane, exits 1 when the base stays unverified or unpushed, and passes the landing guard; the worktree-isolation skill teaches the mode and its `--mode full` fallback. (basicly-1i3ggc6)
+
+- `migrate --to-vault --freeze` removes the ledger's derived caches (`snapshot.jsonl`, `checkpoint-*.jsonl`, `.events.lock`) before it archives the ledger, so `ledger-archive` holds only tracked source files and no untracked file with a user name stays behind. (basicly-2u2yutb)
+
+- **A lane commit counts a claim committed on main.** In a worktree whose ledger redirects to the base checkout, the tracker-claim hook also checks the committed ledger of that checkout, so no tracker commit needs to be copied into a code lane. An uncommitted claim and a record nobody holds are still refused (basicly-4yi9bhq).
+
+- The tracker path scan no longer refuses a commit in a vault repository because the configured holder appears as a claim holder, a snapshot assignee or a contested name. The holder name is exempt only in those slots and only when it equals the configured holder; the same name anywhere else, and any home path, is still refused. (basicly-5v1rrl9)
+
+- **A new lane gets its Lefthook artifact.** basicly worktree create, and a landing before its checks, copy the checksum-verified pinned Lefthook files from the main checkout or another live lane. With no verified copy, the lane gets a note that names the prepare command (basicly-6c9ez7o).
+
+- In a vault repository, tracker-path-scan now scans only the events still waiting in the local queue, so an event already published to the vault no longer blocks every later commit; a queued event with a home path or the user name is still refused, and an unreadable queue is refused. (basicly-ay5ll1l)
+
+- The Claude tier hook no longer changes an Agent call. It denies a call with no `model` and names the model to pass, for example `call Agent again with model: "opus" (tier high, model-map.json)`. Auto mode reviews the new call as written, so it no longer refuses the agent start, or the other calls in the same response, with "no verdict". (basicly-gtb19bg.53)
+
+- A tracker refusal now names the command to run next as `basicly-tracker VERB` when the tracker runs from an installed package, or as the repository-relative kit path, and never prints the machine-local install path that agents could copy into records. (basicly-lool8t1)
+
+- **A hook job can no longer rewrite the repository git config.** Hook jobs run without `GIT_DIR` and `GIT_WORK_TREE` (pre-push also without `GIT_INDEX_FILE`), and a hook run that changes `core.worktree` or `core.bare` is refused with the repair command. A job that read these variables must find the repository from its folder (basicly-qpr2xmr.3.26).
+
+- **The tracker comment forms agree.** The local comment takes --text as well as the positional text. No vault form shows its own name as a second positional in its usage line, and a refused vault comment names the form that works: cli.py comment RECORD --vault URL --text TEXT (basicly-qpr2xmr.3.27).
+
+- **A landing rebuilds a conflicting lefthook.yml.** When two lanes each add a hook, the landing rebase rebuilt only declared generated files, and .basicly/lefthook.yml was not one, so the lane stopped. It is now rebuilt with basicly hooks-build --no-install, and the landing copies the Lefthook artifact in before the rebase (basicly-qpr2xmr.3.30).
+
+- **Cleanup no longer deletes a local branch whose rename did not land.** Before, `basicly worktree cleanup` compared paths with rename detection on. A lane that renamed a file counted as landed when the base held the new name but still had the old one, and cleanup deleted the local branch. It now compares with `--no-renames` and keeps that branch (basicly-uy4l48h).
+
+### Security
+
+- `orch approve` and `orch decide` refuse unless the calling session is the registered Orchestrator session (its Claude Code session id in the orch session store), log every call, and mark each entry with the session; `orch doctor` reports an approval or decision entry that lacks it. (basicly-g8dccqh)
 
 ## v0.46.6 - 2026-11-19
 

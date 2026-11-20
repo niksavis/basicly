@@ -1,1 +1,0 @@
-- The orch state files carry `"v": 1` and a `platform` field. A session file holds `pid` and `pid_start` only on Linux and only as a pair, so a reader such as the handily board can rely on both or neither.

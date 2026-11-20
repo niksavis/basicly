@@ -1,1 +1,0 @@
-- **A refused commit subject is told where a record id goes.** When the commit-msg hook refuses a dot in the subject, it now adds that a record id goes only in the trailing (id), and that other records and versions go in the body (basicly-qpr2xmr.3.23).

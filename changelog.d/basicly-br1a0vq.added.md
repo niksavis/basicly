@@ -1,1 +1,0 @@
-- `basicly worktree merge` now takes a landing lock: a second landing is refused with the holder's lane, record and lock age, or waits with `--wait MINUTES`; a lock past its 60-minute limit is reported by name and removed only with `basicly worktree unlock --lane LANE`.

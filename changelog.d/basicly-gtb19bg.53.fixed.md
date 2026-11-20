@@ -1,1 +1,0 @@
-- The Claude tier hook no longer changes an Agent call. It denies a call with no `model` and names the model to pass, for example `call Agent again with model: "opus" (tier high, model-map.json)`. Auto mode reviews the new call as written, so it no longer refuses the agent start, or the other calls in the same response, with "no verdict".

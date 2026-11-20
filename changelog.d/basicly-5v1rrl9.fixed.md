@@ -1,1 +1,0 @@
-- The tracker path scan no longer refuses a commit in a vault repository because the configured holder appears as a claim holder, a snapshot assignee or a contested name. The holder name is exempt only in those slots and only when it equals the configured holder; the same name anywhere else, and any home path, is still refused.

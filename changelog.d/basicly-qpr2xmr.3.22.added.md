@@ -1,1 +1,0 @@
-- `orch status` lists every session in at most 40 columns, with its age and one of working, quiet, stale, dead or needs you, and first counts the open questions to the person. Sessions write their state with `orch state set` and through the Claude Code and Codex hooks; `orch ask` opens a question and `orch approve` closes it.

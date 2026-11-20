@@ -1,1 +1,0 @@
-- Every projected instruction file carries the Agentic Kanban rules: done means delivered, stop starting and start finishing, work-in-progress limits per agent and per repository, oldest first, pull, small batches, visible and measured flow, stop the line, help when idle, and explicit policy; the orchestrator kit points to them.

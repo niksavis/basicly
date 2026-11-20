@@ -1,1 +1,0 @@
-- The best-practices audit fetches the Opus 5.5 prompting guide and checks six of its rules on catalog text: no reasoning-in-reply or think-carefully instructions, a checklist for long tasks, named early stops, a confirmation step for risky actions, and tagged pasted text.

@@ -1,1 +1,0 @@
-- **Tracker refusals name the next exact commands.** The claim, confirm and close refusals now end with the commands to run next, in order (review then claim, confirm then close), with the ledger path, the record id and the shape of the `--evidence` JSON (basicly-qpr2xmr.3.21).

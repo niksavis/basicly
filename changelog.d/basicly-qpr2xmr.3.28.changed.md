@@ -1,1 +1,0 @@
-- The orchestrated-session rule lets an orchestrator decision cover a change that weakens or bypasses a test, gate or hook when the decision names the council run that decided it (at least three blind voters) and its result. `orch decide --council` takes such an item and `orch approve` refuses it; a change to the rule itself still needs the person's relayed approval.

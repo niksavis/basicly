@@ -1,1 +1,0 @@
-- **A lane commit counts a claim committed on main.** In a worktree whose ledger redirects to the base checkout, the tracker-claim hook also checks the committed ledger of that checkout, so no tracker commit needs to be copied into a code lane. An uncommitted claim and a record nobody holds are still refused (basicly-4yi9bhq).

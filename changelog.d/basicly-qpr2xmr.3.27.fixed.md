@@ -1,1 +1,0 @@
-- **The tracker comment forms agree.** The local comment takes --text as well as the positional text. No vault form shows its own name as a second positional in its usage line, and a refused vault comment names the form that works: cli.py comment RECORD --vault URL --text TEXT (basicly-qpr2xmr.3.27).

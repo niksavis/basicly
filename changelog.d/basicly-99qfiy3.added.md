@@ -1,1 +1,0 @@
-- The tracker kit's `mark-ready RECORD` records that an in_progress record is built and waits for delivery, refused by name for a record that is not in progress, held by someone else or already marked (`--again`, `--clear`); `list --ready-for-delivery` prints the marking time, oldest first. A vault repository refuses it and names `comment` instead.
