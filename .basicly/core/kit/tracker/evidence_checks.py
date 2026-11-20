@@ -105,11 +105,11 @@ class NextStepsError(Exception):
 
 
 def next_commands(record: str, verbs: Sequence[str], ledger: Path | None = None) -> str:
-    tool = _shown(_HERE / "cli.py")
+    tool = _load("locate").typed_in(_HERE / "cli.py", Path.cwd()).split(" ")
     place = _shown(ledger) if ledger is not None else ".basicly/ledger"
     shown = []
     for verb in verbs:
-        words = ["python3", tool, verb, place, record]
+        words = [*tool, verb, place, record]
         if verb in _EVIDENCE:
             check = {key: _SAMPLE[key] for key in _EVIDENCE[verb]}
             words += ["--evidence", json.dumps({"checks": [check]})]

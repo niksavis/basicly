@@ -265,8 +265,7 @@ def _commit_check(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     states = events.fold(found).records
     committer = commands.holders.default_holder(Path.cwd(), os.environ)
     ledger = Path(args.directory).resolve()
-    here = Path(__file__).resolve()
-    runner = args.runner or f"python3 {_relative(here)}"
+    runner = args.runner or commands.holders.kit_cli()
     shown = args.ledger_label or _relative(ledger)
     context = commands.claims.CommitContext(committer, shown, runner, tuple(args.installed))
     if unreadable:
