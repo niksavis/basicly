@@ -487,3 +487,25 @@ def test_scope_event_refuses_by_name_and_appends_nothing(
     with pytest.raises(log.RefusedError, match=match):
         run(repo, "lesson", "scope", lesson or known, value)
     assert events(repo) == before
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Working rule, 2026-11-19 (the machine has 32 cores): a landing verify runs on cores 0-15.",
+        "A rule change reaches a session when it rereads (lesson 2026-11-19 18:18, dev-j6oqo).",
+    ],
+)
+def test_doctor_rule_parity_also_covers_working_rules_and_lessons(
+    tmp_path: Path, line: str
+) -> None:
+    ruleset = tmp_path / "ruleset.json"
+    ruleset.write_text(json.dumps({"rules": [{"id": "a", "owner": []}]}), encoding="utf-8")
+    doc = tmp_path / "rules.md"
+    doc.write_text(line + "\n", encoding="utf-8")
+    environ = {"ORCH_RULES_DOC": str(doc), "ORCH_RULESET": str(ruleset)}
+
+    lines, failed = doctor.rule_parity_lines(environ)
+
+    assert failed
+    assert lines[0] == f"{doc}:1: owner rule (2026-11-19) has no entry in {ruleset}"

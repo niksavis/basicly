@@ -34,3 +34,28 @@ def test_each_rule_has_one_id_a_source_and_a_known_place() -> None:
 def test_each_kit_rule_is_present_in_its_kit_place(rule: dict[str, str]) -> None:
     text = flat((REPO / rule["file"]).read_text(encoding="utf-8"))
     assert flat(rule["anchor"]) in text, f"{rule['id']} lost its place in {rule['file']}"
+
+
+def test_the_core_split_replaces_the_quiet_window() -> None:
+    ids = {rule["id"] for rule in RULES}
+
+    assert "core-split" in ids
+    assert "quiet-window" not in ids
+
+
+@pytest.mark.parametrize(
+    "rule_id",
+    [
+        "kanban-done-delivered",
+        "kanban-finish-first",
+        "kanban-limits",
+        "kanban-oldest-first",
+        "kanban-stop-the-line",
+        "clean-up-after-delivery",
+        "state-line",
+        "settings-in-own-window",
+        "reread-on-rule-change",
+    ],
+)
+def test_each_workspace_rule_of_2026_11_19_has_a_kit_rule(rule_id: str) -> None:
+    assert rule_id in {rule["id"] for rule in RULES}
