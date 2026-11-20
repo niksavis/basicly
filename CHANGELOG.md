@@ -6,7 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.47.1 - 2026-11-20
+
+Delta: v0.47.0..v0.47.1
+
 This patch release lets a repository whose tracker moved to a vault land work again. `basicly verify --issue` and dispatch spend recording now write through the vault when `.basicly/ledger` is a vault pointer file, instead of failing with "File exists" (basicly-abi560r).
+
+### Fixed
+
+- `basicly verify --issue` and dispatch spend recording now write through the vault when `.basicly/ledger` is a vault pointer file, instead of failing with "File exists" after a repository moved its tracker to a vault. (basicly-abi560r)
 
 ## v0.47.0 - 2026-11-20
 
