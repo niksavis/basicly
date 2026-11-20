@@ -258,14 +258,25 @@ def finish(root: Path, lane: str, record: str) -> list[str]:
             f"git push origin {base} was refused; {base} is landed locally only and nothing was "
             f"force-pushed; run git pull --ff-only and push {base}"
         )
-    for attempt in range(1, int(proof.get("attempt", "0")) + 1):
-        ref = _ref(lane, attempt)
-        gone = checkout.git(["push", "origin", "--delete", ref], cwd=root, check=False)
-        if gone.returncode != 0:
-            notes.append(f"could not delete {ref} on origin; it stays listed for the owner")
+    notes += drop_refs(root, lane)
     proofs = _proofs(root)
     proofs.pop(lane, None)
     (root / PROOFS).write_text(json.dumps(proofs, indent=2, sort_keys=True), encoding="utf-8")
+    return notes
+
+
+def drop_refs(root: Path, lane: str) -> list[str]:
+    notes: list[str] = []
+    for attempt in range(1, int(proved(root, lane).get("attempt", "0")) + 1):
+        ref = _ref(lane, attempt)
+        listed = checkout.git(
+            ["ls-remote", "--heads", "origin", f"refs/heads/{ref}"], cwd=root, check=False
+        )
+        if listed.returncode == 0 and not listed.stdout.strip():
+            continue
+        gone = checkout.git(["push", "origin", "--delete", ref], cwd=root, check=False)
+        if gone.returncode != 0:
+            notes.append(f"could not delete {ref} on origin; it stays listed for the owner")
     return notes
 
 

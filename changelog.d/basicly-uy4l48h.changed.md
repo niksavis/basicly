@@ -1,0 +1,1 @@
+- **Cleanup removes landed branches from origin.** `basicly worktree cleanup` deletes the lane branch on origin when origin's base holds every path it changed, with a lease on the delete, and otherwise keeps it and names why. A `--mode ci` landing drops its `land/LANE/N` branches on every ending (basicly-uy4l48h).

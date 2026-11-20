@@ -11,6 +11,7 @@ from pathlib import Path
 from . import (
     checkout,
     lefthook_artifacts,
+    remote_branches,
     tracker_paths,
     verify_log,
     worktree_contents,
@@ -267,8 +268,10 @@ def unlanded_paths(main: Path, base: str, branch: str) -> tuple[str, ...] | None
     fork = git(["merge-base", base, branch], cwd=main, check=False)
     if fork.returncode != 0 or not fork.stdout.strip():
         return None
-    touched = git(["diff", "--name-only", fork.stdout.strip(), branch], cwd=main, check=False)
-    against = git(["diff", "--name-only", branch, base], cwd=main, check=False)
+    touched = git(
+        ["diff", "--no-renames", "--name-only", fork.stdout.strip(), branch], cwd=main, check=False
+    )
+    against = git(["diff", "--no-renames", "--name-only", branch, base], cwd=main, check=False)
     if touched.returncode != 0 or against.returncode != 0:
         return None
     changed = {line for line in touched.stdout.splitlines() if line.strip()}
@@ -445,6 +448,13 @@ def cleanup(
         else ""
     )
 
+    base = record.base if record else None
+    if (
+        not kept
+        and branch
+        and (note := remote_branches.delete_landed(main, branch, base, unlanded_paths))
+    ):
+        print(f"  {note}")
     if not kept:
         session_file(name, main).unlink(missing_ok=True)
         print(f"Cleaned up worktree {name!r} (worktree + branch + metadata).")

@@ -4768,11 +4768,11 @@ def _cmd_worktree_merge(args: argparse.Namespace) -> int:
         ui.fail(str(error))
         return 1
     print(f"  {result.name}: {result.status.upper()} — {result.detail}")
-    notes = (
-        ci_landing.finish(root, args.name, args.bead)
-        if result.merged and args.mode == ci_landing.MODE
-        else []
-    )
+    ci = args.mode == ci_landing.MODE
+    if ci and result.merged:
+        notes = ci_landing.finish(root, args.name, args.bead)
+    else:
+        notes = ci_landing.drop_refs(root, args.name) if ci else []
     for note in notes:
         print(f"  {note}")
     return 0 if result.merged and not notes else 1
