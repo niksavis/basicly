@@ -248,3 +248,13 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
         terminalreporter.write_sep("-", "measured")
         for nodeid, name, value in rows:
             terminalreporter.write_line(f"{nodeid}: {name} = {value}")
+
+
+@pytest.fixture
+def migration_identity(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path_factory.mktemp("identity") / "gitconfig"
+    config.write_text("[user]\n\tname = Migration Tester\n\temail = tester@example.invalid\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")

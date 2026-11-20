@@ -1,0 +1,1 @@
+- `migrate --to-vault` redacts the git name, email, `Name <email>`, login, host and every email outside public domains by default (a github.com handle stays), refuses when the git identity does not resolve or a scan still finds personal data, and a rerun of a fully migrated source reports "already migrated" with exit 0 unless the vault copy holds personal data.

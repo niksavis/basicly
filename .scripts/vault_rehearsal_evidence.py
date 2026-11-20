@@ -181,7 +181,8 @@ def control(
     }
     clone = module.vault_clone.locate(out / "control-state", str(out / "vault-0.git"))
     imported = module.ledger_to_vault(
-        target / ".basicly/ledger", module.Import(clone, lambda: 1000.0, True)
+        target / ".basicly/ledger",
+        module.Import(clone, lambda: 1000.0, True, module.vault_personal.email_scan),
     )
     after = {p.name: p.read_bytes() for p in module.events.ledger_paths(target / ".basicly/ledger")}
     if before != after or marker != (target / ".tracker-consumer-proof.json").read_bytes():

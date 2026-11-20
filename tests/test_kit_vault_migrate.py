@@ -51,7 +51,10 @@ def _ledger(folder: Path) -> Path:
 
 def _plan(tmp_path: Path, bare: Path, **options: Any) -> Any:
     clone, _state = _machine(tmp_path, bare, "importer")
-    return vault_migrate.Import(clone, time.time, options.pop("redact_holders", True), **options)
+    scan = options.pop("scan", vault_migrate.vault_personal.email_scan)
+    return vault_migrate.Import(
+        clone, time.time, options.pop("redact_holders", True), scan, **options
+    )
 
 
 def _head(bare: Path) -> str:
@@ -148,7 +151,12 @@ def test_a_vault_that_already_holds_a_record_refuses_by_both_digests(
         actor="contributor",
         clock=lambda: 1000.0,
     )
-    first = vault_migrate.Import(_machine(tmp_path, bare, "first")[0], time.time, True)
+    first = vault_migrate.Import(
+        _machine(tmp_path, bare, "first")[0],
+        time.time,
+        True,
+        vault_migrate.vault_personal.email_scan,
+    )
     vault_migrate.to_vault(events.read_events(source)[0], first)
     before = _head(bare)
 
@@ -161,15 +169,17 @@ def test_a_vault_that_already_holds_a_record_refuses_by_both_digests(
     assert _head(bare) == before
 
 
-def test_a_second_import_of_the_same_ledger_refuses_by_name(tmp_path: Path, bare: Path) -> None:
+def test_a_second_import_of_the_same_ledger_says_already_migrated(
+    tmp_path: Path, bare: Path
+) -> None:
     ledger = _ledger(tmp_path / "ledger")
     vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
     before = _head(bare)
 
-    with pytest.raises(
-        vault_migrate.MigrateError, match="already carries 6 of the 6 canonical events"
-    ):
-        vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
+    again = vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
+
+    assert again["already_migrated"] is True
+    assert again["message"].startswith("already migrated: the vault carries all 6 events")
     assert _head(bare) == before
 
 
@@ -249,3 +259,51 @@ def test_a_prefix_exports_in_vault_order_and_folds_as_the_view(tmp_path: Path, b
     assert vault_migrate.canonical.fsck.check(target).exit_code == 0
     with pytest.raises(vault_migrate.MigrateError, match="already holds ledger files"):
         vault_migrate.from_vault(clone, "acme", target, clock=time.time)
+
+
+def test_a_rerun_over_an_unredacted_vault_copy_refuses_by_name(tmp_path: Path, bare: Path) -> None:
+    ledger = _ledger(tmp_path / "ledger")
+    vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
+    before = _head(bare)
+
+    calls: list[int] = []
+
+    def scan(lines: Any) -> dict[str, int]:
+        calls.append(len(lines))
+        return {"login": 0 if len(calls) == 1 else json.dumps(lines).count("by ada")}
+
+    with pytest.raises(vault_migrate.MigrateError, match=r"copy holds personal data \(login 1\)"):
+        vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare, scan=scan))
+    assert _head(bare) == before
+
+
+def test_an_email_after_an_escaped_character_is_seen_in_a_vault_copy() -> None:
+    held = [{"ledger": {"id": "acme-a1#ev-1", "payload": {"text": "x\nname@corp.example.org"}}}]
+    event = type("Event", (), {"id": "acme-a1#ev-1"})()
+    personal = vault_migrate.vault_personal
+
+    assert personal.email_scan(held) == {"other email": 1}
+    refused = personal.in_vault_copy(personal.email_scan, held, [event])
+    assert refused is not None
+    assert "other email 1" in refused
+
+
+def test_an_import_without_a_personal_data_scan_refuses_by_name(tmp_path: Path, bare: Path) -> None:
+    ledger = _ledger(tmp_path / "ledger")
+    before = _head(bare)
+
+    with pytest.raises(vault_migrate.MigrateError, match="needs a personal-data scan"):
+        vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare, scan=None))
+    assert _head(bare) == before
+
+
+def test_an_import_that_still_carries_personal_data_publishes_nothing(
+    tmp_path: Path, bare: Path
+) -> None:
+    ledger = _ledger(tmp_path / "ledger")
+    before = _head(bare)
+    plan = _plan(tmp_path, bare, scan=lambda _lines: {"email": 2, "name": 0})
+
+    with pytest.raises(vault_migrate.MigrateError, match=r"personal data \(email 2\)"):
+        vault_migrate.ledger_to_vault(ledger, plan)
+    assert _head(bare) == before

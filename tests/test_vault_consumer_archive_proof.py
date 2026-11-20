@@ -4,17 +4,18 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import pytest
 
 from tests.test_kit_ledger_freeze import KIT
 from tests.test_kit_vault_share import bare
 
-if TYPE_CHECKING:
-    import pytest
-
 __all__ = ["bare"]
 
 SCRIPTS = Path(__file__).resolve().parents[1] / ".scripts"
+
+pytestmark = pytest.mark.usefixtures("migration_identity")
 
 
 def _proof(monkeypatch: pytest.MonkeyPatch) -> Any:

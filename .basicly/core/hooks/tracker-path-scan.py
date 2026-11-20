@@ -22,7 +22,6 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 _IDENTITY_RULE = "machine-username"
-_MIN_IDENTITY_LENGTH = 4
 _FIELD_KIND = "field"
 _CREATED_KIND = "created"
 _CLAIM_KIND = "claim"
@@ -69,13 +68,25 @@ def configured_holder() -> str:
     return str(module.chosen_holder(Path.cwd(), dict(os.environ)) or "")
 
 
+def _min_identity_length() -> int:
+    source = Path(__file__).resolve().parent.parent / "kit/tracker/vault_personal.py"
+    spec = importlib.util.spec_from_file_location("basicly_tracker_kit_vault_personal", source)
+    if not source.is_file() or spec is None or spec.loader is None:
+        raise ImportError(
+            "the tracker kit lacks vault_personal.py; reinstall with `basicly install --force`"
+        )
+    module: Any = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return int(module.MIN_IDENTITY_LENGTH)
+
+
 def identity_pattern() -> re.Pattern[str] | None:
 
     try:
         name = getpass.getuser()
     except KeyError, OSError:
         return None
-    if len(name) < _MIN_IDENTITY_LENGTH:
+    if len(name) < _min_identity_length():
         return None
     return re.compile(rf"\b{re.escape(name)}\b")
 
