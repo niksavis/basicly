@@ -232,6 +232,31 @@ python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2
 python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2 --take
 ```
 
+### refine-sheet
+
+Write a sheet of the open records that still miss acceptance criteria or a context: one block per
+record with its id, title, context and an empty `acceptance:` list. The sheet goes inside the
+repository's git folder, so it is never committed; `--out FILE` names another file. It refuses a
+file that exists.
+An import of a backlog names this command when records still need criteria.
+
+```sh
+python3 .basicly/kit/tracker/cli.py refine-sheet .basicly/ledger
+```
+
+### apply-sheet
+
+Apply a filled refine sheet in one command. Each line that starts with a dash under `acceptance:` is
+one criterion.
+It refuses the whole sheet, naming each id, when an acceptance list is still empty or an id is not
+in the ledger, or when the sheet names no record. A task, bug or chore with exactly one criterion
+gets `size=small` and is ready at once; the report lists the records that still owe a section,
+such as a review. A sheet that applied is removed.
+
+```sh
+python3 .basicly/kit/tracker/cli.py apply-sheet .basicly/ledger
+```
+
 ### mark-ready
 
 Record that an in_progress record is built and waits for delivery. Only its holder marks it
@@ -514,6 +539,11 @@ agent writer removes it, and only when `dor` passes.
 ```sh
 python3 .basicly/kit/tracker/cli.py refine .basicly/ledger
 ```
+
+### migrate
+
+Import a ledger, beads, br or beans backlog into a vault, or export one prefix. The steps, the
+preview, the private map and the redaction rules are in [the vault migration guide](VAULT-MIGRATION.md).
 
 ### migrate-fields
 

@@ -62,6 +62,7 @@ READS = frozenset({
     "stats",
     "board",
     "refine",
+    "refine-sheet",
     "dor",
     "fields",
     "scaffold",
