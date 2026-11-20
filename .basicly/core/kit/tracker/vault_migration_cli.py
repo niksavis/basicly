@@ -108,6 +108,12 @@ def identity(cwd: Path) -> dict[str, str]:
 HANDLE = r"(?<!github\.com/)(?<!github\.com:)"
 HOME_FORM = re.compile(r"(?<![\w.-])[/\\]?(?:home|Users)[/\\](?!contributor\b)[A-Za-z0-9._-]+")
 HOME_MARKER = "<redacted:home-path>"
+STACKED = re.compile(r"(?:<redacted:[a-z][a-z0-9-]*>){2,}")
+
+
+def _one_marker(found: re.Match[str]) -> str:
+    text = found.group(0)
+    return HOME_MARKER if "home-path>" in text else text[: text.index(">") + 1]
 
 
 def _bounded(value: str, label: str = "") -> re.Pattern[str]:
@@ -151,7 +157,7 @@ def _redactor(
 
     def apply(value: str) -> str:
         text = value if inherited is None else inherited(value)
-        text = HOME_FORM.sub(HOME_MARKER, text)
+        text = STACKED.sub(_one_marker, HOME_FORM.sub(HOME_MARKER, text))
         text = text if pattern is None else pattern.sub("contributor", text)
         return text if own is None else own.sub("contributor", text)
 

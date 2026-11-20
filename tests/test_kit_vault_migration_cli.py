@@ -252,3 +252,16 @@ def test_a_home_folder_unlike_the_login_never_reaches_the_vault(path: str) -> No
     assert "hopper" not in cleaned
     assert scan([{"text": cleaned}])["home"] == 0
     assert scan([{"text": f"seen in {path}"}])["home"] >= 1
+
+
+def test_stacked_path_markers_collapse_to_one_home_marker() -> None:
+    migration_cli = vault_migrate.sys.modules["basicly_tracker_kit_vault_migration_cli"]
+    args = migration_cli.argparse.Namespace(redact_name=[])
+    stacked = "<redacted:home-path><redacted:posix-absolute-path><redacted:home-path>/work"
+
+    def inherited(_value: str) -> str:
+        return stacked
+
+    rule = migration_cli._redactor(args, inherited, {"login": "ada"})
+
+    assert rule("any") == "<redacted:home-path>/work"
