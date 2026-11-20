@@ -317,3 +317,22 @@ def test_a_repository_with_no_origin_has_nothing_to_delete(main: Path) -> None:
     _git(main, "remote", "remove", "origin")
 
     assert remote_branches.delete_landed(main, "harness/x", "main", worktree.unlanded_paths) == ""
+
+
+def test_a_failed_base_lookup_is_named_as_a_failure(
+    main: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _lane(main, "harness/look", "g.txt")
+    checked = remote_branches.remote_head
+    monkeypatch.setattr(
+        remote_branches,
+        "remote_head",
+        lambda where, branch: None if branch == "main" else checked(where, branch),
+    )
+
+    note = remote_branches.delete_landed(main, "harness/look", "main", worktree.unlanded_paths)
+
+    assert (
+        note == "kept origin/harness/look: git ls-remote origin failed for the base main, "
+        "so it was not compared"
+    )

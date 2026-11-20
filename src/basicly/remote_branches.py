@@ -21,10 +21,19 @@ def _local(main: Path, sha: str) -> bool:
     return git(["cat-file", "-e", f"{sha}^{{commit}}"], cwd=main, check=False).returncode == 0
 
 
+def _base_head(main: Path, base: str | None) -> tuple[str, str]:
+    landed = remote_head(main, base) if base else ""
+    if landed is None:
+        return "", f"git ls-remote {REMOTE} failed for the base {base}, so it was not compared"
+    if not landed:
+        return "", f"origin has no base branch {base!r} to compare it with"
+    return landed, ""
+
+
 def _keep_reason(main: Path, head: str, base: str | None, unlanded: Unlanded) -> str:
-    landed = remote_head(main, base) if base else None
-    if not base or not landed:
-        return f"origin has no base branch {base!r} to compare it with"
+    landed, absent = _base_head(main, base)
+    if absent:
+        return absent
     if not _local(main, head) or not _local(main, landed):
         return (
             f"its head or {REMOTE}/{base} is not fetched here; "
