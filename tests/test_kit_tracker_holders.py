@@ -110,8 +110,8 @@ def test_a_claim_on_a_closed_record_is_refused_with_the_reopen_command_and_appen
     assert f"{record} is closed" in refused["refused"]
     assert _ledger_bytes(ledger) == before
     assert _run(capsys, "show", str(ledger), record)[1]["status"] == "closed"
-    runner, script, *reopen = shlex.split(refused["refused"].split("`")[1])
-    assert (runner, Path(script).name) == ("python3", "cli.py")
+    runner, *reopen = shlex.split(refused["refused"].split("`")[1])
+    assert runner == "basicly-tracker"
     assert reopen == ["update", str(ledger), record, "--status", "open"]
     assert _run(capsys, *reopen)[0] == cli.EXIT_OK
     assert _run(capsys, "claim", str(ledger), record, "--to", "sam")[0] == cli.EXIT_OK

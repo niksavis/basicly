@@ -190,3 +190,59 @@ def test_the_user_install_on_path_runs_the_claim_check(repo: Path, tmp_path: Pat
 
     assert refused.returncode != 0
     assert f"basicly-tracker claim .basicly/ledger {record}" in refused.stderr
+
+
+def test_typed_in_names_the_repository_path_or_the_installed_command(tmp_path: Path) -> None:
+    inside = tmp_path / "repo" / ".basicly" / "kit" / "tracker" / "cli.py"
+
+    assert locate.typed_in(inside, tmp_path / "repo") == "python3 .basicly/kit/tracker/cli.py"
+    assert locate.typed_in(inside, tmp_path / "elsewhere") == "basicly-tracker"
+
+
+@pytest.mark.parametrize(
+    ("place", "runner"),
+    [
+        ("repo/.basicly/kit/tracker", "python3 .basicly/kit/tracker/cli.py"),
+        ("tools/lib/site-packages/basicly_tracker/kit", "basicly-tracker"),
+    ],
+)
+def test_a_refusal_remedy_never_names_a_path_outside_the_repository(
+    tmp_path: Path, place: str, runner: str
+) -> None:
+    kit = tmp_path / place
+    shutil.copytree(KIT_DIR, kit, ignore=shutil.ignore_patterns("__pycache__"))
+    repo = tmp_path / "repo"
+    repo.mkdir(exist_ok=True)
+
+    def run(*argv: str) -> dict:
+        done = subprocess.run(  # nosec B603 — the copied kit under test
+            [sys.executable, str(kit / "cli.py"), *argv],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert done.stdout, done.stderr
+        return json.loads(done.stdout)
+
+    created = run(
+        "create",
+        ".basicly/ledger",
+        "--prefix",
+        "acme",
+        "--title",
+        "A bug",
+        "--field",
+        "issue_type=bug",
+        "--description",
+        "## Context\nIt breaks.",
+        "--acceptance",
+        "- it works",
+    )
+    assert "record" in created, created
+    record = created["record"]
+
+    refused = run("close", ".basicly/ledger", record, "--reason", "done")["refused"]
+
+    assert f"next: {runner} review .basicly/ledger {record}" in refused
+    assert str(tmp_path) not in refused

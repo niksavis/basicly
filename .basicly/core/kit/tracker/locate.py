@@ -66,6 +66,13 @@ def locate(
     return Tracker("", found) if found else None
 
 
+def typed_in(cli: Path, root: Path) -> str:
+    try:
+        return f"python3 {cli.resolve().relative_to(root.resolve()).as_posix()}"
+    except ValueError:
+        return COMMAND
+
+
 def install_command(version: str | None) -> str:
 
     source = _pin().INSTALL_SOURCE.format(version=version) if version else LATEST_SOURCE
