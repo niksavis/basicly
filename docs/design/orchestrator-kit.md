@@ -377,7 +377,8 @@ Measured on 2026-11-18 with `claude -p` in a scratch project:
 
 The orchestrator learns from each worker and each job, and its agent instructions and skills improve inside the harness.
 
-- `orch lesson add --what "<what happened>" --requirement "<the rule that would have prevented it>" --record <id>` appends one line to `lessons.jsonl` in the kit root. The tool stamps the time from the clock and the member name from the session.
+- `orch lesson add --what "<what happened>" --requirement "<the rule that would have prevented it>" --record <id> --scope local|basicly` appends one line to `lessons.jsonl` in the kit root. The tool stamps the time from the clock and the member name from the session.
+- The scope is required. A lesson is basicly-scope when its fix changes a file that basicly install writes, and local otherwise. `orch lessons export` exports only basicly-scope lessons. It names each open lesson without a scope on stderr, and `orch lesson scope <id> local|basicly` sets the scope of an older lesson (basicly-1dpggot.6).
 - Before the append, the tool runs the repository's secret scanner on the text and refuses a line that the scanner flags, naming the rule, so a lesson never blocks a later commit.
 - `orch lessons export` turns open lessons into a proposal: a patch against the catalog sources of the orchestrator agent and its skills. The patch lands through normal catalog authoring and review; the kit never edits a projected file.
 - A lesson closes when the landed change that answers it is named in the log. `orch doctor` lists lessons older than 14 days with no change.
