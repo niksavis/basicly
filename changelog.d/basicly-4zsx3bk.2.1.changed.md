@@ -1,0 +1,1 @@
+- `migrate --to-vault` redacts the git name, email, `Name <email>`, login and host name by default (a login inside a github.com URL stays, as the public handle), refuses to publish while a scan still finds one, reports the counts in a preview, and a rerun of a fully migrated source reports "already migrated" with exit 0.

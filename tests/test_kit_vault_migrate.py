@@ -161,15 +161,17 @@ def test_a_vault_that_already_holds_a_record_refuses_by_both_digests(
     assert _head(bare) == before
 
 
-def test_a_second_import_of_the_same_ledger_refuses_by_name(tmp_path: Path, bare: Path) -> None:
+def test_a_second_import_of_the_same_ledger_says_already_migrated(
+    tmp_path: Path, bare: Path
+) -> None:
     ledger = _ledger(tmp_path / "ledger")
     vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
     before = _head(bare)
 
-    with pytest.raises(
-        vault_migrate.MigrateError, match="already carries 6 of the 6 canonical events"
-    ):
-        vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
+    again = vault_migrate.ledger_to_vault(ledger, _plan(tmp_path, bare))
+
+    assert again["already_migrated"] is True
+    assert again["message"].startswith("already migrated: the vault carries all 6 events")
     assert _head(bare) == before
 
 
@@ -249,3 +251,15 @@ def test_a_prefix_exports_in_vault_order_and_folds_as_the_view(tmp_path: Path, b
     assert vault_migrate.canonical.fsck.check(target).exit_code == 0
     with pytest.raises(vault_migrate.MigrateError, match="already holds ledger files"):
         vault_migrate.from_vault(clone, "acme", target, clock=time.time)
+
+
+def test_an_import_that_still_carries_personal_data_publishes_nothing(
+    tmp_path: Path, bare: Path
+) -> None:
+    ledger = _ledger(tmp_path / "ledger")
+    before = _head(bare)
+    plan = _plan(tmp_path, bare, scan=lambda _lines: {"email": 2, "name": 0})
+
+    with pytest.raises(vault_migrate.MigrateError, match=r"personal data \(email 2\)"):
+        vault_migrate.ledger_to_vault(ledger, plan)
+    assert _head(bare) == before

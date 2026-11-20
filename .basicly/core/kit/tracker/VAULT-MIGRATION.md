@@ -39,7 +39,10 @@ Vault checkouts and linked worktrees always refuse, even when ignored.
 An existing file requires `--overwrite-private-map`.
 The tool never edits ignore files.
 
-Add `--redact-name NAME` for each exact, case-sensitive name that must become `contributor`.
+By default the tool redacts the git `user.name`, `user.email`, the "Name <email>" form, the login name and the host name of the machine that runs it.
+Before it publishes, it scans the prepared events for those values and the home path, and refuses with the count per kind when any remains.
+A preview reports the same counts as `personal_data`.
+Add `--redact-name NAME` for each further exact, case-sensitive name that must become `contributor`.
 The rule applies to imported holder history and template text too.
 An empty name list removes no names.
 Secrets and machine paths still use the standard redactor.
@@ -62,7 +65,8 @@ python3 .basicly/core/kit/tracker/cli.py migrate --to-vault --preview --from br 
 ```
 
 An import is a one-time operation.
-Repeating the same source against the same vault refuses before another publication.
+Repeating the same source against the same vault publishes nothing and reports "already migrated" with exit code 0.
+A source that the vault holds only in part refuses before another publication.
 Identical input and rules produce identical canonical bytes and event ids.
 Git commit hashes depend on destination history and are outside that comparison.
 The tool checks source accounting, public digests and unchanged ledger integrity before publishing.

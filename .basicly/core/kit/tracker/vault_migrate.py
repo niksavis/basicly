@@ -69,6 +69,7 @@ class Import:
     overwrite_private_map: bool = False
     runner: Runner = git_runner.run
     code: Path | None = None
+    scan: Callable[[Sequence[Mapping[str, object]]], dict[str, int]] | None = None
 
 
 @dataclass(frozen=True)
@@ -186,7 +187,7 @@ def _header_bytes(writer: str) -> int:
     return len(_text([{"kind": vault_shapes.SEGMENT_KIND, "writer": writer}]))
 
 
-def _refuse_a_second_import(clone: Any, found: Sequence[Any]) -> None:
+def _refuse_a_second_import(clone: Any, found: Sequence[Any]) -> bool:
 
     held = {
         str(line[vault_view.LEDGER_FIELD].get("id"))
@@ -195,11 +196,14 @@ def _refuse_a_second_import(clone: Any, found: Sequence[Any]) -> None:
         and isinstance(line.get(vault_view.LEDGER_FIELD), dict)
     }
     again = [event.id for event in found if event.id in held]
+    if again and len(again) == len(found):
+        return True
     if again:
         raise MigrateError(
             f"the vault already carries {len(again)} of the {len(found)} canonical events; "
             "this source was migrated before, so nothing was pushed"
         )
+    return False
 
 
 def _chunks(plan: Import, head: str, writer: str, lines: list, git: Runner) -> list[str]:
@@ -294,6 +298,13 @@ def to_vault(
 ) -> dict[str, object]:
     prepared = prepare(found, template or {}, plan.redactor, redact_holders=plan.redact_holders)
     result, writer, lines = prepared.result, prepared.writer, prepared.lines
+    found_personal = {k: v for k, v in (plan.scan(lines) if plan.scan else {}).items() if v}
+    if found_personal:
+        counts = ", ".join(f"{label} {count}" for label, count in sorted(found_personal.items()))
+        raise MigrateError(
+            f"the import still carries personal data ({counts}); nothing was published. "
+            "Add --redact-name for each remaining form and preview again"
+        )
     citations = (
         vault_citations.census(
             plan.code, {row["old"] for row in result.mapping if row["old"] != row["new"]}
@@ -314,7 +325,15 @@ def to_vault(
     )
     for _attempt in range(vault_share.BULK_ATTEMPTS):
         fetched = vault_clone.fetch(plan.clone, clock=plan.clock, runner=plan.runner)
-        _refuse_a_second_import(plan.clone, result.events)
+        if _refuse_a_second_import(plan.clone, result.events):
+            return {
+                "already_migrated": True,
+                "events": len(result.events),
+                "message": (
+                    f"already migrated: the vault carries all {len(result.events)} events "
+                    "of this source; nothing was pushed"
+                ),
+            }
         shown = _verified(plan, str(fetched["head"]), writer, lines, result.events)
         if destination is not None and not saved:
             private_map.write(destination, result.mapping)
