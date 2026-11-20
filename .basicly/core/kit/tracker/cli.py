@@ -48,6 +48,7 @@ pin = _load("pin.py", "basicly_tracker_kit_pin")
 mirror = _load("mirror.py", "basicly_tracker_kit_mirror")
 settings = _load("settings.py", "basicly_tracker_kit_settings")
 beans = _load("beans.py", "basicly_tracker_kit_beans")
+refine_sheet = _load("refine_sheet.py", "basicly_tracker_kit_refine_sheet")
 events = snapshot.events
 ids = events.ids
 
@@ -181,6 +182,15 @@ _VIEWS: dict[str, Callable[[argparse.Namespace, Any], dict[str, object]]] = {
         redact=c.redactor,
         dry_run=a.dry_run,
     ),
+    "refine-sheet": lambda a, _r: refine_sheet.write(
+        a.directory, refine_sheet.sheet_path(a.directory, a.out)
+    ),
+    "apply-sheet": lambda a, c: refine_sheet.apply(
+        a.directory,
+        refine_sheet.sheet_path(a.directory, a.sheet),
+        context=c,
+        view=lambda: vault_cli.view_of(a, c.clock),
+    ),
     "sync": lambda a, _r: mirror.sync(a.directory, a.root, dry_run=a.dry_run),
     "scaffold": lambda a, _r: record_view.scaffold_of(a.directory, a.type),
     "fields": lambda a, _r: fields.table(record_view.templates.load(a.directory)),
@@ -276,21 +286,6 @@ _REFUSABLE: dict[str, Callable[[argparse.Namespace, Callable[[], float]], tuple[
 }
 
 
-def _refuse_vault_ledger_form(args: argparse.Namespace) -> None:
-    if args.command not in vault_refusal.REFUSED_FORMS:
-        return
-    ledger = commands.git_layout.shared_ledger(args.directory)
-    config = vault_config.load(ledger.resolve())
-    if config is None or commands._is_repository(ledger):
-        return
-    records = getattr(args, "record", getattr(args, "parent", []))
-    records = [records] if isinstance(records, str) else records
-    for record in records:
-        directory = ledger.resolve().relative_to(config.path.parent).as_posix()
-        refusal = vault_refusal.ledger_form(args.command, record, directory)
-        raise commands.TrackerCommandError(commands.vault_write.redact.text(refusal))
-
-
 def _migration(
     args: argparse.Namespace, redact: Callable[[str], str] | None, clock: Callable[[], float]
 ) -> dict[str, object]:
@@ -326,7 +321,7 @@ def _run_command(
                 vault_refusal.message(code, report)
             )
         return code, report
-    _refuse_vault_ledger_form(args)
+    vault_refusal.refuse_ledger_form(args, commands, vault_config)
     starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
     args.directory = commands.resolve_ledger(args.directory, starts=starts)
     pin.require(args.directory)
@@ -400,7 +395,7 @@ def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | No
     verb = argv[0] if argv else ""
     routed = "--vault" in argv or verb in vault_arguments.VAULT_ONLY
     form = vault_arguments.FORMS.get(verb) if routed else None
-    parser = form() if form else arguments.parser(vault_migration_cli.add_parser)
+    parser = form() if form else arguments.parser(refine_sheet.add_parsers)
     args = parser.parse_args(argv)
     code, report = invoke(args, redact)
     reconfigure = getattr(sys.stdout, "reconfigure", None)

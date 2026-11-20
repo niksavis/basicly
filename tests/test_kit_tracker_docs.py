@@ -29,6 +29,7 @@ FIRST = frozenset({"<id>", "<parent-id>", "acme-a1b2", "RECORD-ID"})
 SECOND = frozenset({"<the-id-it-waits-on>", "acme-c3d4"})
 REFUSING = frozenset({"dor"})
 REFUSED_ON_A_FRESH_LEDGER = {
+    "apply-sheet": "no sheet at",
     "resolve": "no unresolved conflict",
     "undep": "nothing to retract",
     "sync": "mirrors no other tracker",
@@ -303,7 +304,7 @@ def test_every_documented_command_runs_on_a_fresh_install(
 
 
 def test_the_reference_names_every_command_the_parser_defines() -> None:
-    parser = cli.arguments.parser()
+    parser = cli.arguments.parser(cli.refine_sheet.add_parsers)
     commands = next(
         action.choices for action in parser._actions if isinstance(action.choices, dict)
     )

@@ -674,7 +674,7 @@ def test_the_redactor_reaches_an_imported_field(tmp_path: Path) -> None:
     _import(tmp_path, snapshot, redact=lambda text: text.replace("/srv/somebody", "<home>"))
 
     fields = _fold(tmp_path).records[RECORD_A].fields
-    assert fields["description"] == "ran under <home>/dev"
+    assert fields["description"] == "## Context\nran under <home>/dev"
 
 
 def test_a_redacted_field_is_not_reported_as_divergence_on_a_replay(tmp_path: Path) -> None:

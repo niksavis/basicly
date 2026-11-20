@@ -233,12 +233,12 @@ def test_import_keeps_a_drive_letter_inside_a_word(tmp_path: Path) -> None:
 def test_import_keeps_a_bare_drive_root(tmp_path: Path) -> None:
     text = "Use a literal C:" + "\\" + " path as an example."
     _import(tmp_path, _text(_br_line("acme-br01", description=text)))
-    assert _state(tmp_path, "acme-br01").fields["description"] == text
+    assert _state(tmp_path, "acme-br01").fields["description"] == f"## Context\n{text}"
 
 
 def test_import_still_redacts_a_real_drive_path(tmp_path: Path) -> None:
     text = "seen under C:" + "\\" + "Users" + "\\" + "ada" + "\\" + "repo"
     _import(tmp_path, _text(_br_line("acme-br01", description=text)))
     assert _state(tmp_path, "acme-br01").fields["description"] == (
-        "seen under <redacted:windows-drive-path>"
+        "## Context\nseen under <redacted:windows-drive-path>"
     )
