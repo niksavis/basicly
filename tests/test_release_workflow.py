@@ -151,3 +151,10 @@ def test_full_checks_run_unless_the_reuse_step_proves_a_green_main_run() -> None
     assert '>> "$GITHUB_OUTPUT"' in reuse["run"]
     assert full["if"] == f"steps.{reuse['id']}.outputs.reuse != 'true'"
     assert workflow["permissions"]["actions"] == "read"
+
+
+def test_the_tutorial_walk_passes_before_the_release_is_published() -> None:
+    jobs = yaml.safe_load(_RELEASE_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    walk_needs = jobs["tutorial-walk"].get("needs", [])
+    assert "release" not in ([walk_needs] if isinstance(walk_needs, str) else walk_needs)
+    assert "tutorial-walk" in jobs["release"]["needs"]

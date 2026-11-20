@@ -100,7 +100,6 @@ jobs:
 
   tutorial-walk:
     name: Tutorial walk
-    needs: [release]
     if: |
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -131,7 +130,7 @@ jobs:
 
   release:
     name: Publish GitHub release
-    needs: [verify, smoke-install]
+    needs: [verify, smoke-install, tutorial-walk]
     if: |
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
