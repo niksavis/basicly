@@ -126,6 +126,12 @@ hooks:
     stage: pre-commit
     always_run: true
     pass_filenames: false
+  - id: git-env-check
+    description: "Refuse an added test line that runs git with the inherited GIT_ variables (basicly-qpr2xmr.3.26)."
+    script: git-env-check.py
+    stage: pre-commit
+    files: (^|/)(test_[^/]*|[^/]*_test|conftest)\.py$
+    pass_filenames: true
   - id: commit-msg-script
     description: "Validate conventional commit message format."
     script: commit-msg.py
@@ -204,6 +210,12 @@ hooks:
   - id: rg-replace-guard
     description: "Refuse an `rg` short-flag cluster that swallows `-r`'s replacement value."
     script: rg-replace-guard.py
+    stage: pretooluse
+    manager: claude
+    matcher: Bash
+  - id: discard-guard
+    description: "Refuse a shell command that discards uncommitted work unless it names a fresh approval (basicly-qpr2xmr.3.24)."
+    script: discard-guard.py
     stage: pretooluse
     manager: claude
     matcher: Bash

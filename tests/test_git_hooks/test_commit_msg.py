@@ -114,3 +114,18 @@ def test_hook_accepts_a_valid_message(tmp_path: Path) -> None:
     proc = _run_hook("chore: restamp the install (basicly-dlxk)", tmp_path)
     assert proc.returncode == 0
     assert "disallowed character" not in proc.stderr
+
+
+def test_hook_error_says_a_record_id_belongs_in_the_trailing_id(tmp_path: Path) -> None:
+    proc = _run_hook(
+        "chore(tracker): record the uora5dm.3 landing (basicly-qpr2xmr.3.17)", tmp_path
+    )
+    assert proc.returncode == 1
+    assert "'.'" in proc.stderr
+    assert "trailing (id)" in proc.stderr
+
+
+def test_hook_error_for_a_capital_only_names_no_record_id(tmp_path: Path) -> None:
+    proc = _run_hook("chore: add Font support (basicly-dlxk)", tmp_path)
+    assert proc.returncode == 1
+    assert "trailing (id)" not in proc.stderr

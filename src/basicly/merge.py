@@ -14,6 +14,7 @@ from . import (
     ci_landing,
     decompose,
     landing_guard,
+    lefthook_artifacts,
     owned_store,
     policy,
     process_confirmation,
@@ -137,6 +138,7 @@ def _verify_for_landing(
     name: str, worktree_path: Path, verify_mode: str, clock: _Landing
 ) -> MergeResult | None:
 
+    lefthook_artifacts.provision_lane(worktree_path, (clock.repo_root,))
     report = verify.run_verify(worktree_path, verify_mode, capture_receipts=True)
     clock.note_checks(report)
     if report.passed:

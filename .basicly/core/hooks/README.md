@@ -51,6 +51,7 @@ module docstring, and gated by `.scripts/docs_claims.py`.
 | `internal-info-scan` | `pre-commit` | `git` | [`internal-info-scan.py`](internal-info-scan.py) | Block a commit that stages an internal-only identifier (basicly-0n3d). |
 | `no-comments` | `pre-commit` | `git` | [`no-comments.py`](no-comments.py) | Enforce the selected comment policy; strict no-comments is the default. |
 | `kit-boundary` | `pre-commit` | `git` | [`kit-boundary.py`](kit-boundary.py) | Fail when a kit module reaches back into basicly (basicly-vkh0.16). |
+| `git-env-check` | `pre-commit` | `git` | [`git-env-check.py`](git-env-check.py) | Refuse an added test line that runs git with the inherited GIT_ variables (basicly-qpr2xmr.3.26). |
 | `commit-msg-script` | `commit-msg` | `git` | [`commit-msg.py`](commit-msg.py) | Validate conventional commit message format. |
 | `tracker-commit-msg-script` | `commit-msg` | `git` | [`tracker-commit-msg.py`](tracker-commit-msg.py) | Validate that a commit message references an issue id the tracker holds. |
 | `tracker-claim-script` | `commit-msg` | `git` | [`tracker-claim.py`](tracker-claim.py) | Refuse a commit that changes files outside the ledger unless the committer holds a named record in progress. |
@@ -61,6 +62,7 @@ module docstring, and gated by `.scripts/docs_claims.py`.
 | `pkill-self-match` | `pretooluse` | `claude` | [`pkill-self-match.py`](pkill-self-match.py) | Refuse pkill -f or pgrep -f whose pattern matches the command's own shell (PreToolUse, pm1dzrp). |
 | `bare-var-guard` | `pretooluse` | `claude` | [`bare-var-guard.py`](bare-var-guard.py) | Refuse a command whose head is a bare `$VAR` that same command assigned a phrase. |
 | `rg-replace-guard` | `pretooluse` | `claude` | [`rg-replace-guard.py`](rg-replace-guard.py) | Refuse an `rg` short-flag cluster that swallows `-r`'s replacement value. |
+| `discard-guard` | `pretooluse` | `claude` | [`discard-guard.py`](discard-guard.py) | Refuse a shell command that discards uncommitted work unless it names a fresh approval (basicly-qpr2xmr.3.24). |
 | `headroom-guard` | `pretooluse` | `claude` | [`headroom-guard.py`](headroom-guard.py) | Put a Python module's remaining ratchet room in context before it is edited. |
 | `protect-generated-commit` | `pre-commit` | `git` | [`protect-generated-commit.py`](protect-generated-commit.py) | Block a commit that stages a hand-edited basicly-generated file (git backstop). |
 | `tool-usage` | `posttooluse` | `claude` | [`tool-usage.py`](tool-usage.py) | Count which terminal tools and skills the agent actually invokes (PostToolUse hook). |

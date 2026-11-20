@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 DEFAULT_STATUS = "open"
@@ -9,6 +12,22 @@ DEFAULT_STATUS = "open"
 DIRECTORY_HELP = "the ledger directory"
 
 IMPORT_FORMATS = ("beads", "beans")
+
+_REPOSITORY = "basicly_tracker_kit_repository_arguments"
+
+
+def _repository_arguments() -> Any:
+    cached = sys.modules.get(_REPOSITORY)
+    if cached is not None:
+        return cached
+    path = Path(__file__).with_name("repository_arguments.py")
+    spec = importlib.util.spec_from_file_location(_REPOSITORY, path)
+    if spec is None or spec.loader is None:
+        raise ImportError("the tracker kit's repository_arguments.py is missing")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_REPOSITORY] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _add_shape_arguments(parser: Any) -> None:
@@ -149,7 +168,7 @@ def parser(extend: Callable[[Any], None] | None = None) -> argparse.ArgumentPars
     gate.add_argument("directory", help=DIRECTORY_HELP)
     gate.add_argument("record", help="the record id")
 
-    _add_repository_parsers(sub)
+    _repository_arguments().add_parsers(sub)
 
     bring = sub.add_parser("import", help="import a foreign tracker's backlog into this ledger")
     bring.add_argument("directory", help=DIRECTORY_HELP)
@@ -239,7 +258,8 @@ def _add_write_parsers(sub: Any) -> None:
     note = sub.add_parser("comment", help="append one comment to a record")
     note.add_argument("directory", help=DIRECTORY_HELP)
     note.add_argument("record", help="the record id")
-    note.add_argument("text", help="the comment body")
+    note.add_argument("text", nargs="?", default=argparse.SUPPRESS, help="the comment body")
+    note.add_argument("--text", dest="text", help="the comment body, as an option")
 
     dep = sub.add_parser("dep", help="record a dependency edge on the dependent")
     dep.add_argument("directory", help=DIRECTORY_HELP)
@@ -303,35 +323,6 @@ def _add_config_parser(sub: Any) -> None:
     setting = actions.add_parser("set", help="set one setting in its one home")
     setting.add_argument("name", help="the setting, as config lists it")
     setting.add_argument("value", help="the value; a list or a number is read as JSON")
-
-
-def _add_repository_parsers(sub: Any) -> None:
-    _add_sync_parser(sub)
-    _add_vault_parsers(sub)
-
-
-def _add_vault_parsers(sub: Any) -> None:
-    shapes = sub.add_parser("vault-check", help="sort each vault commit into valid or quarantined")
-    shapes.add_argument("vault", help="the vault repository, bare or not")
-    shapes.add_argument("--ref", default="HEAD", help="the branch or commit to read")
-    shown = sub.add_parser("vault-show", help="fold a vault and show one record's holder")
-    shown.add_argument("vault", help="the vault repository, bare or not")
-    shown.add_argument("record", help="the record id")
-    shown.add_argument("--ref", default="HEAD", help="the branch or commit to read")
-    fetched = sub.add_parser("fetch", help="clone a vault bare once, then fetch it under a lock")
-    fetched.add_argument("--vault", required=True, help="the vault URL or local repository")
-    fetched.add_argument("--state", help="the machine state folder (default: per user)")
-    fetched.add_argument("--timeout", type=float, default=30.0, help="seconds per git call")
-    status = sub.add_parser("status", help="list the queued local events a vault has not received")
-    status.add_argument("--vault", required=True, help="the vault URL or local repository")
-    status.add_argument("--state", help="the machine state folder (default: per user)")
-
-
-def _add_sync_parser(sub: Any) -> None:
-    mirrored = sub.add_parser("sync", help="re-import the tracker this ledger mirrors")
-    mirrored.add_argument("directory", help=DIRECTORY_HELP)
-    mirrored.add_argument("--root", default=".", help="the repository that holds the source")
-    mirrored.add_argument("--dry-run", action="store_true", help="report and write nothing")
 
 
 def _add_commit_check(sub: Any) -> None:

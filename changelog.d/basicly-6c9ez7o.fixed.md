@@ -1,0 +1,1 @@
+- **A new lane gets its Lefthook artifact.** basicly worktree create, and a landing before its checks, copy the checksum-verified pinned Lefthook files from the main checkout or another live lane. With no verified copy, the lane gets a note that names the prepare command (basicly-6c9ez7o).

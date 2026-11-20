@@ -1,0 +1,1 @@
+- **A shell command that discards uncommitted work is refused.** A Claude Code hook refuses git checkout --, git restore without --staged, git stash except list and show, git reset --hard and git clean except its dry run. A command that names a fresh approval as BASICLY_APPROVAL=record@stamp passes and is logged (basicly-qpr2xmr.3.24).

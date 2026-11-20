@@ -45,10 +45,12 @@ basicly-claude-pretooluse:
           "manager": "claude", "technologies": [], "matcher": "Bash"}, {"id": "rg-replace-guard",
           "script": ".basicly/core/hooks/rg-replace-guard.py", "stage": "pretooluse",
           "pass_filenames": false, "always_run": false, "files": "", "manager": "claude",
-          "technologies": [], "matcher": "Bash"}, {"id": "headroom-guard", "script":
-          ".basicly/core/hooks/headroom-guard.py", "stage": "pretooluse", "pass_filenames":
+          "technologies": [], "matcher": "Bash"}, {"id": "discard-guard", "script":
+          ".basicly/core/hooks/discard-guard.py", "stage": "pretooluse", "pass_filenames":
           false, "always_run": false, "files": "", "manager": "claude", "technologies":
-          [], "matcher": ""}]'
+          [], "matcher": "Bash"}, {"id": "headroom-guard", "script": ".basicly/core/hooks/headroom-guard.py",
+          "stage": "pretooluse", "pass_filenames": false, "always_run": false, "files":
+          "", "manager": "claude", "technologies": [], "matcher": ""}]'
         BASICLY_FOLD_COMMAND: '["uvx", "--from", "https://github.com/niksavis/basicly/releases/download/v0.46.6/basicly-0.46.6-py3-none-any.whl",
           "basicly", "tracker", "fold"]'
 basicly-codex-pretooluse:
@@ -119,10 +121,12 @@ pre-commit:
           "manager": "git", "technologies": [], "matcher": ""}, {"id": "kit-boundary",
           "script": ".basicly/core/hooks/kit-boundary.py", "stage": "pre-commit",
           "pass_filenames": false, "always_run": true, "files": "", "manager": "git",
-          "technologies": [], "matcher": ""}, {"id": "protect-generated-commit", "script":
-          ".basicly/core/hooks/protect-generated-commit.py", "stage": "pre-commit",
-          "pass_filenames": false, "always_run": true, "files": "", "manager": "git",
-          "technologies": [], "matcher": ""}]'
+          "technologies": [], "matcher": ""}, {"id": "git-env-check", "script": ".basicly/core/hooks/git-env-check.py",
+          "stage": "pre-commit", "pass_filenames": true, "always_run": false, "files":
+          "(^|/)(test_[^/]*|[^/]*_test|conftest)\\.py$", "manager": "git", "technologies":
+          [], "matcher": ""}, {"id": "protect-generated-commit", "script": ".basicly/core/hooks/protect-generated-commit.py",
+          "stage": "pre-commit", "pass_filenames": false, "always_run": true, "files":
+          "", "manager": "git", "technologies": [], "matcher": ""}]'
         BASICLY_FOLD_COMMAND: '["uvx", "--from", "https://github.com/niksavis/basicly/releases/download/v0.46.6/basicly-0.46.6-py3-none-any.whl",
           "basicly", "tracker", "fold"]'
   follow: true
