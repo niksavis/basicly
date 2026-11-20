@@ -448,13 +448,8 @@ def cleanup(
         else ""
     )
 
-    base = record.base if record else None
-    if (
-        not kept
-        and branch
-        and (note := remote_branches.delete_landed(main, branch, base, unlanded_paths))
-    ):
-        print(f"  {note}")
+    if not kept and branch:
+        kept = remote_branches.reclaim(main, branch, record and record.base, unlanded_paths)
     if not kept:
         session_file(name, main).unlink(missing_ok=True)
         print(f"Cleaned up worktree {name!r} (worktree + branch + metadata).")

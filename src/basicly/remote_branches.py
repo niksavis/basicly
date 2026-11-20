@@ -45,6 +45,8 @@ def _keep_reason(main: Path, head: str, base: str | None, unlanded: Unlanded) ->
 
 
 def delete_landed(main: Path, branch: str, base: str | None, unlanded: Unlanded) -> str:
+    if git(["remote", "get-url", REMOTE], cwd=main, check=False).returncode != 0:
+        return ""
     head = remote_head(main, branch)
     if head is None:
         return f"kept {REMOTE}/{branch}: git ls-remote {REMOTE} failed, so it was not checked"
@@ -58,3 +60,11 @@ def delete_landed(main: Path, branch: str, base: str | None, unlanded: Unlanded)
     if gone.returncode != 0:
         return f"kept {REMOTE}/{branch}: git push refused the delete: {(gone.stderr or '').strip()}"
     return f"deleted {REMOTE}/{branch}: {REMOTE}/{base} holds every path it changed"
+
+
+def reclaim(main: Path, branch: str, base: str | None, unlanded: Unlanded) -> str:
+    note = delete_landed(main, branch, base, unlanded)
+    if note.startswith("deleted"):
+        print(f"  {note}")
+        return ""
+    return note

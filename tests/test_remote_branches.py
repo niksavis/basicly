@@ -257,3 +257,63 @@ def test_drop_refs_leaves_a_ref_that_only_ends_like_a_land_ref(main: Path) -> No
 
     assert ci_landing.drop_refs(main, "feat") == []
     assert _on_origin(main, "x/land/feat/1")
+
+
+def test_a_cleanup_that_kept_the_remote_branch_can_run_again_once_base_is_pushed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    monkeypatch.setattr(worktree, "provision_deps", lambda *_a, **_kw: [])
+    monkeypatch.setattr(worktree, "install_worktree_hooks", lambda _wt: "hooks: stubbed")
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    _git(repo, "remote", "add", "origin", str(origin))
+    _git(repo, "push", "-q", "origin", "main")
+    session = worktree.create("early", repo_root=repo)
+    (session.path / "lane.txt").write_text("lane\n", encoding="utf-8")
+    _git(session.path, "add", "lane.txt")
+    _git(session.path, "commit", "-q", "-m", "lane")
+    _git(session.path, "push", "-q", "origin", session.branch)
+    _git(repo, "merge", "-q", "--no-ff", "-m", "land", session.branch)
+
+    worktree.cleanup("early", repo_root=repo)
+
+    first = capsys.readouterr().out
+    assert f"kept branch {session.branch} and its record" in first
+    assert "lane.txt" in first
+    assert _on_origin(repo, session.branch)
+
+    _git(repo, "push", "-q", "origin", "main")
+    worktree.cleanup("early", repo_root=repo)
+
+    assert f"deleted origin/{session.branch}" in capsys.readouterr().out
+    assert not _on_origin(repo, session.branch)
+    assert worktree.load_session("early", repo) is None
+
+
+@pytest.mark.parametrize("proofs", [None, {"other": {"attempt": "2"}}])
+def test_drop_refs_for_a_lane_with_no_proof_entry_drops_nothing(
+    main: Path, proofs: dict[str, dict[str, str]] | None
+) -> None:
+    if proofs is not None:
+        path = main / ci_landing.PROOFS
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(proofs), encoding="utf-8")
+
+    assert ci_landing.drop_refs(main, "feat") == []
+
+
+def test_a_failed_proof_records_its_attempt_before_the_push(main: Path) -> None:
+    candidate = ci_landing.Candidate("feat", "basicly-x1", "main", _git(main, "rev-parse", "HEAD"))
+    _git(main, "remote", "set-url", "--push", "origin", str(main / "missing.git"))
+
+    with pytest.raises(ci_landing.CiLandingError):
+        ci_landing.prove(main, candidate, gh=lambda _argv: "[]")
+
+    assert ci_landing.proved(main, "feat")["attempt"] == "1"
+
+
+def test_a_repository_with_no_origin_has_nothing_to_delete(main: Path) -> None:
+    _git(main, "remote", "remove", "origin")
+
+    assert remote_branches.delete_landed(main, "harness/x", "main", worktree.unlanded_paths) == ""
