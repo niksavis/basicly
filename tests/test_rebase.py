@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from basicly import rebase
+from basicly.config import load_worktree_config
 
 
 class _Proc:
@@ -335,3 +336,15 @@ def test_a_linear_branch_replays_with_nothing_to_report(tmp_path: Path) -> None:
     assert outcome.regenerated == ()
     survivors = _git(repo, "ls-tree", "-r", "--name-only", "harness/feat").splitlines()
     assert sorted(survivors) == ["a.txt", "base.txt", "lane.txt"]
+
+
+def test_this_repository_rebuilds_a_conflicting_lefthook_config_without_installing() -> None:
+    commands = load_worktree_config(Path(__file__).resolve().parents[1]).regenerate_commands
+
+    assert commands[".basicly/lefthook.yml"] == (
+        "uv",
+        "run",
+        "basicly",
+        "hooks-build",
+        "--no-install",
+    )
