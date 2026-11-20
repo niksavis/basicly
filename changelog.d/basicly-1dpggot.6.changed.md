@@ -1,0 +1,1 @@
+- `orch lesson add` now requires `--scope local` or `--scope basicly`, refuses a lesson without one by name, and `orch lessons export` leaves local-scope lessons out.

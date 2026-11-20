@@ -46,7 +46,9 @@ def events(repo: Path) -> list[dict[str, object]]:
 
 def test_add_stamps_the_clock_time_and_the_member(tmp_path: Path) -> None:
     root = log.init(tmp_path)
-    lesson_id = log.Writer(root, clean, "orchestrator", lambda: T0).add("w", "r", "e", "rec-1")
+    lesson_id = log.Writer(root, clean, "orchestrator", lambda: T0).add(
+        "w", "r", "e", "rec-1", "local"
+    )
     (only,) = log.lessons(root)
     assert (only.id, only.time, only.member) == (lesson_id, T0, "orchestrator")
 
@@ -64,6 +66,8 @@ def test_add_has_no_time_argument() -> None:
             "e",
             "--record",
             "x",
+            "--scope",
+            "local",
             "--time",
             "now",
         ])
@@ -84,6 +88,8 @@ def test_scanner_flag_refuses_and_appends_nothing(repo: Path) -> None:
             "e",
             "--record",
             "x",
+            "--scope",
+            "local",
         )
     assert events(repo) == []
 
@@ -102,6 +108,8 @@ def test_scanner_pass_appends_one_line(repo: Path) -> None:
             "e",
             "--record",
             "x",
+            "--scope",
+            "local",
         )
         == 0
     )
@@ -123,6 +131,8 @@ def test_no_scanner_refuses_by_name(repo: Path) -> None:
             "e",
             "--record",
             "x",
+            "--scope",
+            "local",
         )
 
 
@@ -141,6 +151,8 @@ def test_export_writes_only_open_requirements_and_changes_no_file(repo: Path) ->
         "test A",
         "--record",
         "x",
+        "--scope",
+        "basicly",
     )
     run(
         repo,
@@ -154,6 +166,8 @@ def test_export_writes_only_open_requirements_and_changes_no_file(repo: Path) ->
         "test B",
         "--record",
         "y",
+        "--scope",
+        "basicly",
     )
     closed = events(repo)[1]["id"]
     run(repo, "lesson", "close", str(closed), "--change", "abc123")
@@ -172,7 +186,7 @@ def test_end_session_refuses_a_session_with_no_lesson_and_the_doctor_flags_one(
     writer = log.Writer(root, clean, "o", lambda: T0)
     with pytest.raises(log.RefusedError, match=r"wrote no lesson in this session"):
         writer.end_session()
-    writer.add("w", "r", "e", "x")
+    writer.add("w", "r", "e", "x", "local")
     assert writer.end_session() == 1
     with pytest.raises(log.RefusedError, match=r"wrote no lesson"):
         writer.end_session()
@@ -185,8 +199,8 @@ def test_end_session_refuses_a_session_with_no_lesson_and_the_doctor_flags_one(
 
 def test_doctor_names_open_lessons_older_than_14_days(tmp_path: Path) -> None:
     root = log.init(tmp_path)
-    log.Writer(root, clean, "o", lambda: T0).add("w", "old", "e", "x")
-    log.Writer(root, clean, "o", lambda: T0 + timedelta(days=10)).add("w", "new", "e", "x")
+    log.Writer(root, clean, "o", lambda: T0).add("w", "old", "e", "x", "local")
+    log.Writer(root, clean, "o", lambda: T0 + timedelta(days=10)).add("w", "new", "e", "x", "local")
     later = T0 + timedelta(days=15)
     assert [lesson.requirement for lesson in log.stale(root, clock=lambda: later)] == ["old"]
 
@@ -345,3 +359,79 @@ def test_doctor_rule_parity_fails_on_an_owner_rule_with_no_kit_entry(tmp_path: P
     assert failed
     assert lines[0] == f"{doc}:4: owner rule (2026-01-03) has no entry in {ruleset}"
     assert doctor.rule_parity_lines({})[1] is False
+
+
+def _add(repo: Path, scope: str | None) -> int:
+    return run(
+        repo,
+        "lesson",
+        "add",
+        "--what",
+        "w",
+        "--requirement",
+        "r",
+        "--enforcement",
+        "e",
+        "--record",
+        "x",
+        *(["--scope", scope] if scope is not None else []),
+    )
+
+
+def test_scope_missing_refuses_by_name_and_appends_nothing(repo: Path) -> None:
+    with pytest.raises(log.RefusedError, match=r"--scope local or --scope basicly"):
+        _add(repo, None)
+    assert events(repo) == []
+
+
+def test_scope_unknown_refuses_by_name_and_appends_nothing(repo: Path) -> None:
+    with pytest.raises(log.RefusedError, match=r"--scope local or --scope basicly"):
+        _add(repo, "global")
+    assert events(repo) == []
+
+
+@pytest.mark.parametrize("scope", ["local", "basicly"])
+def test_scope_recorded_on_the_add_event(repo: Path, scope: str) -> None:
+    assert _add(repo, scope) == 0
+    (only,) = events(repo)
+    assert only["scope"] == scope
+    (lesson,) = log.lessons(repo / ".orchestrator" / "lessons")
+    assert lesson.scope == scope
+
+
+def test_export_skips_local_scope_lessons(repo: Path) -> None:
+    target = repo / "agent.yaml"
+    target.write_text("name: orchestrator\n", encoding="utf-8")
+    for scope, rule in (("local", "Local rule."), ("basicly", "Shared rule.")):
+        run(
+            repo,
+            "lesson",
+            "add",
+            "--what",
+            "w",
+            "--requirement",
+            rule,
+            "--enforcement",
+            "t",
+            "--record",
+            "x",
+            "--scope",
+            scope,
+        )
+    out = repo / "lessons.patch"
+    assert run(repo, "lessons", "export", "--target", str(target), "--out", str(out)) == 0
+    patch = out.read_text(encoding="utf-8")
+    assert "Shared rule." in patch
+    assert "Local rule." not in patch
+
+
+def test_every_kit_caller_of_orch_lesson_add_passes_a_scope() -> None:
+    core = REPO / ".basicly" / "core"
+    missing = [
+        f"{path.relative_to(REPO).as_posix()}:{number}"
+        for path in sorted(core.rglob("*"))
+        if path.is_file() and path.suffix in {".py", ".yaml", ".md", ".json", ".toml"}
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if "orch lesson add" in line and "--scope" not in line
+    ]
+    assert missing == [], f"orch lesson add without --scope: {missing}"

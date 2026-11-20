@@ -20,6 +20,7 @@ def parser() -> argparse.ArgumentParser:
     add.add_argument("--requirement", required=True)
     add.add_argument("--enforcement", required=True)
     add.add_argument("--record", required=True)
+    add.add_argument("--scope")
     close = lesson.add_parser("close")
     close.add_argument("id")
     close.add_argument("--change", required=True)
@@ -114,7 +115,8 @@ def run_relay(args: argparse.Namespace, cwd: Path, environ: dict[str, str]) -> i
 
 
 def _add(args: argparse.Namespace, writer: log.Writer) -> str:
-    return f"lesson {writer.add(args.what, args.requirement, args.enforcement, args.record)} added"
+    lesson_id = writer.add(args.what, args.requirement, args.enforcement, args.record, args.scope)
+    return f"lesson {lesson_id} added"
 
 
 def _close(args: argparse.Namespace, writer: log.Writer) -> str:
