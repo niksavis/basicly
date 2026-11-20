@@ -651,7 +651,7 @@ inputs = [
   "src/basicly/run_record.py",
   ".scripts/check_spend_accuracy.py",
   ".scripts/ratchet.py",
-  ".basicly/ledger/**",
+  ".basicly/ledger",
   "pyproject.toml",
   "basicly.d/*.toml",
   "uv.lock",
