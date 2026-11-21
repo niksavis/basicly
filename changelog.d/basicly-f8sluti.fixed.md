@@ -1,0 +1,1 @@
+- After a CI-proven landing run from the lane's own engine (`uv run --project <lane>`), the lander no longer deletes the folder it runs from. It leaves the cleanup to the base and prints `basicly worktree cleanup <lane>`.
