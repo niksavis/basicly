@@ -1,26 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-from types import ModuleType
-
 import pytest
 
-KIT = Path(__file__).resolve().parents[1] / ".basicly" / "core" / "kit" / "tracker"
+from tests.kit_modules import KIT, load
 
-
-def _load() -> ModuleType:
-    key = "basicly_tracker_kit_evidence_checks"
-    spec = importlib.util.spec_from_file_location(key, KIT / "evidence_checks.py")
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[key] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-evidence = _load()
+evidence = load(KIT / "evidence_checks.py", "basicly_tracker_kit_evidence_checks")
 KEYS = set(evidence.COMPLETED_CHECK_KEYS)
 
 
