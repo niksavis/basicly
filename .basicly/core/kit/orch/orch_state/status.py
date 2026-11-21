@@ -8,6 +8,7 @@ from orch_state.store import clean
 
 WIDTH = 40
 QUIET_AFTER = timedelta(minutes=15)
+NUDGE_AFTER = timedelta(minutes=30)
 STALE_AFTER = timedelta(hours=2)
 ASK_STALE_AFTER = timedelta(hours=24)
 NAME = 9
@@ -59,6 +60,8 @@ def state(record: dict[str, object], now: datetime, alive: Alive) -> str:
         return "needs you"
     if record.get("state") == "working" and now - updated < QUIET_AFTER:
         return "working"
+    if now - updated >= NUDGE_AFTER:
+        return "nudge"
     return "quiet"
 
 
@@ -107,4 +110,7 @@ def render(
     columns: int = WIDTH,
 ) -> list[str]:
     ordered = sorted(records, key=lambda r: str(r.get("name") or r.get("id") or ""))
-    return [*header(asks, now), *(row(r, now, alive, columns) for r in ordered)]
+    live = [r for r in ordered if state(r, now, alive) != "dead"]
+    dead = len(ordered) - len(live)
+    folded = [f"{dead} dead session(s) not shown"] if dead else []
+    return [*header(asks, now), *(row(r, now, alive, columns) for r in live), *folded]
