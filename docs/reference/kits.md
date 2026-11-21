@@ -29,6 +29,8 @@ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly
 uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tier basicly-tier init
 ```
 
+`basicly-tracker init` sets the record id prefix from the repository folder name (lowercase letters and digits, at most 12) and prints the command that changes it.
+
 After `init`, plain `python3 .basicly/kit/<name>/cli.py` runs the comments or tier kit with
 no `uvx`, no network and nothing on `PATH`. The tracker runs as `basicly-tracker`, or as
 `python3 .basicly/tracker.pyz` after `init --sandbox`.

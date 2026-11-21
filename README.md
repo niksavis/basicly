@@ -141,6 +141,7 @@ uv tool install 'git+https://github.com/niksavis/basicly@v0.47.2#subdirectory=pa
 basicly-tracker init
 ```
 
+`init` sets the record id prefix from the folder name and prints the command that changes it.
 The [board README](packages/basicly-board/README.md) gives the board's commands. The kits
 reference below gives the commands of the other three kits.
 
