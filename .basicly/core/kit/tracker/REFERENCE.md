@@ -648,6 +648,7 @@ The tracker computes revisions and writer identities; these keys cannot be suppl
 ### confirm
 
 Confirmation uses the `confirm` command and the completion JSON shape in `GUIDANCE.md`.
+Each check's `result` is what the command printed. `confirm` refuses a result that says the check has not run, such as `pending` or `will run after landing`.
 
 `close <ledger> <id> --reason "<delivered outcome>"` defaults to completed and requires
 current review and confirmation. `--resolution cancelled` records reasoned abandonment,
