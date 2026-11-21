@@ -1,0 +1,1 @@
+- When the guarded landing merge fails, basicly worktree merge now shows what git said (redacted), or that git printed nothing, so the refusing hook is named.
