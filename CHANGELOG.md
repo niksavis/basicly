@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release lets `basicly worktree merge` land again: the merge subject now ends with the record id, which the vault commit-msg hook requires, and a refused merge shows what git said (basicly-ttck843). A tracker share now tells a push that timed out from one the vault refused (basicly-nu2yqhl), and `basicly init` sets the project prefix from the folder name (basicly-4zsx3bk.10).
+
 ## v0.47.1 - 2026-11-20
 
 Delta: v0.47.0..v0.47.1
