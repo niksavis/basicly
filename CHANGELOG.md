@@ -6,7 +6,29 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.48.0 - 2026-11-21
+
+Delta: v0.47.2..v0.48.0
+
 This minor release makes the orchestrator kit usable for a new Orchestrator session: `orch brief` prints a compact start view of the orchestration record in at most 20,000 bytes (basicly-qpr2xmr.3.34), `orch accept` lets a worker check a relayed decision against the exact action it runs (basicly-qpr2xmr.3.35), `orch status` shows a nudge after 30 minutes and folds dead sessions (basicly-qpr2xmr.3.36), and the tracker `confirm` refuses a check whose result says it has not run (basicly-qpr2xmr.3.37). It also publishes the fixes of v0.47.2: v0.47.2 was tagged but not published, because the release tutorial walk fetched the unpublished release wheel through a hook; the walk now puts a basicly shim for the built wheel first on PATH (basicly-opwelh6). Read the v0.47.2 section below for its other changes.
+
+### Added
+
+- The orchestrator kit adds `orch brief`: the newest handover, the owner items after it, the session map and the later notes of the orchestration record, in at most 20,000 bytes, so a new Orchestrator session starts without reading the whole record. (basicly-qpr2xmr.3.34)
+
+- The orchestrator kit adds `orch accept`: a worker checks a relayed decision or approval against the record, repository and exact action it is about to run and the 60-minute limit, and the command refuses by name on any difference. (basicly-qpr2xmr.3.35)
+
+- `orch state set` takes `--item ID` and `--last TEXT [--failed]`, stores them as `item`, `last`, `last_at` and `last_ok`, and `orch status` shows them, so the board and the Orchestrator see each session's record and last result. (basicly-qpr2xmr.3.38)
+
+### Changed
+
+- `orch status` now shows a session as `nudge` after 30 minutes without an update (stale stays at 2 hours) and folds dead sessions into one count line. (basicly-qpr2xmr.3.36)
+
+- The tracker `confirm` now refuses a check whose result says it has not run (for example `pending` or `will run after landing`), so a confirmation records only checks that ran. (basicly-qpr2xmr.3.37)
+
+### Fixed
+
+- The release tutorial walk now puts a basicly shim for the built wheel first on PATH, so a hook in the walk repo finds the pinned version and never fetches the unpublished release asset; v0.47.2 was tagged but not published for this reason. (basicly-opwelh6)
 
 ## v0.47.2 - 2026-11-21
 

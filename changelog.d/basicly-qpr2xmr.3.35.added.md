@@ -1,1 +1,0 @@
-- The orchestrator kit adds `orch accept`: a worker checks a relayed decision or approval against the record, repository and exact action it is about to run and the 60-minute limit, and the command refuses by name on any difference.

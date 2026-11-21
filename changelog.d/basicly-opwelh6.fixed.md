@@ -1,1 +1,0 @@
-- The release tutorial walk now puts a basicly shim for the built wheel first on PATH, so a hook in the walk repo finds the pinned version and never fetches the unpublished release asset; v0.47.2 was tagged but not published for this reason.

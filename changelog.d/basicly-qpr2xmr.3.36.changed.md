@@ -1,1 +1,0 @@
-- `orch status` now shows a session as `nudge` after 30 minutes without an update (stale stays at 2 hours) and folds dead sessions into one count line.

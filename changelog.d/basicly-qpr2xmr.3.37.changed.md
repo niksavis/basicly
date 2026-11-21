@@ -1,1 +1,0 @@
-- The tracker `confirm` now refuses a check whose result says it has not run (for example `pending` or `will run after landing`), so a confirmation records only checks that ran.
