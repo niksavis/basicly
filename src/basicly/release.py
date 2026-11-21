@@ -120,7 +120,7 @@ class ReleaseResult:
 def commit_message(plan: ReleasePlan, issue_id: str) -> str:
 
     return (
-        f"{COMMIT_SUBJECT}\n\n"
+        f"{COMMIT_SUBJECT} ({issue_id})\n\n"
         f"Release {plan.tag} dated {plan.date}, up from {plan.current_tag}. The tag "
         f"is annotated locally and deliberately not pushed.\n\n"
         f"{issue_id}"
