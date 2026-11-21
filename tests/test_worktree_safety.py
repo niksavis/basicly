@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from basicly import verify, verify_artifact, worktree
+from basicly import verify, verify_artifact, worktree, worktree_preservation
 from tests.test_worktree import _git, _init_repo
 
 
@@ -101,16 +101,49 @@ def test_cleanup_preserves_a_locked_worktree(safety_repo: Path, force: bool) -> 
 
 
 def test_cleanup_preserves_unknown_ignored_files(safety_repo: Path) -> None:
-    (safety_repo / ".gitignore").write_text("private.txt\n.venv/\n", encoding="utf-8")
+    (safety_repo / ".gitignore").write_text("private.txt\n.venv/\ntypes/\n", encoding="utf-8")
     _git(safety_repo, "add", ".gitignore")
     _git(safety_repo, "commit", "-m", "chore: ignores")
     session = worktree.create("ignored-work", repo_root=safety_repo)
-    artifact = session.path / "private.txt"
-    artifact.write_text("retained work\n", encoding="utf-8")
-    with pytest.raises(SystemExit, match=r"private\.txt"):
+    (session.path / "private.txt").write_text("retained work\n", encoding="utf-8")
+    (session.path / "types").mkdir()
+    (session.path / "types" / "index.d.ts").write_text("export {}\n", encoding="utf-8")
+    (session.path / "notes.txt").write_text("untracked work\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match=r"notes\.txt"):
         worktree.cleanup("ignored-work", repo_root=safety_repo)
-    assert artifact.read_text(encoding="utf-8") == "retained work\n"
-    worktree.cleanup("ignored-work", force=True, repo_root=safety_repo)
+    (session.path / "notes.txt").unlink()
+
+    worktree.cleanup("ignored-work", repo_root=safety_repo)
+
+    assert not session.path.exists()
+    kept = sorted((safety_repo / ".git" / "basicly-preserved").rglob("manifest.json"))
+    saved = json.loads(kept[-1].read_text(encoding="utf-8"))["files"]
+    assert {entry["path"] for entry in saved if entry["preserved"]} == {
+        "private.txt",
+        "types/index.d.ts",
+    }
+    assert (kept[-1].parent / "private.txt").read_text(encoding="utf-8") == "retained work\n"
+    assert (kept[-1].parent / "types" / "index.d.ts").read_text(encoding="utf-8") == "export {}\n"
+
+
+def test_cleanup_keeps_the_worktree_when_an_ignored_file_cannot_be_copied(
+    safety_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (safety_repo / ".gitignore").write_text("private.txt\n.venv/\n", encoding="utf-8")
+    _git(safety_repo, "add", ".gitignore")
+    _git(safety_repo, "commit", "-m", "chore: ignores")
+    session = worktree.create("copy-fails", repo_root=safety_repo)
+    (session.path / "private.txt").write_text("retained work\n", encoding="utf-8")
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(worktree_preservation.shutil, "copyfile", refuse)
+
+    with pytest.raises(OSError, match="disk full"):
+        worktree.cleanup("copy-fails", repo_root=safety_repo)
+
+    assert (session.path / "private.txt").read_text(encoding="utf-8") == "retained work\n"
 
 
 def test_cleanup_preserves_tracked_changes_under_dependency_paths(safety_repo: Path) -> None:

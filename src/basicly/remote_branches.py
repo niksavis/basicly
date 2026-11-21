@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from .checkout import git
 
@@ -30,7 +31,9 @@ def _base_head(main: Path, base: str | None) -> tuple[str, str]:
     return landed, ""
 
 
-def _keep_reason(main: Path, head: str, base: str | None, unlanded: Unlanded) -> str:
+def _keep_reason(
+    main: Path, head: str, base: str | None, unlanded: Unlanded, started: str | None
+) -> str:
     landed, absent = _base_head(main, base)
     if absent:
         return absent
@@ -48,12 +51,15 @@ def _keep_reason(main: Path, head: str, base: str | None, unlanded: Unlanded) ->
             f"landed: {', '.join(missing)}"
         )
     trunk = git(["rev-list", "--first-parent", landed], cwd=main, check=False).stdout.split()
-    if head in trunk:
+    fresh = not started or head.startswith(started) or started.startswith(head)
+    if head in trunk and fresh:
         return f"it has no commit of its own beyond {REMOTE}/{base}"
     return ""
 
 
-def delete_landed(main: Path, branch: str, base: str | None, unlanded: Unlanded) -> str:
+def delete_landed(
+    main: Path, branch: str, base: str | None, unlanded: Unlanded, started: str | None = None
+) -> str:
     if git(["remote", "get-url", REMOTE], cwd=main, check=False).returncode != 0:
         return ""
     head = remote_head(main, branch)
@@ -61,7 +67,7 @@ def delete_landed(main: Path, branch: str, base: str | None, unlanded: Unlanded)
         return f"kept {REMOTE}/{branch}: git ls-remote {REMOTE} failed, so it was not checked"
     if not head:
         return ""
-    if reason := _keep_reason(main, head, base, unlanded):
+    if reason := _keep_reason(main, head, base, unlanded, started):
         return f"kept {REMOTE}/{branch}: {reason}"
     ref = f"refs/heads/{branch}"
     lease = f"--force-with-lease={ref}:{head}"
@@ -71,8 +77,9 @@ def delete_landed(main: Path, branch: str, base: str | None, unlanded: Unlanded)
     return f"deleted {REMOTE}/{branch}: {REMOTE}/{base} holds every path it changed"
 
 
-def reclaim(main: Path, branch: str, base: str | None, unlanded: Unlanded) -> str:
-    note = delete_landed(main, branch, base, unlanded)
+def reclaim(main: Path, branch: str, record: Any, unlanded: Unlanded) -> str:
+    base, started = (record.base, record.base_head) if record else (None, None)
+    note = delete_landed(main, branch, base, unlanded, started)
     if note.startswith("deleted"):
         print(f"  {note}")
         return ""

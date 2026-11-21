@@ -336,3 +336,28 @@ def test_a_failed_base_lookup_is_named_as_a_failure(
         note == "kept origin/harness/look: git ls-remote origin failed for the base main, "
         "so it was not compared"
     )
+
+
+def test_a_lane_landed_by_fast_forward_has_its_remote_branch_deleted(main: Path) -> None:
+    started = _git(main, "rev-parse", "origin/main")
+    _lane(main, "harness/ff", "ff.txt")
+    _git(main, "merge", "-q", "--ff-only", "harness/ff")
+    _git(main, "push", "-q", "origin", "main")
+
+    note = remote_branches.delete_landed(
+        main, "harness/ff", "main", worktree.unlanded_paths, started
+    )
+
+    assert note.startswith("deleted origin/harness/ff")
+    assert not _on_origin(main, "harness/ff")
+
+
+def test_a_fresh_branch_still_at_its_start_commit_is_kept(main: Path) -> None:
+    started = _git(main, "rev-parse", "origin/main")
+    _git(main, "push", "-q", "origin", "main:refs/heads/harness/new")
+
+    note = remote_branches.delete_landed(
+        main, "harness/new", "main", worktree.unlanded_paths, started
+    )
+
+    assert note == "kept origin/harness/new: it has no commit of its own beyond origin/main"

@@ -4780,9 +4780,22 @@ def _cmd_worktree_merge(args: argparse.Namespace) -> int:
         notes = ci_landing.finish(root, args.name, args.bead)
     else:
         notes = ci_landing.drop_refs(root, args.name) if ci else []
+    if ci and result.merged and not notes:
+        notes = _clean_landed_lane(root, args.name)
     for note in notes:
         print(f"  {note}")
     return 0 if result.merged and not notes else 1
+
+
+def _clean_landed_lane(root: Path, name: str) -> list[str]:
+    try:
+        worktree.cleanup(name, repo_root=root, missing_ok=True)
+    except SystemExit as stopped:
+        return [
+            f"the lane landed but was not cleaned up: {stopped}; "
+            f"run basicly worktree cleanup {name}"
+        ]
+    return []
 
 
 def _cmd_worktree_unlock(args: argparse.Namespace) -> int:
