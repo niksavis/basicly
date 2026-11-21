@@ -439,3 +439,68 @@ def test_a_shared_hook_stays_silent_in_a_linked_checkout_without_the_tracker(
     assert done.returncode == 0, done.stderr
     assert done.stderr == ""
     assert (linked / LEDGER / "pending-feature.jsonl").read_bytes() == before
+
+
+def _main(root: Path, *extra: str, module=None) -> str:
+    module = module or _module(root)
+    ledger = root / LEDGER
+    if not any(ledger.iterdir()):
+        ledger.rmdir()
+    stream = io.StringIO()
+    saved = sys.stdout
+    sys.stdout = stream
+    try:
+        module.main(["--root", str(root), "--ledger", str(ledger), "--pin", *extra])
+    finally:
+        sys.stdout = saved
+    return stream.getvalue()
+
+
+@pytest.mark.parametrize(("folder", "prefix"), [("Shop-App_2", "shopapp2"), ("demo", "demo")])
+def test_a_pinned_init_names_the_prefix_from_the_folder_and_how_to_change_it(
+    tmp_path: Path, folder: str, prefix: str
+) -> None:
+    root = tmp_path / folder
+    (root / ".git" / "hooks").mkdir(parents=True)
+
+    said = _main(root, "--runner", "basicly-tracker")
+
+    assert f"the id prefix is {prefix}" in said
+    assert "basicly-tracker config .basicly/ledger set prefix NAME" in said
+    assert "--prefix NAME" in said
+    template = (root / LEDGER / "template.json").read_text(encoding="utf-8")
+    assert f'"prefix": "{prefix}"' in template
+
+
+def test_a_pinned_init_keeps_a_prefix_the_ledger_already_sets(tmp_path: Path) -> None:
+    root = tmp_path / "demo"
+    (root / ".git" / "hooks").mkdir(parents=True)
+    _main(root)
+    settings = _load(root / VENDORED / "settings.py", f"kit_settings_{next(_loaded)}")
+    settings.write(root / LEDGER, "prefix", "kept")
+    module = _load(root / VENDORED / "install_hook.py", f"kit_hook_test_{next(_loaded)}")
+
+    said = _main(root, module=module)
+
+    assert "the id prefix is" not in said
+    assert '"prefix": "kept"' in (root / LEDGER / "template.json").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("name", "derived"),
+    [
+        ("My Project", "myproject"),
+        ("2048-game", "game"),
+        ("averyveryverylongrepositoryname", "averyveryver"),
+        ("---", "work"),
+        ("1234", "work"),
+        ("ćevapi", "evapi"),
+    ],
+)
+def test_a_derived_prefix_follows_the_prefix_rules_or_takes_the_named_fallback(
+    name: str, derived: str
+) -> None:
+    settings = _load(REPO_ROOT / KIT_RELATIVE / "settings.py", f"kit_settings_{next(_loaded)}")
+
+    assert settings.derived_prefix(name) == derived
+    assert settings.ids.validate_prefix(derived) == derived

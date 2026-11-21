@@ -1,0 +1,1 @@
+- `basicly-tracker init` now sets the id prefix from the repository folder name (letters and digits, at most 12, `work` when none is left), prints it and how to change it, and `config LEDGER set prefix NAME` works on a ledger that does not exist yet, so the first `create` needs no config step.

@@ -238,3 +238,19 @@ def test_the_pin_row_reads_the_ledger_pin(
     row = _rows(_run(capsys, "config", str(ledger))[1])["pin"]
 
     assert (row["value"], row["source"]) == (cli.pin.KIT_VERSION, "ledger file")
+
+
+def test_config_set_prefix_starts_a_missing_ledger_so_the_create_remedy_works(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / ".basicly" / "ledger"
+    code, refused = _run(capsys, "create", str(ledger), "--title", "First", *SHAPE)
+    assert code != 0
+    assert f"config {ledger} set prefix NAME" in refused["refused"]
+
+    code, report = _run(capsys, "config", str(ledger), "set", "prefix", "acme")
+
+    assert code == 0, report
+    code, created = _run(capsys, "create", str(ledger), "--title", "First", *SHAPE)
+    assert code == 0, created
+    assert created["record"].startswith("acme-")
