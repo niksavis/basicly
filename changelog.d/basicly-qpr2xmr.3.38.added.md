@@ -1,0 +1,1 @@
+- `orch state set` takes `--item ID` and `--last TEXT [--failed]`, stores them as `item`, `last`, `last_at` and `last_ok`, and `orch status` shows them, so the board and the Orchestrator see each session's record and last result.

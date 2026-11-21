@@ -65,14 +65,31 @@ def state(record: dict[str, object], now: datetime, alive: Alive) -> str:
     return "quiet"
 
 
-def _doing(record: dict[str, object], now: datetime) -> str:
+def _now(record: dict[str, object], now: datetime) -> str:
     text = record.get("now")
     said = _when(record.get("now_at"))
     if not isinstance(text, str) or not text or said is None:
-        return "-"
+        return ""
     if now - said >= QUIET_AFTER:
         return f"{age(now - said)} ago: {clean(text)}"
     return clean(text)
+
+
+def _last(record: dict[str, object]) -> str:
+    text = record.get("last")
+    if not isinstance(text, str) or not text:
+        return ""
+    return f"last {'ok' if record.get('last_ok') is not False else 'failed'}: {clean(text)}"
+
+
+def _doing(record: dict[str, object], now: datetime) -> str:
+    item = record.get("item")
+    parts = [
+        clean(item) if isinstance(item, str) and item else "",
+        _now(record, now),
+        _last(record),
+    ]
+    return " | ".join(part for part in parts if part) or "-"
 
 
 def row(record: dict[str, object], now: datetime, alive: Alive, columns: int = WIDTH) -> str:
