@@ -360,11 +360,11 @@ def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
             for check in load_verify_config(worktree).checks
         )
         for line in proc.stdout.splitlines():
-            generated = worktree_contents.generated_files(worktree, line, failure_logs=failure_logs)
-            if generated is not None:
-                preserve.update(generated)
-            elif not worktree_contents.owned_lefthook_assets(worktree, line):
+            found = worktree_contents.kept_files(worktree, line, failure_logs)
+            if found is None:
                 retained.append(line)
+            else:
+                preserve.update(found)
         verdict = classify_worktree_tree(proc.returncode, "\n".join(retained))
         if preserve and verdict.may_remove:
             tracked = set(git(["ls-files", "-z"], cwd=worktree).stdout.split("\0"))
@@ -449,7 +449,7 @@ def cleanup(
     )
 
     if not kept and branch:
-        kept = remote_branches.reclaim(main, branch, record and record.base, unlanded_paths)
+        kept = remote_branches.reclaim(main, branch, record, unlanded_paths)
     if not kept:
         session_file(name, main).unlink(missing_ok=True)
         print(f"Cleaned up worktree {name!r} (worktree + branch + metadata).")

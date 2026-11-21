@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from basicly import ci_landing
+from basicly import cli as basicly_cli
 from tests import flipped_tracker
 
 
@@ -286,3 +287,22 @@ def test_a_changed_lane_after_a_failure_gets_a_new_branch(tmp_path: Path) -> Non
     _commit(repo, "src/app.py", "VALUE = 5\n")
 
     assert ci_landing.prove(repo, _candidate(repo), Gh(), CLOCK)["ref"] == "land/lane-a/2"
+
+
+def test_the_lander_cleans_up_a_landed_lane_and_names_a_refused_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cleaned: list[str] = []
+    monkeypatch.setattr(basicly_cli.worktree, "cleanup", lambda name, **_kw: cleaned.append(name))
+    assert basicly_cli._clean_landed_lane(tmp_path, "lane") == []
+    assert cleaned == ["lane"]
+
+    def refuse(_name: str, **_kw: object) -> None:
+        raise SystemExit("worktree 'lane' has uncommitted changes")
+
+    monkeypatch.setattr(basicly_cli.worktree, "cleanup", refuse)
+    notes = basicly_cli._clean_landed_lane(tmp_path, "lane")
+    assert notes == [
+        "the lane landed but was not cleaned up: worktree 'lane' has uncommitted changes; "
+        "run basicly worktree cleanup lane"
+    ]

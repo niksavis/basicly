@@ -267,6 +267,29 @@ def _check_passes(path: Path) -> bool:
     )
 
 
+def kept_files(worktree: Path, line: str, failure_logs: tuple[str, ...]) -> tuple[Path, ...] | None:
+    generated = generated_files(worktree, line, failure_logs=failure_logs)
+    if generated is not None:
+        return generated
+    if owned_lefthook_assets(worktree, line):
+        return ()
+    return ignored_files(worktree, line)
+
+
+def ignored_files(worktree: Path, line: str) -> tuple[Path, ...] | None:
+    if not line.startswith("!! "):
+        return None
+    relative = _relative(line)
+    shown = relative.as_posix()
+    if shown in DEP_DIRS or shown.startswith((*(f"{d}/" for d in DEP_DIRS), ".basicly/bin")):
+        return None
+    candidate = worktree / relative
+    found = [candidate] if candidate.is_file() else sorted(candidate.rglob("*"))
+    if candidate.is_symlink() or any(path.is_symlink() for path in found):
+        return None
+    return tuple(path for path in found if path.is_file())
+
+
 def generated_files(
     worktree: Path, line: str, *, failure_logs: tuple[str, ...] = ()
 ) -> tuple[Path, ...] | None:
