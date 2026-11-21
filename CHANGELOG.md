@@ -6,7 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.49.1 - 2026-11-21
+
+Delta: v0.49.0..v0.49.1
+
 This patch release finishes the first part of the new workflow (basicly-lkgvml3). `runner_timeout` is now off by default, and no dispatch is killed at a time limit: decider, judge and proposer runs also get a stall note at 30 minutes and keep running. A new post-commit hook writes each commit to the orch session state. `orch --version` prints the installed version. `basicly install` now also sets `promptCacheTtl` to `1h`, so both prompt caches last an hour (basicly-aoc0kqa).
+
+### Added
+
+- `basicly install` now also sets `promptCacheTtl` to `1h` in `.claude/settings.json` when the key is absent, so the main conversation keeps its prompt cache through a pause longer than five minutes. With `subagentPromptCacheTtl`, both caches last an hour. A value you set is kept. Needs Claude Code v2.1.242 or later. (basicly-aoc0kqa)
+
+- `orch --version` prints the installed basicly-orch version, so `orch --version` and `uv tool list` agree. (basicly-lkgvml3)
+
+### Changed
+
+- `runner_timeout` is now off by default. Decider, judge and proposer dispatches also write a stall note at 30 minutes or at a `runner_timeout` you set, and keep running instead of being killed. The commit note moved from the commit-msg hook to a new post-commit hook, so it records only commits that exist. (basicly-lkgvml3)
+
+### Fixed
+
+- The projected orchestrator agent (`.claude/agents/orchestrator.md`, `.github/agents/orchestrator.agent.md`, `.agents/roles/orchestrator.md`) now passes markdownlint MD032, so a consumer with orchestration on can commit it. A test lints all three after an install. (basicly-h08bc6c)
 
 ## v0.49.0 - 2026-11-21
 

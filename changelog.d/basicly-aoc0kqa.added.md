@@ -1,1 +1,0 @@
-- `basicly install` now also sets `promptCacheTtl` to `1h` in `.claude/settings.json` when the key is absent, so the main conversation keeps its prompt cache through a pause longer than five minutes. With `subagentPromptCacheTtl`, both caches last an hour. A value you set is kept. Needs Claude Code v2.1.242 or later.

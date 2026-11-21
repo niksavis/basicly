@@ -1,1 +1,0 @@
-- The projected orchestrator agent (`.claude/agents/orchestrator.md`, `.github/agents/orchestrator.agent.md`, `.agents/roles/orchestrator.md`) now passes markdownlint MD032, so a consumer with orchestration on can commit it. A test lints all three after an install.

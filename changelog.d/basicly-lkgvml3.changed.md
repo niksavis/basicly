@@ -1,1 +1,0 @@
-- `runner_timeout` is now off by default. Decider, judge and proposer dispatches also write a stall note at 30 minutes or at a `runner_timeout` you set, and keep running instead of being killed. The commit note moved from the commit-msg hook to a new post-commit hook, so it records only commits that exist.
