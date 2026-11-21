@@ -2389,6 +2389,12 @@ def cmd_permissions_build(_args: argparse.Namespace) -> int:
             f"{claude_settings.SUBAGENT_CACHE_TTL!r} in {claude_settings.CLAUDE_SETTINGS_PATH}: "
             "subagents keep their prompt cache through a pause longer than five minutes"
         )
+    if claude_settings.default_prompt_cache_ttl(repo_root):
+        print(
+            f"Set {claude_settings.PROMPT_CACHE_TTL_KEY} to "
+            f"{claude_settings.PROMPT_CACHE_TTL!r} in {claude_settings.CLAUDE_SETTINGS_PATH}: "
+            "the main conversation keeps its prompt cache through a pause longer than five minutes"
+        )
     if claude_settings.default_skill_listing_budget(repo_root):
         print(
             f"Set {claude_settings.SKILL_LISTING_BUDGET_KEY} to "
