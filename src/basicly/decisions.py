@@ -240,7 +240,12 @@ def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human c
     prompt = decider_prompt(item, intake_corpus(repo_root, root_issue))
     with runner.process_budget().slot(runner.DECIDER):
         result = runner.run(
-            spec, prompt, repo_root, capture_usage=True, timeout=runner_config.runner_timeout
+            spec,
+            prompt,
+            repo_root,
+            capture_usage=True,
+            timeout=runner_config.runner_timeout,
+            keep_on_timeout=True,
         )
     runner.record_dispatch(
         repo_root,
@@ -252,7 +257,7 @@ def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human c
     )
     if result.timed_out or result.handoff or result.returncode != 0:
         why = (
-            f"decider hit runner_timeout ({runner_config.runner_timeout:.0f}s)"
+            f"decider stopped: {runner.stop_label(result, runner_config.runner_timeout)}"
             if result.timed_out
             else "decider runner unavailable or failed"
         )

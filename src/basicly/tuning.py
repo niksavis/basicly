@@ -20,6 +20,7 @@ CEILING_QUANTILE = 0.9
 FLOOR_QUANTILE = 0.1
 
 BACKSTOP_HEADROOM = 2.0
+TIMEOUT_PRIOR = 3600.0
 
 REWORK_QUANTILE = CEILING_QUANTILE
 
@@ -96,7 +97,7 @@ class ValueCohort:
 class ParameterTuning:
     key: str
     unit: str
-    in_force: float
+    in_force: float | None
     prior: float
     cohorts: tuple[ValueCohort, ...]
     observations: tuple[Observation, ...]
@@ -131,7 +132,7 @@ class TuningReport:
 class _ParameterSpec:
     key: str
     unit: str
-    in_force: float
+    in_force: float | None
     prior: float
     basis: str
     overridable: bool = False
@@ -241,20 +242,21 @@ def _parameter_specs(
     worktree: config.WorktreeConfig,
 ) -> tuple[_ParameterSpec, ...]:
 
+    timed = runner.runner_timeout
     specs = [
         _ParameterSpec(
             key="runner.runner_timeout",
             unit="s",
-            in_force=runner.runner_timeout,
-            prior=_declared_default(config.RunnerConfig, "runner_timeout"),
+            in_force=timed,
+            prior=TIMEOUT_PRIOR,
             overridable=True,
             sample=_duration,
             statistic=_backstop,
             basis=(
-                f"the longest recorded write dispatch x{BACKSTOP_HEADROOM:g} headroom. A "
-                "backstop for the case the spend ceiling and quiet_after cannot see, so "
-                "it is set where it never fires in normal operation rather than fitted "
-                "to the work distribution"
+                f"the longest recorded write dispatch x{BACKSTOP_HEADROOM:g} headroom. Off by "
+                "default; when set, a dispatch past it gets a stall note and keeps running, so "
+                "it is set where it never fires in normal operation rather than fitted to the "
+                "work distribution"
             ),
         ),
         _ParameterSpec(
@@ -427,8 +429,10 @@ def _census(values: Iterable[object]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def render_value(value: float) -> str:
+def render_value(value: float | None) -> str:
 
+    if value is None:
+        return "off"
     return str(int(value)) if float(value).is_integer() else f"{value:.4g}"
 
 

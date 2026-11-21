@@ -1549,6 +1549,7 @@ def test_dispatch_lane_timeout_queues_a_stall(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     codex = _codex()
+    (tmp_path / "basicly.toml").write_text("[runner]\nrunner_timeout = 3600\n", encoding="utf-8")
     _br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout="")
 
     def timed_out_run(spec, _prompt, _cwd, **_k):
@@ -1579,6 +1580,7 @@ def test_dispatch_lane_timeout_commits_the_worktree_and_still_queues_the_stall(
 ) -> None:
 
     codex = _codex()
+    (tmp_path / "basicly.toml").write_text("[runner]\nrunner_timeout = 3600\n", encoding="utf-8")
     _br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout="")
     monkeypatch.setattr(
         supervise.runner,

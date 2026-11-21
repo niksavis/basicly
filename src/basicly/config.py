@@ -1217,7 +1217,7 @@ class RunnerConfig:
     specs: tuple[RunnerSpec, ...]
     default: str
     decider: str | None = None
-    runner_timeout: float = 3600.0
+    runner_timeout: float | None = None
     max_agent_processes: int = DEFAULT_MAX_AGENT_PROCESSES
     stall_after: float = DEFAULT_STALL_AFTER
     quiet_after: float = DEFAULT_QUIET_AFTER
@@ -1256,13 +1256,13 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
     decider = decider.strip() if isinstance(decider, str) and decider.strip() else None
 
     raw_timeout = section.get("runner_timeout")
-    if (
-        not isinstance(raw_timeout, int | float)
-        or isinstance(raw_timeout, bool)
-        or raw_timeout <= 0
-    ):
-        raw_timeout = 3600.0
-    timeout = float(raw_timeout)
+    timeout = (
+        float(raw_timeout)
+        if isinstance(raw_timeout, int | float)
+        and not isinstance(raw_timeout, bool)
+        and raw_timeout > 0
+        else None
+    )
 
     return RunnerConfig(
         specs=tuple(specs.values()),

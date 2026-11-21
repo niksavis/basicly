@@ -34,7 +34,7 @@ def test_a_lane_past_its_runner_timeout_is_noted_and_never_killed(
     assert killed == []
     assert result.timed_out is False
     assert "partial" in result.stdout
-    assert seen == ["stalled: claude ran past runner_timeout 1s"]
+    assert seen == ["stalled: claude ran past 1s"]
 
 
 def test_a_quiet_streaming_lane_is_noted_and_runs_to_its_end(
@@ -62,3 +62,20 @@ def test_a_quiet_streaming_lane_is_noted_and_runs_to_its_end(
     assert result.timed_out is False
     assert result.returncode == 0
     assert any("stalled" in note for note in seen)
+
+
+def test_a_helper_with_no_timeout_still_gets_a_stall_note_and_keeps_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hung = _HungProc()
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *_a, **_k: hung)
+    monkeypatch.setattr(runner, "DEFAULT_QUIET_AFTER", 0.2)
+    killed: list[int] = []
+    monkeypatch.setattr(runner, "_kill_tree", lambda proc: killed.append(proc.pid))
+    seen = _notes(monkeypatch)
+
+    result = runner.run(_claude_spec(), "go", Path("/work"), timeout=None, keep_on_timeout=True)
+
+    assert killed == []
+    assert result.timed_out is False
+    assert seen == ["stalled: claude ran past 0.2s"]

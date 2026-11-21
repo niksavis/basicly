@@ -760,41 +760,14 @@ epic = ["## Success Criteria"]
 # `loop run`/`loop advance` take no `--runner`, so the handoff can only be
 # restored from config (basicly-nvm1).
 default = "auto"
-# Backstop, no longer the working bound (basicly-lpsf). At 1800 this was a bound
-# calibrated *inside* the upper tail of real work — the longest successful lane
-# measured 1712s against it, 95.1%, and 10 of 68 successes finished past 80% — so
-# it killed lanes that were working. It was there because it was the only terminal
-# signal there was, and it is the one signal that says nothing about whether work
-# is happening.
-#
-# `quiet_after` below and the spend ceiling now bind first, and both read the
-# dispatch's own event stream (basicly-rupz), so they can tell a working lane from
-# a wedged one. Restored to the 3600 default it had been lowered from, which leaves
-# it for what neither of those can see: a process that hangs holding the pipe, or a
-# stream that stops while the process does not exit.
-#
-# Not a licence to run long. The forward cost gates (basicly-vz78) and the spend
-# bound are what bound a runaway now, and both are denominated in tokens rather
-# than seconds. Raising this alone would have been the trap this bead was filed to
-# avoid: it moves the cliff one tail-length out and weakens the only runaway bound
-# in the process.
-#
-# The kill costs the run nothing either way: the harness commits whatever the
-# worktree holds on the way out and the landing judges that diff, because a clock
-# is not evidence against a change (basicly-yvx9).
-#
-# Raised 3600 -> 7200 by the owner 2026-09-01, on the same argument that took it 1800 -> 3600.
-# `basicly usage tuning` recommends 7202s, measured over n=50 (22 executed, 28 failed at 3600).
-# basicly-3iaw0x streamed events for the full 3600s, so `quiet_after` never fired: the clock
-# killed a lane that was working, which is the one thing this bound must not do. It spent
-# 54,205,369 tokens and left an empty worktree. The spend ceiling and `quiet_after` still bind
-# first and both read the event stream, so what a runaway costs stays bounded by the grant.
-runner_timeout = 7200
+# `runner_timeout` is off by default since basicly-lkgvml3 (owner rule 2026-11-21: no time
+# limits, never discard work). Set it to get a stall note in the orch state at that age; the
+# runner never kills a dispatch at it.
 # Quiet bound: seconds of a *silent* event stream before a lane is noted as stalled
 # (orch state last "stalled", a stderr line); since basicly-lkgvml3 the lane keeps running. Left at the engine default (1800s), stated here because it is the
 # bound that replaced the wall clock and a reader of this file should see all three
-# together — `stall_after` flags at 900s, this notes at 1800s, `runner_timeout`
-# notes at 7200s; for a lane dispatch neither kills the process or discards its work.
+# together — `stall_after` flags at 900s and this notes at 1800s; `runner_timeout` is off.
+# Neither kills a dispatch or discards its work.
 #
 # Uncalibrated, and there is no honest way to calibrate it yet: no inter-event gap
 # has ever been measured, because until basicly-rupz the stream was requested, paid

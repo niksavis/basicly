@@ -116,7 +116,7 @@ Hooks
 ┏━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┓
 ┃ manager ┃ specs ┃ projection ┃ activation ┃
 ┡━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━┩
-│ git     │ 17    │ in sync    │ installed  │
+│ git     │ 18    │ in sync    │ installed  │
 │ claude  │ 12    │ in sync    │ active     │
 │ copilot │ 2     │ in sync    │ active     │
 └─────────┴───────┴────────────┴────────────┘

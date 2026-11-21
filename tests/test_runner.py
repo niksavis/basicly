@@ -2394,12 +2394,13 @@ def test_the_quiet_bound_default_leaves_room_for_the_longest_real_tool_call(
 ) -> None:
 
     engine = load_runner_config(tmp_path)
-    assert engine.stall_after < engine.quiet_after < engine.runner_timeout
+    assert engine.stall_after < engine.quiet_after
+    assert engine.runner_timeout is None
     assert engine.quiet_after >= 10 * 76
 
     declared = load_runner_config(REPO_ROOT)
-    assert declared.stall_after < declared.quiet_after < declared.runner_timeout
-    assert declared.runner_timeout > 1712
+    assert declared.stall_after < declared.quiet_after
+    assert declared.runner_timeout is None
 
 
 def test_a_record_names_the_role_and_model_a_lane_dispatch_carried(
