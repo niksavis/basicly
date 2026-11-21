@@ -6,7 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.49.2 - 2026-11-21
+
+Delta: v0.49.1..v0.49.2
+
 This patch release makes worktree cleanup stop asking for `--force` on git-ignored files (basicly-f8sluti). Cleanup copies them to `.git/basicly-preserved/` with a manifest and removes the worktree, deletes a merged lane's remote branch after a fast-forward landing, and runs by itself after a CI-proven landing. `orch lesson add` and `orch lessons end-session` take the member name from the session's orch state record when `ORCH_MEMBER` is unset (basicly-vi2amxd).
+
+### Changed
+
+- `basicly worktree cleanup` no longer stops on git-ignored files such as generated type folders or `*.basicly-bak` backups: it copies them to `.git/basicly-preserved/` and removes the worktree. It deletes a merged lane's remote branch even after a fast-forward landing. `worktree merge --mode ci` now cleans up the lane itself after a CI-proven landing. (basicly-f8sluti)
+
+### Fixed
+
+- After a CI-proven landing run from the lane's own engine (`uv run --project <lane>`), the lander no longer deletes the folder it runs from. It leaves the cleanup to the base and prints `basicly worktree cleanup <lane>`. (basicly-f8sluti)
+
+- `orch lesson add` and `orch lessons end-session` no longer need `ORCH_MEMBER` when the session's orch state record names the member, the same name `orch state set` shows. With no source, they refuse and name each source they tried and the command that sets a name. (basicly-vi2amxd)
 
 ## v0.49.1 - 2026-11-21
 

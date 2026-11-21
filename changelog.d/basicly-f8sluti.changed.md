@@ -1,1 +1,0 @@
-- `basicly worktree cleanup` no longer stops on git-ignored files such as generated type folders or `*.basicly-bak` backups: it copies them to `.git/basicly-preserved/` and removes the worktree. It deletes a merged lane's remote branch even after a fast-forward landing. `worktree merge --mode ci` now cleans up the lane itself after a CI-proven landing.
