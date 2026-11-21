@@ -6,7 +6,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.47.2 - 2026-11-21
+
+Delta: v0.47.1..v0.47.2
+
 This patch release lets `basicly worktree merge` land again: the merge subject now ends with the record id, which the vault commit-msg hook requires, and a refused merge shows what git said (basicly-ttck843). A tracker share now tells a push that timed out from one the vault refused (basicly-nu2yqhl), and `basicly init` sets the project prefix from the folder name (basicly-4zsx3bk.10).
+
+### Changed
+
+- `basicly-tracker init` now sets the id prefix from the repository folder name (letters and digits, at most 12, `work` when none is left), prints it and how to change it, and `config LEDGER set prefix NAME` works on a ledger that does not exist yet, so the first `create` needs no config step. (basicly-4zsx3bk.10)
+
+### Fixed
+
+- A tracker share whose push times out now says that the push timed out, and a refused push now names git's reason, so a failed claim tells a slow vault from a rejection. (basicly-nu2yqhl)
+
+- basicly worktree merge now ends the merge subject with the record id, so the vault commit-msg hook accepts the landing merge, and a failed guarded merge shows what git said (redacted) or that git printed nothing. (basicly-ttck843)
+
+- basicly release now ends the release commit subject with the record id, so the vault commit-msg hook accepts the release commit. (basicly-u5lqc9r)
 
 ## v0.47.1 - 2026-11-20
 

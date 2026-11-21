@@ -1,1 +1,0 @@
-- basicly release now ends the release commit subject with the record id, so the vault commit-msg hook accepts the release commit.

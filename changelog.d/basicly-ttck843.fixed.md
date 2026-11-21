@@ -1,1 +1,0 @@
-- basicly worktree merge now ends the merge subject with the record id, so the vault commit-msg hook accepts the landing merge, and a failed guarded merge shows what git said (redacted) or that git printed nothing.
