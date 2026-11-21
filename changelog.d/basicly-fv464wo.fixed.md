@@ -1,1 +1,0 @@
-- A release now rewrites the install pin in the basicly-orch README, so its `uv tool install` line names the new tag.

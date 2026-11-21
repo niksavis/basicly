@@ -1,1 +1,0 @@
-- A landing no longer needs a verified destination or tracker confirmation evidence; CI on the exact commit is the check. A tree whose CI failed once gets one recorded rerun. A stopped merge with the lane tree staged is committed once with hooks on. basicly-orch now takes the basicly version, so `uv tool install --force` from a release installs that release's `orch`.

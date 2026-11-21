@@ -1,1 +1,0 @@
-- The landing fingerprint compares tool versions, not launcher bytes, so landing from a lane's own engine no longer stops with a false STALE-BRANCH on tools. The consumer proof also finds a held record whose vault claim left it open. A push that only deletes refs or adds no commit runs no pre-push job.

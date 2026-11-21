@@ -6,7 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.49.0 - 2026-11-21
+
+Delta: v0.48.0..v0.49.0
+
 This minor release starts the new workflow the owner asked for (basicly-lkgvml3). A landing no longer needs a verified destination or tracker confirmation evidence. CI on the exact commit decides, and a tree whose CI failed once gets one recorded rerun. A lane run that passes `runner_timeout` or goes quiet is reported as stalled and keeps running, so no work is thrown away. The git hooks, the tracker claim and the landing tool write the session's current item and last result to the orch state. A push that only deletes branches or adds no commit runs no pre-push job. basicly-orch now takes the basicly version, so a reinstall from this tag gives `orch brief`, `orch accept` and `orch state set --item --last`.
+
+### Added
+
+- A lane dispatch past runner_timeout or its quiet bound is noted as stalled in the orch state and keeps running instead of being killed. The git hooks, the tracker claim, the landing tool and its CI wait write the session's item and last result to the orch state when an orchestrator store exists. (basicly-lkgvml3)
+
+### Changed
+
+- A landing no longer needs a verified destination or tracker confirmation evidence; CI on the exact commit is the check. A tree whose CI failed once gets one recorded rerun. A stopped merge with the lane tree staged is committed once with hooks on. basicly-orch now takes the basicly version, so `uv tool install --force` from a release installs that release's `orch`. (basicly-lkgvml3)
+
+### Fixed
+
+- A release now rewrites the install pin in the basicly-orch README, so its `uv tool install` line names the new tag. (basicly-fv464wo)
+
+- The landing fingerprint compares tool versions, not launcher bytes, so landing from a lane's own engine no longer stops with a false STALE-BRANCH on tools. The consumer proof also finds a held record whose vault claim left it open. A push that only deletes refs or adds no commit runs no pre-push job. (basicly-lkgvml3)
 
 ## v0.48.0 - 2026-11-21
 
