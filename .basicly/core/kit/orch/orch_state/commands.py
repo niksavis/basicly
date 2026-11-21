@@ -30,6 +30,10 @@ def add_parsers(groups: argparse._SubParsersAction) -> None:
     put.add_argument("--state", choices=store.STATES)
     groups.add_parser("status")
     groups.add_parser("brief")
+    accept = groups.add_parser("accept")
+    for flag in ("--record", "--repo", "--action"):
+        accept.add_argument(flag, required=True)
+    accept.add_argument("--file", default="-")
     ask = groups.add_parser("ask")
     ask.add_argument("--record")
     ask.add_argument("--question")
