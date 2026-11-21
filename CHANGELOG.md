@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release publishes the changes of v0.47.2: v0.47.2 was tagged but not published, because the release tutorial walk fetched the unpublished release wheel through a hook and the walk now runs before publishing; the walk now puts a basicly shim for the built wheel first on PATH (basicly-opwelh6). Read the v0.47.2 section below for the rest.
+
 ## v0.47.2 - 2026-11-21
 
 Delta: v0.47.1..v0.47.2
