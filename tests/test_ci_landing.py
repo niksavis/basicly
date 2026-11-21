@@ -293,6 +293,7 @@ def test_the_lander_cleans_up_a_landed_lane_and_names_a_refused_cleanup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cleaned: list[str] = []
+    monkeypatch.setattr(basicly_cli.worktree, "load_session", lambda *_a: None)
     monkeypatch.setattr(basicly_cli.worktree, "cleanup", lambda name, **_kw: cleaned.append(name))
     assert basicly_cli._clean_landed_lane(tmp_path, "lane") == []
     assert cleaned == ["lane"]
@@ -305,4 +306,22 @@ def test_the_lander_cleans_up_a_landed_lane_and_names_a_refused_cleanup(
     assert notes == [
         "the lane landed but was not cleaned up: worktree 'lane' has uncommitted changes; "
         "run basicly worktree cleanup lane"
+    ]
+
+
+def test_the_lander_leaves_the_cleanup_to_the_base_when_its_engine_runs_from_the_lane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine_root = Path(basicly_cli.__file__).resolve().parents[2]
+    lane = type("Lane", (), {"path": engine_root})()
+    monkeypatch.setattr(basicly_cli.worktree, "load_session", lambda *_a: lane)
+    cleaned: list[str] = []
+    monkeypatch.setattr(basicly_cli.worktree, "cleanup", lambda name, **_kw: cleaned.append(name))
+
+    notes = basicly_cli._clean_landed_lane(tmp_path, "lane")
+
+    assert cleaned == []
+    assert notes == [
+        "the lane landed; this engine runs from the lane, so clean it up from the base: "
+        "basicly worktree cleanup lane"
     ]

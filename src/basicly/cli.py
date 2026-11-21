@@ -4788,6 +4788,12 @@ def _cmd_worktree_merge(args: argparse.Namespace) -> int:
 
 
 def _clean_landed_lane(root: Path, name: str) -> list[str]:
+    lane = worktree.load_session(name, root)
+    if lane is not None and Path(__file__).resolve().is_relative_to(lane.path.resolve()):
+        return [
+            f"the lane landed; this engine runs from the lane, so clean it up from the base: "
+            f"basicly worktree cleanup {name}"
+        ]
     try:
         worktree.cleanup(name, repo_root=root, missing_ok=True)
     except SystemExit as stopped:
