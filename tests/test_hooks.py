@@ -91,6 +91,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "tracker-commit-msg-script",
         "tracker-claim-script",
         "pre-push-script",
+        "orch-commit-note",
         "protect-generated",
         "protect-generated-commit",
         "unsplit-loop-guard",

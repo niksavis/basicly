@@ -264,11 +264,13 @@ def evaluate(
 
 
 def _dispatch_judge(
-    issue_id: str, repo_root: Path, spec: runner.RunnerSpec, prompt: str, timeout: float
+    issue_id: str, repo_root: Path, spec: runner.RunnerSpec, prompt: str, timeout: float | None
 ) -> runner.RunResult:
 
     with runner.process_budget().slot(runner.HELPER):
-        result = runner.run(spec, prompt, repo_root, capture_usage=True, timeout=timeout)
+        result = runner.run(
+            spec, prompt, repo_root, capture_usage=True, timeout=timeout, keep_on_timeout=True
+        )
     runner.record_dispatch(
         repo_root,
         issue_id,
@@ -296,7 +298,7 @@ def _judge(
         result = _dispatch_judge(issue_id, repo_root, spec, attempt_prompt, timeout)
         if result.handoff or result.timed_out:
             why = (
-                f"timed out after {timeout:.0f}s — judge manually"
+                f"stopped: {runner.stop_label(result, timeout)} — judge manually"
                 if result.timed_out
                 else "handoff: no agent CLI — judge manually"
             )

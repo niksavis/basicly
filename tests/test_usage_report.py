@@ -176,8 +176,8 @@ def test_cli_usage_tuning_advises_each_governed_parameter(work_repo: Path) -> No
     result = run_basicly(work_repo, "usage", "tuning")
     assert result.returncode == 0, result.stderr
     advice = _advice(result.stdout, "runner.runner_timeout")
-    in_force = int(load_runner_config(work_repo).runner_timeout)
-    assert f"{in_force} s in force" in advice
+    assert load_runner_config(work_repo).runner_timeout is None
+    assert "runner.runner_timeout: off in force" in advice
     assert "advised 3800 s from 10 sample(s) (measured)" in advice
     assert "10 local" in result.stdout
 

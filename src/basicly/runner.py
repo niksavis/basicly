@@ -724,11 +724,13 @@ class DispatchBounds:
         return max(0.01, min(STOP_POLL_S, self.quiet_after / 4))
 
 
-def stop_label(result: RunResult, timeout: float) -> str:
+def stop_label(result: RunResult, timeout: float | None) -> str:
 
     if result.stopped is not None:
         return f"{result.stopped.bound} bound: {result.stopped.detail}"
-    return f"runner_timeout after {timeout:.0f}s"
+    return (
+        "a stop with no bound named" if timeout is None else f"runner_timeout after {timeout:.0f}s"
+    )
 
 
 def _streaming(spec: RunnerSpec, *, capture_usage: bool) -> bool:
@@ -855,7 +857,7 @@ def _wait_bounded(
     while True:
         remaining = None if timeout is None else timeout - (time.monotonic() - started)
         if remaining is not None and remaining <= 0 and stalled is not None:
-            stalled(f"ran past runner_timeout {timeout:g}s")
+            stalled(f"ran past {timeout:g}s")
             timeout = remaining = None
         if remaining is not None and remaining <= 0:
             _kill_tree(proc)
@@ -888,6 +890,14 @@ def _stall_note(spec: RunnerSpec, cwd: Path) -> Callable[[str], object]:
         orch_note.note(cwd, last=f"stalled: {spec.name} {why}", ok=False)
 
     return stalled
+
+
+def _stall_setup(
+    spec: RunnerSpec, cwd: Path, timeout: float | None, *, keep: bool
+) -> tuple[Callable[[str], object] | None, float | None]:
+    if not keep:
+        return None, timeout
+    return _stall_note(spec, cwd), DEFAULT_QUIET_AFTER if timeout is None else timeout
 
 
 def _process_isolation(os_name: str) -> tuple[bool, int]:
@@ -955,7 +965,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         start_new_session=new_session,
         creationflags=creationflags,
     )
-    stalled = _stall_note(spec, cwd) if keep_on_timeout else None
+    stalled, timeout = _stall_setup(spec, cwd, timeout, keep=keep_on_timeout)
     try:
         if sink is not None:
             streamed = _read_streaming(proc, spec, stdin, timeout, sink, bounds, stalled)
@@ -968,7 +978,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
             returncode = proc.returncode
     except subprocess.TimeoutExpired:
         if stalled is not None:
-            stalled(f"ran past runner_timeout {timeout:g}s")
+            stalled(f"ran past {timeout:g}s")
             stdout, stderr = proc.communicate()
             returncode = proc.returncode
         else:

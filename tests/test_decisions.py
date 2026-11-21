@@ -4,6 +4,7 @@ import contextlib
 import inspect
 import json
 import threading
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -414,6 +415,7 @@ def test_decider_dispatch_is_bounded_and_metered(
 
     def _run(_spec, _prompt, _cwd, **kwargs):
         seen["timeout"] = kwargs.get("timeout")
+        seen["keep"] = kwargs.get("keep_on_timeout")
         seen["capture_usage"] = kwargs.get("capture_usage", False)
         return runner.RunResult("fake", ("fake",), executed=True, returncode=0, stdout=verdict)
 
@@ -427,7 +429,8 @@ def test_decider_dispatch_is_bounded_and_metered(
     monkeypatch.setattr(decisions.runner, "record_dispatch", _record)
     decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
-    assert seen["timeout"] == 3600.0
+    assert seen["timeout"] is None
+    assert seen["keep"] is True
     assert seen["capture_usage"] is True
     assert recorded == [item.issue_id]
     assert phases == ["decide"]
@@ -566,6 +569,10 @@ def test_a_raw_envelope_abstains() -> None:
 
 def test_decider_timeout_abstains(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _fake, item = _decider_setup(monkeypatch, tmp_path, "")
+    configured = decisions.load_runner_config(tmp_path)
+    monkeypatch.setattr(
+        decisions, "load_runner_config", lambda _r: replace(configured, runner_timeout=3600.0)
+    )
     monkeypatch.setattr(
         decisions.runner,
         "run",

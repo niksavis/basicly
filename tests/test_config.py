@@ -1116,11 +1116,11 @@ def test_runner_config_max_agent_processes(tmp_path: Path) -> None:
 
 
 def test_runner_config_runner_timeout(tmp_path: Path) -> None:
-    assert load_runner_config(tmp_path).runner_timeout == 3600.0
+    assert load_runner_config(tmp_path).runner_timeout is None
     (tmp_path / CONFIG_FILE).write_text("[runner]\nrunner_timeout = 120\n", encoding="utf-8")
     assert load_runner_config(tmp_path).runner_timeout == 120.0
     (tmp_path / CONFIG_FILE).write_text("[runner]\nrunner_timeout = -5\n", encoding="utf-8")
-    assert load_runner_config(tmp_path).runner_timeout == 3600.0
+    assert load_runner_config(tmp_path).runner_timeout is None
 
 
 def test_policy_evidence_is_empty_by_default(tmp_path: Path) -> None:

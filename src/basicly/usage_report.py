@@ -144,9 +144,14 @@ def _advice_line(parameter: tuning.ParameterTuning) -> str:
             f"{tuning.render_value(values[0])}-{tuning.render_value(values[-1])} {unit}"
         )
     return (
-        f"  {parameter.key}: {tuning.render_value(parameter.in_force)} {unit} in force, "
+        f"  {parameter.key}: {_shown(parameter.in_force, unit)} in force, "
         f"{advice} — {parameter.basis}."
     )
+
+
+def _shown(value: float | str | None, unit: str) -> str:
+    shown = value if isinstance(value, str) else tuning.render_value(value)
+    return shown if shown == "off" else f"{shown} {unit}"
 
 
 def cmd_tuning(_args: argparse.Namespace) -> int:
@@ -159,7 +164,7 @@ def cmd_tuning(_args: argparse.Namespace) -> int:
         [
             [
                 parameter.key,
-                f"{tuning.render_value(parameter.in_force)} {parameter.unit}",
+                _shown(parameter.in_force, parameter.unit),
                 str(parameter.samples),
                 _census_text(parameter.sources),
                 _census_text(parameter.outcomes),
@@ -177,7 +182,8 @@ def cmd_tuning(_args: argparse.Namespace) -> int:
         ui.say(_advice_line(parameter), style="muted")
         for cohort in parameter.cohorts:
             ui.say(
-                f"      under {cohort.in_force} {parameter.unit}: {cohort.samples} sample(s), "
+                f"      under {_shown(cohort.in_force, parameter.unit)}: "
+                f"{cohort.samples} sample(s), "
                 f"{_census_text(cohort.outcomes)} ({_census_text(cohort.sources)})",
                 style="muted",
             )
@@ -186,7 +192,7 @@ def cmd_tuning(_args: argparse.Namespace) -> int:
                 f"      seeded: {parameter.samples} sample(s) is under {parameter.min_samples}, "
                 f"so the declared prior {tuning.render_value(parameter.prior)} "
                 f"{parameter.unit} stands — it would displace the value in force "
-                f"{tuning.render_value(parameter.in_force)} {parameter.unit}.",
+                f"{_shown(parameter.in_force, parameter.unit)}.",
                 style="warn",
             )
     ui.say(

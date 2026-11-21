@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import sys
 import tomllib
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / ".basicly" / "core" / "kit" / "orch"))
@@ -24,3 +27,17 @@ def test_orch_help_lists_brief_and_accept() -> None:
 
     assert "brief" in shown
     assert "accept" in shown
+
+
+def test_orch_version_prints_the_installed_package_version(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        importlib.metadata, "version", lambda name: {"basicly-orch": "0.49.1"}[name]
+    )
+
+    with pytest.raises(SystemExit) as stopped:
+        cli.parser().parse_args(["--version"])
+
+    assert stopped.value.code == 0
+    assert capsys.readouterr().out.strip() == "orch 0.49.1"

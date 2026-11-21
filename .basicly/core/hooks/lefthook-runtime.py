@@ -176,15 +176,6 @@ def orch_note(root: Path, **fields: object) -> None:
         return
 
 
-def _committed(arguments: list[str]) -> dict[str, object]:
-    try:
-        subject = Path(arguments[0]).read_text(encoding="utf-8").splitlines()[0]
-    except OSError, IndexError:
-        return {}
-    item = subject.rsplit("(", 1)[-1].rstrip(")") if subject.endswith(")") else None
-    return {"item": item, "last": f"committed: {subject}"}
-
-
 def runtime_module(name: str):
     source = Path(__file__).with_name(f"{name}.py")
     spec = importlib.util.spec_from_file_location(f"basicly_{name}", source)
@@ -282,10 +273,10 @@ def _finish_git(
     code: int,
     result_path: Path,
     snapshot_state: Any,
-    hook: tuple[str, Path, list[str]],
+    hook: tuple[str, Path],
 ) -> int:
     command, run_root, env, raw = launch
-    stage, root, arguments = hook
+    stage, root = hook
     if code == 0 and not result_path.is_file():
         command[3:3] = ["--force", "--job", "basicly-dispatch"]
         code = subprocess.run(  # nosec B603
@@ -297,8 +288,6 @@ def _finish_git(
     if snapshot_state is not None and code == 0:
         module, state = snapshot_state
         module.publish(state)
-    if code == 0 and stage == "commit-msg":
-        orch_note(root, **_committed(arguments))
     if code == 0 and stage == "pre-push":
         orch_note(root, last="pushing: the pre-push checks passed")
     return code
@@ -352,7 +341,7 @@ def _launch(manager: str, stage: str, arguments: list[str]) -> int:
                 proc.returncode,
                 result_path,
                 snapshot_state,
-                (stage, root, arguments),
+                (stage, root),
             )
         if not result_path.is_file():
             sys.stderr.buffer.write(proc.stdout + proc.stderr)

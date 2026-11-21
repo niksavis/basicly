@@ -628,7 +628,7 @@ class _Dispatch:
     spec: runner.RunnerSpec
     result: runner.RunResult
     cwd: Path
-    timeout: float
+    timeout: float | None
 
 
 def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the dispatch
@@ -828,6 +828,7 @@ def _run_proposer(ctx: _Ctx, kind: str, prompt: str, *, phase: str) -> tuple[str
             capture_usage=True,
             timeout=config.runner_timeout,
             role=role,
+            keep_on_timeout=True,
         )
     record_run(
         ctx.repo_root,
@@ -839,7 +840,7 @@ def _run_proposer(ctx: _Ctx, kind: str, prompt: str, *, phase: str) -> tuple[str
     )
     if result.timed_out or result.handoff or result.returncode != 0:
         why = (
-            f"the {kind} proposer hit runner_timeout ({config.runner_timeout:.0f}s)"
+            f"the {kind} proposer stopped: {runner.stop_label(result, config.runner_timeout)}"
             if result.timed_out
             else f"the {kind} proposer's runner was unavailable or failed"
         )

@@ -1,0 +1,1 @@
+- `orch --version` prints the installed basicly-orch version, so `orch --version` and `uv tool list` agree.

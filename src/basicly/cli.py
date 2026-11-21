@@ -3909,7 +3909,8 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
 
     config = load_runner_config(repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
-    print(f"runner:    {spec.name} ({spec.kind}), timeout {config.runner_timeout:.0f}s")
+    timeout = "off" if config.runner_timeout is None else f"{config.runner_timeout:.0f}s"
+    print(f"runner:    {spec.name} ({spec.kind}), timeout {timeout}")
 
     status = supervise.session_spend_status(repo_root, state)
     if status.remaining_tokens is None:

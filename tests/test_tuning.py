@@ -62,7 +62,7 @@ def test_every_governed_parameter_is_listed_on_an_empty_corpus(tmp_path: Path) -
         assert parameter.samples == 0, parameter.key
         assert parameter.recommendation is None, parameter.key
         assert parameter.status == tuning.UNOBSERVED, parameter.key
-    assert _parameter(report, "runner.runner_timeout").in_force == 3600.0
+    assert _parameter(report, "runner.runner_timeout").in_force is None
     assert _parameter(report, "worktree.concurrency").in_force == float(
         config.DEFAULT_WORKTREE_CONCURRENCY
     )
@@ -110,7 +110,7 @@ def test_a_measured_recommendation_carries_its_statistic_and_sample_size(
     assert parameter.samples == len(durations)
     assert parameter.recommendation == max(durations) * tuning.BACKSTOP_HEADROOM
     assert parameter.outcomes == {run_record.EXECUTED: 10}
-    assert [cohort.in_force for cohort in parameter.cohorts] == ["3600"]
+    assert [cohort.in_force for cohort in parameter.cohorts] == ["off"]
 
 
 def test_a_sample_under_the_minimum_is_seeded_from_the_prior(tmp_path: Path) -> None:
@@ -133,7 +133,7 @@ def test_a_sample_under_the_minimum_is_seeded_from_the_prior(tmp_path: Path) -> 
     assert parameter.status == tuning.SEEDED
     assert parameter.recommendation == parameter.prior
     assert parameter.recommendation != max(durations) * tuning.BACKSTOP_HEADROOM
-    assert parameter.in_force == 3600.0
+    assert parameter.in_force is None
 
 
 def test_both_corpora_are_read_and_each_sample_names_its_source(tmp_path: Path) -> None:
@@ -228,10 +228,10 @@ def test_a_session_override_makes_its_own_cohort(tmp_path: Path) -> None:
     parameter = _parameter(tuning.tuning_report(tmp_path), "runner.runner_timeout")
 
     assert [(cohort.in_force, cohort.samples) for cohort in parameter.cohorts] == [
-        ("3600", 1),
         ("900", 1),
+        ("off", 1),
     ]
-    assert parameter.cohorts[1].outcomes == {run_record.FAILED: 1}
+    assert parameter.cohorts[0].outcomes == {run_record.FAILED: 1}
 
 
 @pytest.mark.parametrize(

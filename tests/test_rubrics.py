@@ -298,6 +298,7 @@ def test_evaluate_judged_is_bounded_and_metered(
 
     def _run(_spec, _prompt, _cwd, **kwargs):
         seen["timeout"] = kwargs.get("timeout")
+        seen["keep"] = kwargs.get("keep_on_timeout")
         seen["capture_usage"] = kwargs.get("capture_usage", False)
         return runner.RunResult("x", (), executed=True, returncode=0, stdout="q1: yes - ok\n")
 
@@ -310,7 +311,8 @@ def test_evaluate_judged_is_bounded_and_metered(
     monkeypatch.setattr(runner, "record_dispatch", _record)
     rubrics.evaluate("i", _judged_rubric(), tmp_path)
 
-    assert seen["timeout"] == 3600.0
+    assert seen["timeout"] is None
+    assert seen["keep"] is True
     assert seen["capture_usage"] is True
     assert len(recorded) == 1
     issue, phase, prompt = recorded[0]
@@ -383,7 +385,7 @@ def test_evaluate_judged_timeout_is_unknown_not_no(
     monkeypatch.setattr(runner, "record_dispatch", lambda *_a, **_k: None)
     verdicts = rubrics.evaluate("i", _judged_rubric(), tmp_path)
     assert {v.answer for v in verdicts} == {UNKNOWN}
-    assert all("timed out" in v.evidence for v in verdicts)
+    assert all("stopped" in v.evidence for v in verdicts)
 
 
 def test_evaluate_judged_handoff_is_unknown(
