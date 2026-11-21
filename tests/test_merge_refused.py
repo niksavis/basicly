@@ -5,9 +5,22 @@ from pathlib import Path
 import pytest
 
 from basicly import merge, verify
+from tests.test_kit_vault_commit_hook import _check, _message, hook
+from tests.test_kit_vault_share import _machine, bare
 from tests.test_merge import _landing_git, _patch_git, _Proc, base_ready
 
-__all__ = ["base_ready"]
+__all__ = ["bare", "base_ready"]
+
+
+def test_the_landing_merge_message_passes_the_vault_commit_msg_hook(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    text = merge._merge_message("feat", "harness/feat", "main", "acme-a1b2")
+
+    shown = _check(clone, state, _message(tmp_path, text))
+
+    assert (shown["exit"], shown["record"]) == (hook.ACCEPTED, "acme-a1b2"), shown
 
 
 @pytest.mark.usefixtures("base_ready")

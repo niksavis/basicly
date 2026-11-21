@@ -441,7 +441,7 @@ git log --oneline -6
 
 ```text
 bed0451 chore(tracker): close the shipped track (myrepo-2i3r)
-947a0f9 chore(worktree): merge a harness worktree back to its base
+947a0f9 chore(worktree): merge a harness worktree back to its base (myrepo-2i3r)
 f8d40f0 chore(tracker): sync tracker state for the harness loop (myrepo-2i3r)
 919b83d docs: add a getting started note (myrepo-2i3r)
 94a79f0 chore(tracker): record the claim before provisioning (myrepo-2i3r)

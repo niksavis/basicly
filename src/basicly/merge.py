@@ -439,7 +439,7 @@ def _merge_message(
         if record.model:
             trailers.append(f"Harness-Model: {record.model}")
         body += "\n\n" + "\n".join(trailers)
-    return f"chore(worktree): merge a harness worktree back to its base\n\n{body}"
+    return f"chore(worktree): merge a harness worktree back to its base ({bead})\n\n{body}"
 
 
 def _pre_merge_state(
