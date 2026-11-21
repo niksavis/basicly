@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This minor release starts the new workflow the owner asked for (basicly-lkgvml3). A landing no longer needs a verified destination or tracker confirmation evidence. CI on the exact commit decides, and a tree whose CI failed once gets one recorded rerun. A lane run that passes `runner_timeout` or goes quiet is reported as stalled and keeps running, so no work is thrown away. The git hooks, the tracker claim and the landing tool write the session's current item and last result to the orch state. A push that only deletes branches or adds no commit runs no pre-push job. basicly-orch now takes the basicly version, so a reinstall from this tag gives `orch brief`, `orch accept` and `orch state set --item --last`.
+
 ## v0.48.0 - 2026-11-21
 
 Delta: v0.47.2..v0.48.0
