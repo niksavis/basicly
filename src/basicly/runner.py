@@ -8,6 +8,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -16,7 +17,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO
 
-from . import agents, context_window, models, owned_store, run_record, tracker_agent
+from . import agents, context_window, models, orch_note, owned_store, run_record, tracker_agent
 from .checkout import sanitised_colour_env, sanitised_git_env
 from .context_window import (
     ADAPTER_WINDOW,
@@ -815,6 +816,7 @@ def _read_streaming(  # noqa: PLR0913 — one parameter per independent read inp
     timeout: float | None,
     on_event: EventSink,
     bounds: DispatchBounds | None = None,
+    stalled: Callable[[str], object] | None = None,
 ) -> _Streamed:
 
     out_lines: list[str] = []
@@ -835,7 +837,7 @@ def _read_streaming(  # noqa: PLR0913 — one parameter per independent read inp
         with contextlib.suppress(OSError, ValueError):
             proc.stdin.write(stdin)
             proc.stdin.close()
-    outcome = _wait_bounded(proc, timeout, bounds, liveness)
+    outcome = _wait_bounded(proc, timeout, bounds, liveness, stalled)
     for reader in readers:
         reader.join(READER_JOIN_S)
     return replace(outcome, stdout="".join(out_lines), stderr="".join(err_lines))
@@ -846,11 +848,15 @@ def _wait_bounded(
     timeout: float | None,
     bounds: DispatchBounds | None,
     liveness: _Liveness,
+    stalled: Callable[[str], object] | None = None,
 ) -> _Streamed:
 
     started = time.monotonic()
     while True:
         remaining = None if timeout is None else timeout - (time.monotonic() - started)
+        if remaining is not None and remaining <= 0 and stalled is not None:
+            stalled(f"ran past runner_timeout {timeout:g}s")
+            timeout = remaining = None
         if remaining is not None and remaining <= 0:
             _kill_tree(proc)
             return _Streamed("", "", None, timed_out=True)
@@ -867,9 +873,21 @@ def _wait_bounded(
         if bounds is None or not bounds.armed:
             continue
         reason = _bound_reached(bounds, liveness)
+        if reason is not None and reason.bound == QUIET_BOUND and stalled is not None:
+            stalled(reason.detail)
+            bounds = replace(bounds, quiet_after=None)
+            continue
         if reason is not None:
             _kill_tree(proc)
             return _Streamed("", "", None, timed_out=True, stopped=reason)
+
+
+def _stall_note(spec: RunnerSpec, cwd: Path) -> Callable[[str], object]:
+    def stalled(why: str) -> None:
+        print(f"basicly: {spec.name} {why}; it keeps running and keeps its work", file=sys.stderr)
+        orch_note.note(cwd, last=f"stalled: {spec.name} {why}", ok=False)
+
+    return stalled
 
 
 def _process_isolation(os_name: str) -> tuple[bool, int]:
@@ -892,6 +910,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     bounds: DispatchBounds | None = None,
     role: str | None = None,
     seed: SessionSeed | None = None,
+    keep_on_timeout: bool = False,
 ) -> RunResult:
 
     resolution = resolve_model(spec, repo_root=cwd, role=role)
@@ -936,9 +955,10 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         start_new_session=new_session,
         creationflags=creationflags,
     )
+    stalled = _stall_note(spec, cwd) if keep_on_timeout else None
     try:
         if sink is not None:
-            streamed = _read_streaming(proc, spec, stdin, timeout, sink, bounds)
+            streamed = _read_streaming(proc, spec, stdin, timeout, sink, bounds, stalled)
             stdout, stderr = streamed.stdout, streamed.stderr
             returncode: int | None = streamed.returncode
             timed_out = streamed.timed_out
@@ -947,10 +967,15 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
             stdout, stderr = proc.communicate(input=stdin, timeout=timeout)
             returncode = proc.returncode
     except subprocess.TimeoutExpired:
-        timed_out = True
-        returncode = None
-        _kill_tree(proc)
-        stdout, stderr = _drain(proc)
+        if stalled is not None:
+            stalled(f"ran past runner_timeout {timeout:g}s")
+            stdout, stderr = proc.communicate()
+            returncode = proc.returncode
+        else:
+            timed_out = True
+            returncode = None
+            _kill_tree(proc)
+            stdout, stderr = _drain(proc)
     except KeyboardInterrupt:
         _kill_tree(proc)
         if sink is None:

@@ -1,0 +1,1 @@
+- A lane dispatch past runner_timeout or its quiet bound is noted as stalled in the orch state and keeps running instead of being killed. The git hooks, the tracker claim, the landing tool and its CI wait write the session's item and last result to the orch state when an orchestrator store exists.

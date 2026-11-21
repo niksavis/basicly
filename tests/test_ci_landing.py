@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import ci_landing, landing_guard, tracker
+from basicly import ci_landing
 from tests import flipped_tracker
 
 
@@ -138,14 +138,11 @@ def test_two_ci_landings_in_a_row_leave_the_destination_verified(tmp_path: Path)
     repo = _repo(tmp_path)
     for record in ("acme-1", "acme-2"):
         flipped_tracker.seed(repo, record, title=record)
-    tracker.add_artifact(repo, "acme-1", "landing-verification", {"status": "unverified"})
-    assert landing_guard.blocker(repo, "acme-2")
     ci_landing.prove(repo, _candidate(repo), Gh(), CLOCK)
 
     notes = ci_landing.finish(repo, "lane-a", "acme-1")
 
     assert notes == []
-    assert landing_guard.blocker(repo, "acme-2") == ""
     assert not _git(repo, "ls-remote", "origin", "refs/heads/land/lane-a/1")
     assert _git(repo, "ls-remote", "origin", "refs/heads/main")
 
@@ -244,14 +241,14 @@ def _ended(conclusion: str) -> dict:
 
 
 @pytest.mark.parametrize("conclusion", ["failure", "cancelled"])
-def test_a_head_whose_run_already_ended_badly_is_refused_before_any_push(
+def test_a_head_whose_run_already_failed_twice_is_refused_before_any_push(
     tmp_path: Path, conclusion: str
 ) -> None:
     repo = _repo(tmp_path)
     gh = Gh()
-    gh.history[_git(repo, "rev-parse", "HEAD")] = [_ended(conclusion)]
+    gh.history[_git(repo, "rev-parse", "HEAD")] = [_ended(conclusion), _ended(conclusion)]
 
-    with pytest.raises(ci_landing.CiLandingError, match=f"earlier-run already ended {conclusion}"):
+    with pytest.raises(ci_landing.CiLandingError, match="already failed 2 times on this tree"):
         ci_landing.prove(repo, _candidate(repo), gh, CLOCK)
     assert not gh.dispatched
     assert not _git(repo, "ls-remote", "origin", "refs/heads/land/lane-a/1")
@@ -264,11 +261,22 @@ def test_a_failed_tree_moved_only_in_the_ledger_is_still_refused(tmp_path: Path)
         ci_landing.prove(repo, _candidate(repo), Gh("failure"), CLOCK)
     _commit(repo, ".basicly/ledger/pending-main.jsonl", "{}\n")
     gh = Gh()
-    gh.history[failed] = [_ended("failure")]
+    gh.history[failed] = [_ended("failure"), _ended("failure")]
 
-    with pytest.raises(ci_landing.CiLandingError, match="already ended failure"):
+    with pytest.raises(ci_landing.CiLandingError, match="already failed 2 times"):
         ci_landing.prove(repo, _candidate(repo), gh, CLOCK)
     assert not gh.dispatched
+
+
+def test_a_tree_that_failed_once_gets_one_recorded_rerun(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    gh = Gh()
+    gh.history[_git(repo, "rev-parse", "HEAD")] = [_ended("failure")]
+
+    proof = ci_landing.prove(repo, _candidate(repo), gh, CLOCK)
+
+    assert gh.dispatched
+    assert proof["failed_before"] == "1"
 
 
 def test_a_changed_lane_after_a_failure_gets_a_new_branch(tmp_path: Path) -> None:

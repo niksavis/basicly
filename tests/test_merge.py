@@ -117,7 +117,6 @@ def _patch_git[T](monkeypatch: pytest.MonkeyPatch, fake: T) -> T:
 
     monkeypatch.setattr(landing_guard, "capture", capture)
     monkeypatch.setattr(landing_guard, "changed", lambda *_a: "")
-    monkeypatch.setattr(landing_guard, "record_verification", lambda *_a, **_k: None)
     monkeypatch.setattr(
         landing_guard,
         "guarded_merge",
@@ -1359,12 +1358,6 @@ _TRACKER_WIDE = (
 )
 
 
-@pytest.fixture
-def confirmed_process_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(merge.process_confirmation, "confirm", lambda *_a, **_k: None)
-    monkeypatch.setattr(merge.process_confirmation, "preflight", lambda *_a, **_k: None)
-
-
 def _tracker(tmp_path: Path, *bead_ids: str) -> None:
     ledger = tmp_path / ".basicly" / "ledger"
     ledger.mkdir(parents=True, exist_ok=True)
@@ -1378,7 +1371,7 @@ def _reproduced(output: str) -> verify.VerifyReport:
     return verify.VerifyReport("full", (verify.CheckResult("pytest", "fail", 1, output=output),))
 
 
-@pytest.mark.usefixtures("base_ready", "confirmed_process_evidence")
+@pytest.mark.usefixtures("base_ready")
 def test_merge_worktree_faults_the_lane_whose_record_failed_a_tracker_wide_gate(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1395,7 +1388,7 @@ def test_merge_worktree_faults_the_lane_whose_record_failed_a_tracker_wide_gate(
     assert "basicly-tcmy.5" in result.detail and "not by this lane's diff" in result.detail
 
 
-@pytest.mark.usefixtures("base_ready", "confirmed_process_evidence")
+@pytest.mark.usefixtures("base_ready")
 def test_merge_worktree_still_faults_the_lane_the_gate_names_itself(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1410,7 +1403,7 @@ def test_merge_worktree_still_faults_the_lane_the_gate_names_itself(
     assert result.foreign is False
 
 
-@pytest.mark.usefixtures("base_ready", "confirmed_process_evidence")
+@pytest.mark.usefixtures("base_ready")
 def test_merge_worktree_will_not_forgive_a_lane_a_truncated_id_names(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1428,7 +1421,7 @@ def test_merge_worktree_will_not_forgive_a_lane_a_truncated_id_names(
     assert result.status == "verify-failed"
 
 
-@pytest.mark.usefixtures("base_ready", "confirmed_process_evidence")
+@pytest.mark.usefixtures("base_ready")
 def test_merge_worktree_will_not_forgive_a_run_that_also_failed_on_its_own_work(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

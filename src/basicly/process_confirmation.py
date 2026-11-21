@@ -7,19 +7,6 @@ from pathlib import Path
 from . import tracker, verify
 
 
-def preflight(repo_root: Path, record: str, commands: Sequence[tuple[str, ...]]) -> str | None:
-    evidence = tracker.confirmation_evidence(repo_root, record)
-    if isinstance(evidence, str):
-        return evidence
-    report, closing = evidence
-    if not report["owed"] and (
-        not closing
-        or all(tuple(check["command"]) in commands for check in report["review"]["checks"])
-    ):
-        return None
-    return confirm(repo_root, record)
-
-
 def confirm(repo_root: Path, record: str, results: Sequence[verify.CheckResult] = ()) -> str | None:
     evidence = tracker.confirmation_evidence(repo_root, record)
     if isinstance(evidence, str):

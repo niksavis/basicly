@@ -21,6 +21,7 @@ ROOT_ENV = "BASICLY_CONSUMERS_ROOT"
 CPUS_ENV = "BASICLY_CONSUMER_CPUS"
 CPU_SET = re.compile(r"\d+(?:-\d+)?(?::\d+)?")
 RESULTS = Path("basicly-consumer-proof")
+HELD_STATUSES = ("in_progress", "open")
 COMMAND = "basicly consumer-proof"
 WHEEL = "{wheel}"
 SUBJECT = "chore(basicly): install the kit for a consumer proof ({record})"
@@ -95,12 +96,19 @@ def execute(argv: list[str], cwd: Path, env: dict[str, str]) -> int:
 
 
 def list_records(clone: Path, env: dict[str, str], wheel: str) -> list[dict[str, object]]:
-    argv = ["uvx", "--from", wheel, "basicly", "tracker", "list", "--status", "in_progress"]
-    done = worktree.run([*argv, "--summary"], cwd=clone, env=env, check=False)
-    if done.returncode != 0:
-        return []
-    records = json.loads(done.stdout).get("records", [])
-    return records if isinstance(records, list) else []
+    argv = ["uvx", "--from", wheel, "basicly", "tracker", "list", "--summary"]
+    found: list[dict[str, object]] = []
+    for status in HELD_STATUSES:
+        done = worktree.run([*argv, "--status", status], cwd=clone, env=env, check=False)
+        if done.returncode != 0:
+            continue
+        records = json.loads(done.stdout).get("records", [])
+        found += (
+            [item for item in records if isinstance(item, dict)]
+            if isinstance(records, list)
+            else []
+        )
+    return found
 
 
 def held_record(clone: Path, listed: list[dict[str, object]]) -> str | None:

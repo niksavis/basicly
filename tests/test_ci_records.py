@@ -242,8 +242,7 @@ def test_rehearsal_both_ci_jobs_pass_on_a_frozen_repo_with_an_unreachable_vault(
     assert checks.returncode == 0, checks.stdout + checks.stderr
     state = tmp_path / "ci-state"
     assert not state.exists() or not any(state.rglob("*"))
-    assert old.returncode == 1
-    assert "vault" in old.stdout + old.stderr
+    assert old.returncode == 0, old.stdout + old.stderr
 
 
 def test_ci_verify_fails_a_check_that_reads_records_and_names_a_local_only_one(

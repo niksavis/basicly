@@ -412,7 +412,8 @@
             <p>
               A gate is a check that refuses a commit when it fails. basicly runs
               the gates in git hooks and in agent hooks. Continuous integration
-              (CI) runs them again.
+              (CI) runs them again. A push that only deletes branches or adds no
+              commit runs no pre-push job.
             </p>
           </div>
           <div class="card accent">

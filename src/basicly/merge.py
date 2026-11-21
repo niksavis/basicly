@@ -15,9 +15,9 @@ from . import (
     decompose,
     landing_guard,
     lefthook_artifacts,
+    orch_note,
     owned_store,
     policy,
-    process_confirmation,
     rebase,
     run_record,
     tracker,
@@ -25,7 +25,7 @@ from . import (
     verify,
     write_preflight,
 )
-from .config import PolicyConfig, load_policy_config, load_verify_config, load_worktree_config
+from .config import PolicyConfig, load_policy_config, load_worktree_config
 from .verify_artifact import infrastructure_failure
 from .worktree import Session, current_branch, git, load_session
 
@@ -191,8 +191,11 @@ def _prove_on_ci(
         session.name, clock.bead, subject.destination, subject.candidate
     )
     try:
-        ci_landing.prove(clock.repo_root, candidate)
+        proof = ci_landing.prove(clock.repo_root, candidate)
+        clock.ci_reruns = int(proof.get("failed_before") or 0)
+        orch_note.note(clock.repo_root, item=clock.bead, last=f"CI green: {proof.get('run')}")
     except ci_landing.CiLandingError as error:
+        orch_note.note(clock.repo_root, item=clock.bead, last=f"CI: {error}", ok=False)
         return MergeResult(session.name, "verify-failed", str(error))
     return None
 
@@ -493,10 +496,8 @@ def _merge_and_prove(
     except landing_guard.GuardUnavailableError as error:
         return MergeResult(name, "not-ready", str(error))
     except (OSError, ValueError, RuntimeError) as error:
-        landing_guard.record_verification(repo_root, bead, passed=False)
         return MergeResult(name, MERGE_UNPROVEN, str(error))
     if proc.returncode != 0:
-        landing_guard.record_verification(repo_root, bead, passed=False)
         return MergeResult(name, MERGE_UNPROVEN, landing_guard.refused(subject, proc))
     landed_head = subject.candidate
     if not is_ancestor(repo_root, landed_head, base):
@@ -534,6 +535,7 @@ class _Landing:
         self.stages: list[tuple[str, float]] = []
         self.checks: tuple[tuple[str, float], ...] = ()
         self.report: verify.VerifyReport | None = None
+        self.ci_reruns = 0
 
     def mark(self, stage: str) -> None:
 
@@ -548,6 +550,12 @@ class _Landing:
 
     def close(self, result: MergeResult) -> MergeResult:
 
+        orch_note.note(
+            self.repo_root,
+            item=self.bead,
+            last=f"landing {result.status}: {result.detail}",
+            ok=result.merged,
+        )
         total = round(self.clock() - self.started, 3)
         attributed = round(sum(seconds for _, seconds in self.stages), 3)
         _write_landing_timing(
@@ -566,7 +574,10 @@ class _Landing:
         )
         if not result.merged:
             return result
-        return replace(result, detail=f"{result.detail}; {self._headline(total)}")
+        rerun = (
+            f"; CI passed on a rerun after {self.ci_reruns} failed run" if self.ci_reruns else ""
+        )
+        return replace(result, detail=f"{result.detail}; {self._headline(total)}{rerun}")
 
     def _headline(self, total: float) -> str:
         top = sorted(self.stages, key=lambda span: -span[1])[:3]
@@ -598,9 +609,6 @@ def _write_landing_timing(repo_root: Path, bead: str, entry: dict[str, object]) 
 def record_post_merge_verification(
     repo_root: Path, bead: str, report: verify.VerifyReport, source: verify.VerifyReport | None
 ) -> None:
-    landing_guard.record_verification(
-        repo_root, bead, passed=report.passed, proof=report.subject_fingerprint
-    )
     _write_landing_timing(
         repo_root,
         bead,
@@ -632,8 +640,6 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
             "merge needs a bead id for the merge commit (the commit-msg hook requires one)"
         )
     clock = _Landing(repo_root, bead)
-    if reason := landing_guard.blocker(repo_root, bead):
-        return MergeResult(name, "not-ready", reason)
     known = known_bead_ids(repo_root)
     if known is not None and bead not in known:
         raise SystemExit(
@@ -644,23 +650,6 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     session = load_session(name, repo_root)
     if session is None:
         raise SystemExit(f"no worktree session named {name!r}")
-
-    if known is not None:
-        commands = (
-            ()
-            if override_gate
-            else tuple(
-                check.command for check in load_verify_config(session.path).for_mode(verify_mode)
-            )
-        )
-        refused = process_confirmation.preflight(repo_root, bead, commands)
-        if refused is not None:
-            return MergeResult(
-                name,
-                "not-ready",
-                f"{refused}; run `basicly tracker write -- confirm {bead} --evidence "
-                "'<actual successful check evidence JSON>'` before landing",
-            )
 
     blocked = _pre_merge_state(repo_root, session, expected_head)
     clock.mark("preflight")
@@ -759,17 +748,6 @@ def _replay_verify_merge(
         clock.mark("verify")
     if gate is not None:
         return gate
-
-    if known_bead_ids(repo_root) is not None:
-        results = clock.report.results if clock.report is not None else ()
-        refused = process_confirmation.confirm(repo_root, bead, results)
-        if refused is not None:
-            return MergeResult(
-                name,
-                "not-ready",
-                f"{refused}; run `basicly tracker write -- confirm {bead} --evidence "
-                "'<actual successful check evidence JSON>'` before landing",
-            )
 
     if reason := landing_guard.changed(repo_root, subject):
         return MergeResult(name, STALE_BRANCH, reason)

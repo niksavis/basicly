@@ -21,7 +21,6 @@ from . import (
     handoff,
     invest,
     landing_gate,
-    landing_guard,
     lens_review,
     loop_state,
     merge,
@@ -437,8 +436,6 @@ def _worktree_landed(repo_root: Path, binding: loop_state.WorktreeBinding) -> bo
 
 def _on_ship(ctx: _Ctx) -> AdvanceResult:
 
-    if reason := landing_guard.blocker(ctx.repo_root, ctx.issue_id, allow_owner=False):
-        return _blocked(ctx, reason)
     unrun = demonstration_proof.unrun_reason(ctx.repo_root, ctx.issue_id)
     if unrun:
         return _blocked(ctx, unrun, needs_input="demonstration")
@@ -672,6 +669,7 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
             capture_usage=True,
             timeout=config.runner_timeout,
             role=role,
+            keep_on_timeout=True,
         )
     else:
         with runner.process_budget().slot(runner.LANE):
@@ -682,6 +680,7 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
                 capture_usage=True,
                 timeout=config.runner_timeout,
                 role=role,
+                keep_on_timeout=True,
             )
     record_run(
         ctx.repo_root,

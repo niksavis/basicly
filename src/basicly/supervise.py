@@ -1578,6 +1578,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
                 on_event=lane_log.fanout(stream, transcript),
                 bounds=bounds,
                 role=roles.resolve_role(repo_root, spec, "build"),
+                keep_on_timeout=True,
             )
     except (RuntimeError, OSError, ValueError) as exc:
         record_unstarted_dispatch(repo_root, lane.issue_id, spec, exc)

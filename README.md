@@ -61,14 +61,16 @@ explains.
   own rules live in `.basicly-local/`, and an upgrade never changes them.
 - **Gates.** A gate is a check that refuses a commit when it fails. basicly runs the
   gates in git hooks and in agent hooks. An agent hook is a command that a coding agent
-  runs before or after it acts. CI runs the gates again.
+  runs before or after it acts. CI runs the gates again. A push that only deletes
+  branches or adds no commit runs no pre-push job.
 - **A tracker.** The tracker stores records of work, their dependencies and the result
   of each gate. It keeps them in a log in `.basicly/ledger/`. basicly adds to the log and
   never changes old lines. You commit the log with your code.
 - **A loop.** The `loop` command takes one record from creation to a merged change. It
   builds each record in its own git worktree, which is a second working copy of the
   repository. The loop reads the state of each record from the tracker, so another
-  agent can continue the work.
+  agent can continue the work. A lane that runs long or goes quiet is reported as
+  stalled and keeps running, so no work is thrown away.
 
 ## First use
 

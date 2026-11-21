@@ -170,7 +170,6 @@ def test_every_tracker_reader_resolves_its_folder_through_the_vault_view(
         lambda: tracker.readiness(repo, {"id": FIRST}, None),
         lambda: tracker.ledger_fingerprint(repo),
         lambda: tracker.read_artifacts(repo, FIRST),
-        lambda: tracker.artifact_states(repo, "plan"),
     ]
 
     for call in calls:

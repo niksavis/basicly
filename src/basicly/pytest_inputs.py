@@ -208,6 +208,19 @@ def fingerprint(repo_root: Path) -> str:
         raise pyright_inputs.UnsupportedInputsError(f"pytest inputs unavailable: {exc}") from exc
 
 
+def _tool_version(found: str, root: Path, environment: dict[str, str]) -> str:
+    try:
+        result = checkout.run(
+            [found, "--version"], cwd=root, env=environment, check=False, timeout=10
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise pyright_inputs.UnsupportedInputsError(f"{Path(found).name} --version failed") from exc
+    said = (result.stdout or result.stderr).strip().splitlines()
+    if result.returncode or not said:
+        raise pyright_inputs.UnsupportedInputsError(f"{Path(found).name} --version failed")
+    return said[0]
+
+
 def _landing_python(interpreter: Path, root: Path, environment: dict[str, str]) -> str:
     program = (
         "import json,sysconfig;"
@@ -300,10 +313,7 @@ def landing_fingerprint(
         },
         "environment": environment,
         "tools": {
-            name: {
-                "path": str(Path(found).resolve()),
-                "content": hashlib.sha256(Path(found).read_bytes()).hexdigest(),
-            }
+            name: _tool_version(found, root, environment)
             if (found := shutil.which(name, path=environment.get("PATH")))
             else None
             for name in sorted(set(commands) | {"git", "uv", "node", "python", "python3"})
