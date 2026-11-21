@@ -155,7 +155,7 @@ def test_a_release_produces_the_version_the_changelog_and_an_annotated_tag(repo:
         assert "v0.6.0" in text and f"v{CURRENT}" not in text
     assert _git(repo, "cat-file", "-t", "v0.6.0").strip() == "tag"
     assert "v0.6.0 (2026-07-26)" in _git(repo, "cat-file", "-p", "v0.6.0")
-    assert _git(repo, "log", "--format=%s", "-1").strip() == release.COMMIT_SUBJECT
+    assert _git(repo, "log", "--format=%s", "-1").strip() == f"{release.COMMIT_SUBJECT} (fx-1)"
     assert "fx-1" in _git(repo, "log", "--format=%B", "-1")
     assert _git(repo, "status", "--porcelain").strip() == ""
 
@@ -327,7 +327,7 @@ def test_the_release_commit_sits_on_the_proved_commit_and_changes_only_release_f
 
     assert not result.refused and result.tagged
     assert _git(repo, "rev-parse", "HEAD~1").strip() == proved
-    assert _git(repo, "log", "--format=%s", "-1").strip() == release.COMMIT_SUBJECT
+    assert _git(repo, "log", "--format=%s", "-1").strip() == f"{release.COMMIT_SUBJECT} (fx-1)"
     assert _git(repo, "rev-list", "--count", f"{proved}..HEAD").strip() == "1"
     changed = _git(repo, "diff", "--name-only", proved, "HEAD").split()
     release_files = {
