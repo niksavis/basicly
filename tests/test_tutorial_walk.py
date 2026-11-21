@@ -42,6 +42,19 @@ def test_a_changed_count_is_reported_by_its_documented_line() -> None:
     assert walk.mismatch(documented, OBSERVED) == documented.splitlines()[0]
 
 
+def test_a_walk_step_finds_the_walk_wheel_shim_first_on_path(tmp_path: Path) -> None:
+    repo = tmp_path / "myrepo"
+    repo.mkdir()
+    wheel = tmp_path / "basicly-9.9.9-py3-none-any.whl"
+
+    code, output, _ = walk.run("command -v basicly", repo, wheel)
+
+    found = Path(output.strip())
+    assert code == 0
+    assert found == tmp_path / "bin" / "basicly"
+    assert str(wheel) in found.read_text(encoding="utf-8")
+
+
 def test_blocks_keep_the_fence_kind_and_the_sentence_that_introduces_them() -> None:
     text = "Create `.cfg.json` with:\n\n```json\n{}\n```\n\nRun:\n\n```sh\nls\n```\n"
 
