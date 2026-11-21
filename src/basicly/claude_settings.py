@@ -24,6 +24,8 @@ DENY_KEY = "deny"
 HOOKS_KEY = "hooks"
 SUBAGENT_CACHE_TTL_KEY = "subagentPromptCacheTtl"
 SUBAGENT_CACHE_TTL = "1h"
+PROMPT_CACHE_TTL_KEY = "promptCacheTtl"
+PROMPT_CACHE_TTL = "1h"
 SKILL_LISTING_BUDGET_KEY = "skillListingBudgetFraction"
 SKILL_LISTING_BUDGET = 0.02
 PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
@@ -84,6 +86,10 @@ def _default_key(repo_root: Path, key: str, value: object) -> bool:
 
 def default_subagent_cache_ttl(repo_root: Path) -> bool:
     return _default_key(repo_root, SUBAGENT_CACHE_TTL_KEY, SUBAGENT_CACHE_TTL)
+
+
+def default_prompt_cache_ttl(repo_root: Path) -> bool:
+    return _default_key(repo_root, PROMPT_CACHE_TTL_KEY, PROMPT_CACHE_TTL)
 
 
 def default_skill_listing_budget(repo_root: Path) -> bool:

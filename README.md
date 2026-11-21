@@ -46,7 +46,9 @@ Install writes the instruction files (`.claude/CLAUDE.md`, `AGENTS.md` and
 `.github/copilot-instructions.md`), the skills, the subagents and the `.basicly/` folder.
 It writes the git and agent hooks, `basicly.toml`, `.basicly-local/`, a continuous
 integration (CI) workflow and
-`.vscode/tasks.json`. It also adds lines to `.gitignore` and `.gitattributes`.
+`.vscode/tasks.json`. It also adds lines to `.gitignore` and `.gitattributes`. In
+`.claude/settings.json` it sets both prompt cache lifetimes to one hour, unless you set
+them yourself.
 
 Install does not commit. Run `git status` to review the files. Every person who commits
 needs the same tools, as
