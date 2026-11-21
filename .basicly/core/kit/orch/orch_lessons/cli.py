@@ -5,7 +5,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from orch_relay import classes, messages, record, start
+from orch_relay import brief, classes, messages, record, start
 from orch_state import commands, relay_guard
 
 from orch_lessons import doctor, log
@@ -93,6 +93,12 @@ def relay(args: argparse.Namespace, writer: messages.Writer) -> str:
 def run_relay(args: argparse.Namespace, cwd: Path, environ: dict[str, str]) -> int | None:
     if args.group == "send":
         print(messages.order(args.to, args.record, args.goal, args.limits, args.proof))
+        return 0
+    if args.group == "brief":
+        tracker = record.Tracker(log.repo_root(cwd))
+        found = record.find(tracker)
+        shown = brief.notes(tracker.notes(found))
+        print(brief.render(found, shown, commands.session_lines(cwd, environ)))
         return 0
     if args.group == "start":
         repo = log.repo_root(cwd)
