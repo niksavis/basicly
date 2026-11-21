@@ -1,0 +1,1 @@
+- A tracker share whose push times out now says that the push timed out, and a refused push now names git's reason, so a failed claim tells a slow vault from a rejection.
