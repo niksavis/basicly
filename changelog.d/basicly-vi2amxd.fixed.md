@@ -1,0 +1,1 @@
+- `orch lesson add` and `orch lessons end-session` no longer need `ORCH_MEMBER` when the session's orch state record names the member, the same name `orch state set` shows. With no source, they refuse and name each source they tried and the command that sets a name.

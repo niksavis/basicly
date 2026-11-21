@@ -35,6 +35,8 @@ The design is `docs/design/session-state.md`.
 | `orch brief` | prints the orchestration record id, the newest `[handover` note, the `[owner` notes after it, the session map and the later notes, in at most 20,000 bytes; it says how many older notes it left out |
 | `orch accept` | a worker's check of a relayed decision or approval: `--record`, `--repo` and `--action` must match the relay exactly, and the relay must be within 60 minutes of its entry stamp (an until-landed diff approval has no time limit); it refuses any difference by name |
 
+`orch lesson add` and `orch lessons end-session` stamp the member name from `ORCH_MEMBER`, or else from the session's orch state record (the name `orch state set` shows).
+
 `orch status` shows each session as `working`, `quiet`, `nudge` (no update for 30 minutes), `stale` (no update for 2 hours), `needs you` or `dead`, and folds the dead sessions into one count line.
 `orch state set --item ID --last TEXT [--failed]` records the session's current record and its last result (`item`, `last`, `last_at`, `last_ok` in the session file, at most 200 characters each), and `orch status` shows them in the row. The post-commit and pre-push hooks, the tracker claim, the landing tool and its CI wait write `item` and `last` themselves when an orchestrator store and a session id exist, and do nothing otherwise. `runner_timeout` is off by default. A dispatch that runs 30 minutes with no end, or past a `runner_timeout` you set, writes `last` as stalled and keeps running; no dispatch is killed at a time limit.
 
