@@ -41,6 +41,7 @@ PIN_FILES = (
     Path(".scripts") / "bootstrap.ps1",
     Path("packages/basicly-tracker/README.md"),
     Path("packages/basicly-board/README.md"),
+    Path("packages/basicly-orch/README.md"),
 )
 PIN_GLOBS = ("docs/how-to/*.md", "docs/tutorial/*.md", ".basicly/tracker-bootstrap.py")
 
