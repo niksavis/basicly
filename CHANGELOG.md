@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release finishes the first part of the new workflow (basicly-lkgvml3). `runner_timeout` is now off by default, and no dispatch is killed at a time limit: decider, judge and proposer runs also get a stall note at 30 minutes and keep running. A new post-commit hook writes each commit to the orch session state. `orch --version` prints the installed version. `basicly install` now also sets `promptCacheTtl` to `1h`, so both prompt caches last an hour (basicly-aoc0kqa).
+
 ## v0.49.0 - 2026-11-21
 
 Delta: v0.48.0..v0.49.0
