@@ -29,6 +29,7 @@ def add_parsers(groups: argparse._SubParsersAction) -> None:
         put.add_argument(flag)
     put.add_argument("--state", choices=store.STATES)
     groups.add_parser("status")
+    groups.add_parser("brief")
     ask = groups.add_parser("ask")
     ask.add_argument("--record")
     ask.add_argument("--question")
@@ -118,6 +119,17 @@ def run(
     if args.group == "ask":
         return run_ask(args, base(cwd, environ), clock)
     return None
+
+
+def session_lines(
+    cwd: Path, environ: dict[str, str], clock: store.Clock = store.utc_now
+) -> list[str]:
+    root = store.find(cwd, environ)
+    if root is None:
+        return []
+    return status.render(
+        store.sessions(root), store.asks(root), clock(), store.alive, 2 * status.WIDTH
+    )
 
 
 def after_relay(

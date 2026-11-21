@@ -1,0 +1,1 @@
+- The orchestrator kit adds `orch brief`: the newest handover, the owner items after it, the session map and the later notes of the orchestration record, in at most 20,000 bytes, so a new Orchestrator session starts without reading the whole record.
