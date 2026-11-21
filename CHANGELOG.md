@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release makes worktree cleanup stop asking for `--force` on git-ignored files (basicly-f8sluti). Cleanup copies them to `.git/basicly-preserved/` with a manifest and removes the worktree, deletes a merged lane's remote branch after a fast-forward landing, and runs by itself after a CI-proven landing. `orch lesson add` and `orch lessons end-session` take the member name from the session's orch state record when `ORCH_MEMBER` is unset (basicly-vi2amxd).
+
 ## v0.49.1 - 2026-11-21
 
 Delta: v0.49.0..v0.49.1
