@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shlex
 import subprocess  # nosec B404
@@ -85,12 +86,28 @@ def mismatch(expected: str, actual: str) -> str | None:
     return None
 
 
+def shim(root: Path, wheel: Path) -> Path:
+    folder = root / "bin"
+    folder.mkdir(exist_ok=True)
+    launcher = folder / "basicly"
+    launcher.write_text(
+        f'#!/bin/sh\nexec uvx --from {shlex.quote(str(wheel))} basicly "$@"\n', encoding="utf-8"
+    )
+    launcher.chmod(0o755)
+    return folder
+
+
 def run(script: str, cwd: Path, wheel: Path) -> tuple[int, str, Path]:
     marker = cwd.parent / ".walk-cwd"
-    prelude = f'basicly() {{ uvx --from {shlex.quote(str(wheel))} basicly "$@"; }}\n'
-    shell = prelude + script + f"\nstatus=$?\npwd > {shlex.quote(str(marker))}\nexit $status\n"
+    path = f"{shim(cwd.parent, wheel)}{os.pathsep}{os.environ.get('PATH', '')}"
+    shell = script + f"\nstatus=$?\npwd > {shlex.quote(str(marker))}\nexit $status\n"
     result = subprocess.run(  # nosec B603 B607
-        ["bash", "-c", shell], cwd=cwd, capture_output=True, text=True, check=False
+        ["bash", "-c", shell],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": path},
     )
     after = Path(marker.read_text(encoding="utf-8").strip()) if marker.is_file() else cwd
     return result.returncode, result.stdout + result.stderr, after
