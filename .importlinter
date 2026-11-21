@@ -68,7 +68,7 @@ layers =
     release_history | skill_pairing | skill_standard
     provider_limit | runner_usage
     decider_contract
-    corpus_drift | decision_marker
+    corpus_drift | decision_marker | orch_note
     artifact_record | integration_record | lens_review | run_record | skill_source
     spend_calibration
     demonstration_proof

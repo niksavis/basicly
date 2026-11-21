@@ -285,7 +285,6 @@ def run_verify(
         )
     if refusal := _selection_refusal(repo_root, mode, selection):
         return refusal
-    subject_before = landing_guard.before_verification(repo_root, mode, config)
     eligible = {
         check.name
         for check in checks
@@ -371,7 +370,7 @@ def run_verify(
     report = VerifyReport(
         mode, tuple(results), run_id, receipts, round(time.perf_counter() - started, 3), selection
     )
-    report = landing_guard.finish_verification(repo_root, report, subject_before, config)
+    report = landing_guard.finish_verification(repo_root, report)
     if caching and stable and report.passed:
         verify_cache.write(
             repo_root,
@@ -464,10 +463,6 @@ def report_gate(
         appended = tracker.write(repo_root, args)
     except RuntimeError as exc:
         return False, f"gate {gate} NOT recorded on {issue_id}: {exc}"
-    if report.passed and report.mode == "full" and report.results and report.selection is None:
-        landing_guard.record_verification(
-            repo_root, issue_id, passed=True, proof=report.subject_fingerprint
-        )
     if not appended:
         return True, f"gate {gate}={status} on {issue_id} was already held; kept the first"
     return True, f"recorded gate {gate}={status} on {issue_id}"

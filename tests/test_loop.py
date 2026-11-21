@@ -95,8 +95,6 @@ def tracker_commits(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | No
     monkeypatch.setattr(
         dispatch_brief, "task_prompt", lambda _root, issue: dispatch_brief.dispatch_prompt(issue)
     )
-    monkeypatch.setattr(loop.landing_guard, "destination_inputs", lambda *_a: "fixed")
-    monkeypatch.setattr(loop.landing_guard, "record_verification", lambda *_a, **_k: None)
     calls: list[tuple[str, str | None]] = []
 
     def _record(_repo_root, bead, **kwargs):

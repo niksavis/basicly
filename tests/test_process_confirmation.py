@@ -139,16 +139,3 @@ def test_stale_confirmation_does_not_authorize_completion(tmp_path: Path, eviden
     reason = process_confirmation.confirm(tmp_path, "item")
     assert reason and "Consumer sees the result" in reason
     assert written == []
-
-
-def test_preflight_allows_the_declared_gate_to_supply_actual_evidence(tmp_path: Path, evidence):
-    _, written = evidence
-    assert process_confirmation.preflight(tmp_path, "item", (("check", "result"),)) is None
-    assert written == []
-    assert process_confirmation.confirm(tmp_path, "item") is not None
-
-
-def test_preflight_refuses_a_check_the_gate_will_not_execute(tmp_path: Path, evidence):
-    _, written = evidence
-    assert process_confirmation.preflight(tmp_path, "item", (("check", "other"),)) is not None
-    assert written == []

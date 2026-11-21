@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from basicly import checkout, landing_guard, tracker
+from basicly import checkout, landing_guard
 from tests import flipped_tracker
 from tests.test_merge import _add_source, _git_here, _lane_worktree, _seed_repo
 
@@ -115,23 +115,61 @@ def test_changed_branch_after_precheck_cannot_substitute_the_merged_candidate(
     assert _git_here(repo, "rev-parse", "HEAD") == subject.destination
 
 
-def test_unverified_destination_blocks_other_landings_and_close_until_reverified(
+def _once_refusing_commit_msg(repo: Path) -> Path:
+    marker = repo / ".git" / "refused-once"
+    refuse = (
+        "import sys; from pathlib import Path; p = Path(sys.argv[1]); "
+        "sys.exit(0) if p.exists() else (p.write_text('x'), sys.exit(1))"
+    )
+    _git_here(repo, "config", "hook.once-msg.event", "commit-msg")
+    _git_here(
+        repo,
+        "config",
+        "hook.once-msg.command",
+        shlex.join([sys.executable, "-c", refuse, str(marker)]),
+    )
+    return marker
+
+
+def test_a_merge_stopped_by_a_hook_with_the_candidate_tree_staged_is_concluded_with_hooks_on(
     tmp_path: Path,
 ) -> None:
     repo = _seed_repo(tmp_path)
-    flipped_tracker.flipped_repo(repo)
-    flipped_tracker.seed(repo, "basicly-owner", title="failed landing")
-    landing_guard.record_verification(repo, "basicly-owner", passed=False)
-    assert "basicly-owner" in landing_guard.blocker(repo, "basicly-other")
-    assert landing_guard.blocker(repo, "basicly-owner") == ""
-    assert landing_guard.blocker(repo, "basicly-owner", allow_owner=False)
-    landing_guard.record_verification(
-        repo, "basicly-owner", passed=True, proof=landing_guard.destination_inputs(repo, "full")
+    session = _lane_worktree(tmp_path, repo)
+    _add_source(session.path, "b")
+    marker = _once_refusing_commit_msg(repo)
+    subject = landing_guard.capture(repo, session, "full")
+
+    result = landing_guard.guarded_merge(
+        repo, subject, ["merge", "--no-ff", subject.candidate, "-m", "land it (acme-1)"]
     )
-    assert not landing_guard.blocker(repo, "basicly-other")
-    fact = tracker.read_artifacts(repo, "basicly-owner")["landing-verification"]
-    assert isinstance(fact, dict)
-    assert fact["status"] == "verified"
+
+    assert result.returncode == 0, result.stderr
+    assert marker.exists()
+    parents = _git_here(repo, "show", "-s", "--format=%P", "HEAD").split()
+    assert parents == [subject.destination, subject.candidate]
+
+
+def test_a_merge_whose_hook_refuses_twice_stays_refused_with_git_text(tmp_path: Path) -> None:
+    repo = _seed_repo(tmp_path)
+    session = _lane_worktree(tmp_path, repo)
+    _add_source(session.path, "b")
+    _git_here(repo, "config", "hook.never-msg.event", "commit-msg")
+    _git_here(
+        repo,
+        "config",
+        "hook.never-msg.command",
+        shlex.join([sys.executable, "-c", "import sys; print('no record id'); sys.exit(1)"]),
+    )
+    subject = landing_guard.capture(repo, session, "full")
+
+    result = landing_guard.guarded_merge(
+        repo, subject, ["merge", "--no-ff", subject.candidate, "-m", "land it"]
+    )
+
+    assert result.returncode != 0
+    assert "no record id" in result.stdout + result.stderr
+    assert _git_here(repo, "rev-parse", "HEAD") == subject.destination
 
 
 def test_disabled_reference_event_refuses_before_checkout_mutation(landing) -> None:
@@ -216,7 +254,6 @@ def test_interrupted_publication_keeps_a_durable_unverified_barrier(
 
     monkeypatch.setattr(Path, "write_text", interrupted)
     assert landing_guard.main([str(path), "prepared"]) == 1
-    assert "basicly-owner" in landing_guard.blocker(repo, "basicly-other")
     assert _git_here(repo, "rev-parse", "HEAD") == original.destination
 
 

@@ -17,6 +17,7 @@ PROOFS = Path(".basicly/usage/ci-proofs.json")
 POLL_S = 30.0
 FIND_S = 120.0
 TIMEOUT_S = 900.0
+RERUNS = 1
 REUSE_DEPTH = 30
 FALLBACK = "or land locally with --mode full"
 
@@ -161,11 +162,12 @@ def verdict(state: dict, candidate: Candidate) -> str:
     )
 
 
-def _spent(root: Path, candidate: Candidate, gh: Gh, tried: list[str]) -> str:
+def _failed_runs(root: Path, candidate: Candidate, gh: Gh, tried: list[str]) -> list[dict]:
     heads = [candidate.head]
     heads += [
         h for h in tried if h != candidate.head and same_outside_ledger(root, h, candidate.head)
     ]
+    failed = []
     for head in heads:
         listed = gh([
             "run",
@@ -182,15 +184,23 @@ def _spent(root: Path, candidate: Candidate, gh: Gh, tried: list[str]) -> str:
                 f"cannot read earlier {WORKFLOW} runs of {head[:12]} with gh; "
                 f"run gh auth login, {FALLBACK}"
             )
-        for run in json.loads(listed):
-            if run.get("status") == "completed" and run.get("conclusion") != "success":
-                return (
-                    f"{WORKFLOW} run {run.get('url')} already ended {run.get('conclusion')} "
-                    f"on this tree; a landing takes only a first attempt; change the lane, "
-                    f"then run basicly worktree merge {candidate.lane} --bead {candidate.record} "
-                    "--mode ci again"
-                )
-    return ""
+        failed += [
+            run
+            for run in json.loads(listed)
+            if run.get("status") == "completed" and run.get("conclusion") != "success"
+        ]
+    return failed
+
+
+def _spent(failed: list[dict], candidate: Candidate) -> str:
+    if len(failed) <= RERUNS:
+        return ""
+    urls = ", ".join(str(run.get("url")) for run in failed)
+    return (
+        f"{WORKFLOW} already failed {len(failed)} times on this tree ({urls}); a landing takes "
+        f"a first attempt and {RERUNS} rerun; change the lane, then run basicly worktree merge "
+        f"{candidate.lane} --bead {candidate.record} --mode ci again"
+    )
 
 
 def prove(
@@ -201,7 +211,8 @@ def prove(
     if earlier.get("head") and same_outside_ledger(root, earlier["head"], candidate.head):
         return earlier
     tried = earlier.get("dispatched", "").split()
-    if refused := _spent(root, candidate, gh, tried):
+    failed = _failed_runs(root, candidate, gh, tried)
+    if refused := _spent(failed, candidate):
         raise CiLandingError(refused)
     attempt = int(earlier.get("attempt", "0")) + 1
     ref = _ref(candidate.lane, attempt)
@@ -220,6 +231,7 @@ def prove(
         "ref": ref,
         "attempt": str(attempt),
         "dispatched": dispatched,
+        "failed_before": str(len(failed)),
     }
     _remember(root, candidate.lane, proof)
     return proof

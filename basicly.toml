@@ -790,11 +790,11 @@ default = "auto"
 # 54,205,369 tokens and left an empty worktree. The spend ceiling and `quiet_after` still bind
 # first and both read the event stream, so what a runaway costs stays bounded by the grant.
 runner_timeout = 7200
-# Terminal quiet bound: seconds of a *silent* event stream before a lane is killed
-# as wedged. Left at the engine default (1800s), stated here because it is the
+# Quiet bound: seconds of a *silent* event stream before a lane is noted as stalled
+# (orch state last "stalled", a stderr line); since basicly-lkgvml3 the lane keeps running. Left at the engine default (1800s), stated here because it is the
 # bound that replaced the wall clock and a reader of this file should see all three
-# together — `stall_after` flags at 900s, this kills at 1800s, `runner_timeout`
-# backstops at 3600s.
+# together — `stall_after` flags at 900s, this notes at 1800s, `runner_timeout`
+# notes at 7200s; for a lane dispatch neither kills the process or discards its work.
 #
 # Uncalibrated, and there is no honest way to calibrate it yet: no inter-event gap
 # has ever been measured, because until basicly-rupz the stream was requested, paid

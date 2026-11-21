@@ -37,7 +37,6 @@ class VerifyReport:
     receipts: tuple[CheckReceipt, ...] = ()
     duration_s: float = 0.0
     selection: dict | None = None
-    subject_fingerprint: str = ""
 
     @property
     def passed(self) -> bool:
@@ -181,7 +180,6 @@ def write_run_artifact(repo_root: Path, report: RunVerdict) -> Path | None:
         "recorded_at": datetime.now(UTC).isoformat(),
         "passed": report.passed,
         "selection": getattr(report, "selection", None),
-        "subject_fingerprint": getattr(report, "subject_fingerprint", ""),
         "run_id": report.run_id,
         "duration_s": report.duration_s,
         "receipts": [

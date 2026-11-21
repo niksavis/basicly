@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import json
-import os
 import shlex
 import subprocess
 import sys
 import uuid
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
 
-from . import checkout, owned_store, pytest_inputs, redact, tracker, tracker_paths
+from . import checkout, owned_store, pytest_inputs, redact, tracker_paths
 from .config import VerifyConfig, load_verify_config
-from .verify_artifact import CheckResult, VerifyReport, write_run_artifact
+from .verify_artifact import VerifyReport, write_run_artifact
 from .verify_receipt import changed_components, components
 
 CI_MODE = "ci"
@@ -147,84 +146,7 @@ def changed(root: Path, subject: LandingSubject) -> str:
         return "landing references or inputs unavailable; inspect candidate and retry landing"
 
 
-def destination_inputs(root: Path, mode: str, config: VerifyConfig | None = None) -> str:
-    return _inputs(root, mode, _head(root, "HEAD"), config)
-
-
-def blocker(root: Path, issue: str, *, allow_owner: bool = True) -> str:
-    for identity, fact in tracker.artifact_states(root, "landing-verification").items():
-        if (
-            isinstance(fact, dict)
-            and fact.get("status") == "unverified"
-            and (identity != issue or not allow_owner)
-        ):
-            return (
-                f"destination is unverified after {identity}; repair it and run "
-                f"basicly verify --mode full --issue {identity} before another landing or close"
-            )
-    return ""
-
-
-def record_verification(
-    root: Path, issue: str, *, passed: bool, proof: str = "", head: str = ""
-) -> None:
-    if not issue:
-        return
-    states = tracker.artifact_states(root, "landing-verification")
-    if issue not in states:
-        return
-    previous = states[issue]
-    if passed and (not isinstance(previous, dict) or previous.get("status") != "unverified"):
-        return
-    if passed and (not proof or proof != destination_inputs(root, "full")):
-        return
-    tracker.add_artifact(
-        root,
-        issue,
-        "landing-verification",
-        {
-            "status": "verified" if passed else "unverified",
-            "head": head or _head(root, "HEAD"),
-            "base": checkout.current_branch(root),
-        },
-    )
-
-
-def before_verification(root: Path, mode: str, config: VerifyConfig) -> str:
-    in_ci = root.resolve() in owned_store.records_guard(os.environ)
-    if mode != "full" or in_ci or not blocker(root, "", allow_owner=False):
-        return ""
-    try:
-        return destination_inputs(root, mode, config)
-    except OSError, ValueError, RuntimeError:
-        return "unavailable"
-
-
-def finish_verification(
-    root: Path, report: VerifyReport, before: str, config: VerifyConfig
-) -> VerifyReport:
-    if before:
-        try:
-            after = destination_inputs(root, report.mode, config)
-        except OSError, ValueError, RuntimeError:
-            after = ""
-        if before != after:
-            report = replace(
-                report,
-                receipts=(),
-                results=(
-                    *report.results,
-                    CheckResult(
-                        "landing-inputs",
-                        "fail",
-                        1,
-                        "Destination inputs changed or became unavailable; "
-                        "keep destination unverified",
-                    ),
-                ),
-            )
-        else:
-            report = replace(report, subject_fingerprint=str(after))
+def finish_verification(root: Path, report: VerifyReport) -> VerifyReport:
     write_run_artifact(root, report)
     return report
 
@@ -254,6 +176,14 @@ def require_stable_engine(root: Path, subject: LandingSubject) -> None:
             "Landing changes the executing engine; rerun from the candidate worktree "
             "engine with the destination as the working directory"
         )
+
+
+def _concludable(root: Path, subject: LandingSubject) -> bool:
+    merging = checkout.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd=root, check=False)
+    if merging.returncode != 0 or merging.stdout.strip() != subject.candidate:
+        return False
+    staged = checkout.git(["write-tree"], cwd=root, check=False)
+    return staged.returncode == 0 and staged.stdout.strip() == subject.tree
 
 
 def guarded_merge(
@@ -307,6 +237,14 @@ def guarded_merge(
             "Git cannot run the configured landing guard; use Git with named-hook support"
         )
     result = checkout.git([*options, *command], cwd=root, check=False)
+    if result.returncode != 0 and _concludable(root, subject):
+        concluded = checkout.git([*options, "commit", "--no-edit"], cwd=root, check=False)
+        result = subprocess.CompletedProcess(
+            result.args,
+            concluded.returncode,
+            result.stdout + concluded.stdout,
+            result.stderr + concluded.stderr,
+        )
     if result.returncode == 0 and not path.with_suffix(".receipt").is_file():
         raise ValueError("Publication has no prepared transaction receipt; inspect the destination")
     if result.returncode == 0:
@@ -396,7 +334,6 @@ def _prepare(path: Path) -> None:
     metadata = checkout.git(["show", "-s", "--format=%P%n%T", oid]).stdout.splitlines()
     if metadata != [f"{subject.destination} {subject.candidate}", subject.tree]:
         raise ValueError("proposed merge differs from the captured candidate")
-    record_verification(Path.cwd(), subject.record, passed=False, head=oid)
     path.with_suffix(".receipt").write_text(oid, encoding="utf-8")
 
 
