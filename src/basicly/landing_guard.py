@@ -10,12 +10,13 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
-from . import checkout, owned_store, pytest_inputs, tracker, tracker_paths
+from . import checkout, owned_store, pytest_inputs, redact, tracker, tracker_paths
 from .config import VerifyConfig, load_verify_config
 from .verify_artifact import CheckResult, VerifyReport, write_run_artifact
 from .verify_receipt import changed_components, components
 
 CI_MODE = "ci"
+MERGE_SAID_MAX = 600
 
 
 class LandingSession(Protocol):
@@ -326,6 +327,15 @@ def guarded_merge(
         ):
             raise ValueError("Destination checkout changed during publication; preserve user work")
     return result
+
+
+def refused(subject: LandingSubject, proc: subprocess.CompletedProcess[str]) -> str:
+    said = " ".join(f"{proc.stderr or ''} {proc.stdout or ''}".split())[-MERGE_SAID_MAX:]
+    told = f"git said: {redact.redact_committed(said)}" if said else "git printed nothing"
+    return (
+        f"git merge of captured {subject.candidate[:12]} exited {proc.returncode}; {told}; "
+        "publication refused; preserve checkout and index for inspection"
+    )
 
 
 def _read_subject(path: Path) -> LandingSubject:

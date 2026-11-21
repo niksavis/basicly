@@ -439,7 +439,7 @@ def _merge_message(
         if record.model:
             trailers.append(f"Harness-Model: {record.model}")
         body += "\n\n" + "\n".join(trailers)
-    return f"chore(worktree): merge a harness worktree back to its base\n\n{body}"
+    return f"chore(worktree): merge a harness worktree back to its base ({bead})\n\n{body}"
 
 
 def _pre_merge_state(
@@ -497,12 +497,7 @@ def _merge_and_prove(
         return MergeResult(name, MERGE_UNPROVEN, str(error))
     if proc.returncode != 0:
         landing_guard.record_verification(repo_root, bead, passed=False)
-        return MergeResult(
-            name,
-            MERGE_UNPROVEN,
-            f"git merge of captured {subject.candidate[:12]} exited {proc.returncode}; "
-            "publication refused; preserve checkout and index for inspection",
-        )
+        return MergeResult(name, MERGE_UNPROVEN, landing_guard.refused(subject, proc))
     landed_head = subject.candidate
     if not is_ancestor(repo_root, landed_head, base):
         where = landed_head[:12] if landed_head else "(unresolvable)"
