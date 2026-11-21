@@ -460,3 +460,26 @@ def test_scope_event_refuses_by_name_and_appends_nothing(
     with pytest.raises(log.RefusedError, match=match):
         run(repo, "lesson", "scope", lesson or known, value)
     assert events(repo) == before
+
+
+ADD = ("lesson", "add", "--what", "w", "--requirement", "r", "--enforcement", "e", "--record", "x")
+
+
+def test_add_without_orch_member_takes_the_name_from_the_session_record(repo: Path) -> None:
+    store = importlib.import_module("orch_state.store")
+    store.save(repo / ".orchestrator", "s1", {"name": "Orchestrator"}, lambda: T0)
+
+    assert cli.run([*ADD, "--scope", "local"], repo, {"ORCH_SESSION_ID": "s1"}) == 0
+    (only,) = log.lessons(repo / ".orchestrator" / "lessons")
+    assert only.member == "Orchestrator"
+
+
+def test_add_with_no_source_for_the_member_refuses_and_names_each_source(repo: Path) -> None:
+    with pytest.raises(log.RefusedError) as refused:
+        cli.run([*ADD, "--scope", "local"], repo, {"ORCH_SESSION_ID": "s9"})
+
+    shown = str(refused.value)
+    assert "ORCH_MEMBER is unset" in shown
+    assert "session s9 names no member" in shown
+    assert "orch state set --name NAME" in shown
+    assert events(repo) == []
