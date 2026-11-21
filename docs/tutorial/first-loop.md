@@ -355,7 +355,7 @@ Created worktree 'myrepo-2i3r'
   branch: harness/myrepo-2i3r  (base main @ 94a79f0)
   .basicly/ledger/redirect: tracker shared with the base checkout
   node_modules: copied from myrepo (identical package-lock.json)
-  hooks: post-merge, pre-commit, commit-msg, pre-push — repository-local Lefthook hooks installed
+  hooks: post-merge, post-commit, pre-commit, commit-msg, pre-push — repository-local Lefthook hooks installed
 [classified] intake -> classify: recorded work type 'task'
 [blocked] classify -> classify: continue as task owner in /path/to/myrepo.worktrees/myrepo-2i3r; worktree 'myrepo-2i3r' is provisioned (needs input: implementation)
 ```
@@ -410,7 +410,7 @@ the worktree is not the shared one.
 ```text
 override: runner.default=manual
 Preserved ... generated artifact(s), with inventory: /path/to/myrepo/.git/basicly-preserved/myrepo-2i3r-11247be64bb546f589a052d404f357d0/manifest.json
-  hooks: post-merge, pre-commit, commit-msg, pre-push — repository-local Lefthook hooks installed
+  hooks: post-merge, post-commit, pre-commit, commit-msg, pre-push — repository-local Lefthook hooks installed
 Cleaned up worktree 'myrepo-2i3r' (worktree + branch + metadata).
 [merged] build -> verify: merged harness/myrepo-2i3r @ 919b83d8348e (1 commit(s)) into main @ 947a0f9; landing 6.8s (merge 3.3s, verify 1.8s, probe 1.7s)
 [shipped] verify -> ship: ship checkpoint satisfied
