@@ -6,7 +6,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-This patch release publishes the changes of v0.47.2: v0.47.2 was tagged but not published, because the release tutorial walk fetched the unpublished release wheel through a hook and the walk now runs before publishing; the walk now puts a basicly shim for the built wheel first on PATH (basicly-opwelh6). Read the v0.47.2 section below for the rest.
+This minor release makes the orchestrator kit usable for a new Orchestrator session: `orch brief` prints a compact start view of the orchestration record in at most 20,000 bytes (basicly-qpr2xmr.3.34), `orch accept` lets a worker check a relayed decision against the exact action it runs (basicly-qpr2xmr.3.35), `orch status` shows a nudge after 30 minutes and folds dead sessions (basicly-qpr2xmr.3.36), and the tracker `confirm` refuses a check whose result says it has not run (basicly-qpr2xmr.3.37). It also publishes the fixes of v0.47.2: v0.47.2 was tagged but not published, because the release tutorial walk fetched the unpublished release wheel through a hook; the walk now puts a basicly shim for the built wheel first on PATH (basicly-opwelh6). Read the v0.47.2 section below for its other changes.
 
 ## v0.47.2 - 2026-11-21
 
