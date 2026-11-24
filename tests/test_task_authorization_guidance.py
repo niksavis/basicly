@@ -50,8 +50,11 @@ def test_plan_guidance_keeps_spending_limits_optional(root: str) -> None:
 @pytest.mark.parametrize("root", [".agents/skills", ".claude/skills"])
 def test_release_guidance_requires_gates_without_a_permission_ladder(root: str) -> None:
     text = (ROOT / root / "release-process/SKILL.md").read_text(encoding="utf-8")
-    assert "user release request authorizes the requested cut and publication" in text
-    assert "Required release gates must still pass" in text
+    assert "may cut, tag and publish a release without a person's approval" in text
+    assert "every required workflow is green on the exact commit it tags" in text
+    assert "never reruns a workflow until it passes" in text
+    assert "never deletes, moves or retags an existing tag" in text
+    assert "user release request" not in text
     assert "green L3 grant" not in text
 
 

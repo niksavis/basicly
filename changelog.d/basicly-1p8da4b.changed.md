@@ -1,0 +1,1 @@
+- The release-process skill now lets an agent cut, tag and publish a release without a person's approval, when every required workflow is green on the exact commit it tags. It never reruns a workflow until it passes and never deletes, moves or retags a tag (basicly-1p8da4b).
