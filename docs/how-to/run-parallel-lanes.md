@@ -187,6 +187,22 @@ Serializing is the second-best answer. Where the shared file can be split —
 one changelog fragment per bead instead of one `CHANGELOG.md` — split it, and
 the collision becomes impossible rather than merely detected.
 
+## Run one lane without a prompt under auto mode
+
+A worker session under auto mode runs the whole lane cycle without a prompt when it names the lane folder with `git -C`:
+
+```sh
+basicly worktree create <name>
+git -C ../<repo>.worktrees/<name> add <path>
+git -C ../<repo>.worktrees/<name> commit -m "<subject> (<record>)"
+uv run basicly worktree merge <name> --bead <record> --mode ci
+basicly worktree cleanup <name>
+```
+
+- Auto mode treats a lane folder as part of the project only when the user's `autoMode` settings say so. Add an `environment` entry that says the lane folders `<repo>.worktrees/<lane>/` belong to the project, and an `allow` entry for git work in a lane folder.
+- Run the merge with `uv run basicly`. The globally installed `basicly` does not put the project's `.venv` on the path of a check, so a check that runs a bare `pytest` fails.
+- When the lane changes the landing engine, the merge refuses with `NOT-READY` and names the command to run from the lane's engine. Run that command.
+
 ## Watching a lane
 
 A dispatched lane is a subprocess of the engine, not a subagent of your session.
