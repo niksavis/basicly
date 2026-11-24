@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -185,3 +186,43 @@ def test_retargeting_a_shared_root_during_the_read_refuses_the_proof(
     with pytest.raises(pyright_inputs.UnsupportedInputsError, match="dependency root changed"):
         pytest_dependencies.fingerprints((alias, alias / "site-packages"))
     assert changed
+
+
+def _golden_tree(base: Path) -> list[Path]:
+    files = {
+        "outer/a.py": "a = 1\n",
+        "outer/pkg/__init__.py": "",
+        "outer/pkg/b.py": "b = 2\n",
+        "outer/pkg/__pycache__/b.pyc": "x",
+        "outer/pkg/inner/c.txt": "c\n",
+        "outer/z.pth": "# comment\n",
+    }
+    for relative, text in files.items():
+        path = base / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return [base / "outer", base / "outer" / "pkg"]
+
+
+def test_nested_roots_keep_their_pinned_fingerprints(tmp_path: Path) -> None:
+    outer, inner = _golden_tree(tmp_path)
+
+    found = pytest_dependencies.fingerprints([outer, inner])
+
+    assert found[outer] == "e2d2de94ecefd531b17b70abd3817045c168769f3eb0a3eef46e1b8a2fa6a190"
+    assert found[inner] == "b7048dd4fa47a7ea388dcc9b90c87cbd7a2f278bdda5c5347e95cae2216f5ef8"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_file_linked_from_outside_hashes_its_resolved_path_and_content(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    target = tmp_path / "elsewhere" / "real.py"
+    target.parent.mkdir()
+    target.write_text("r = 1\n", encoding="utf-8")
+    (root / "link.py").symlink_to(target)
+    expected = hashlib.sha256(
+        f"link.py\0{target.resolve()}\0".encode() + hashlib.sha256(b"r = 1\n").digest()
+    ).hexdigest()
+
+    assert pytest_dependencies.fingerprints([root])[root] == expected
