@@ -1,0 +1,1 @@
+- Four refusals now name a command that works. Kit `claim`, `assign` and `unassign` on a ledger take the `--session` flag the claim refusal names. `orch report` accepts `working` and says it sends no message. The orchestrator write guard ignores an empty `.git` folder. `basicly tracker claim`, `comment` and `create` name the kit command.

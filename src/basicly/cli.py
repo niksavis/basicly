@@ -74,6 +74,7 @@ from . import (
     tracker,
     tracker_agent,
     tracker_import,
+    tracker_kit_verbs,
     tracker_query,
     tracker_write,
     ui,
@@ -5993,6 +5994,9 @@ def deprecation_warning(args: argparse.Namespace) -> str | None:
 def main(argv: list[str] | None = None) -> int:
     _tolerate_narrow_consoles()
     _line_buffer_stdout()
+    if refused := tracker_kit_verbs.refusal(sys.argv[1:] if argv is None else argv):
+        print(refused, file=sys.stderr)
+        return 2
     args = _build_parser().parse_args(argv)
     if warning := deprecation_warning(args):
         print(warning, file=sys.stderr)
