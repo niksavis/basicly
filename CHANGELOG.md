@@ -6,7 +6,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.49.3 - 2026-11-25
+
+Delta: v0.49.2..v0.49.3
+
 This patch release lets a worker session edit CLAUDE.md, AGENTS.md, a skill or an agent for its own record as ordinary work, while settings, hooks and orchestration rule edits still need the person's approval relayed with the exact diff (basicly-1npzooz). An agent may now cut, tag and publish a release when every required workflow is green on the exact commit it tags (basicly-1p8da4b). `basicly worktree cleanup` deletes rebuildable caches instead of copying them and archives `.basicly/usage` instead of refusing, so a merged lane no longer needs `--force` (basicly-8wbmvav). Four refusals now name a command that works, among them the kit `claim --session` flag (basicly-q5a26zo).
+
+### Changed
+
+- The orchestrated-session rule now treats an edit of CLAUDE.md, AGENTS.md, a skill or an agent for the session's own record as ordinary work. Settings, hooks.json, permission rule and orchestration rule edits still need the person's approval, relayed live with the exact diff. (basicly-1npzooz)
+
+- The release-process skill now lets an agent cut, tag and publish a release without a person's approval, when every required workflow is green on the exact commit it tags. It never reruns a workflow until it passes and never deletes, moves or retags a tag (basicly-1p8da4b).
+
+### Fixed
+
+- `basicly worktree cleanup` deletes rebuildable caches, `build/` and the bundled `.basicly/bin` files instead of copying them to `.git/basicly-preserved`. It archives `.basicly/usage` and unrecognized files in those folders instead of refusing, so a merged lane no longer needs `--force`. It refuses to archive past 500 MB. (basicly-8wbmvav)
+
+- Four refusals now name a command that works. Kit `claim`, `assign` and `unassign` on a ledger take the `--session` flag the claim refusal names. `orch report` accepts `working` and says it sends no message. The orchestrator write guard ignores an empty `.git` folder. `basicly tracker claim`, `comment` and `create` name the kit command. (basicly-q5a26zo)
 
 ## v0.49.2 - 2026-11-21
 

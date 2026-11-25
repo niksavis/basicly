@@ -3,7 +3,7 @@
 Install or upgrade the `orch` command from a basicly release; the package version is the basicly version:
 
 ```sh
-uv tool install --force --python '>=3.14' 'git+https://github.com/niksavis/basicly@v0.49.2#subdirectory=packages/basicly-orch'
+uv tool install --force --python '>=3.14' 'git+https://github.com/niksavis/basicly@v0.49.3#subdirectory=packages/basicly-orch'
 ```
 
 `orch-state-hook` reads one vendor hook event on standard input and sets or clears a

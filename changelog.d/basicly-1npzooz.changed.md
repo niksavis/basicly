@@ -1,1 +1,0 @@
-- The orchestrated-session rule now treats an edit of CLAUDE.md, AGENTS.md, a skill or an agent for the session's own record as ordinary work. Settings, hooks.json, permission rule and orchestration rule edits still need the person's approval, relayed live with the exact diff.
