@@ -94,7 +94,7 @@ layers =
     board_fields | board_schema
     worktree_preservation | remote_branches
     worktree_contents
-    verify_log
+    verify_log | install_lane
     lefthook_config | lefthook_binary
     lefthook_artifacts
     automode_trust | base_lock | landing_lock | macos_gate | catalog_routing | catalog_source | checkout | ci_records | copilot_tools | dropin | integrity | needs_input | plan_record | legacy_hooks | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact | verify_cache | write_preflight

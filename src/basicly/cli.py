@@ -44,6 +44,7 @@ from . import (
     dispatch_brief,
     fleet,
     health,
+    install_lane,
     integration_record,
     kit_load,
     landing_lock,
@@ -1774,6 +1775,15 @@ def _hand_written_agents_refused(repo_root: Path, selection: frozenset[str] | No
 
 
 def cmd_install(args: argparse.Namespace) -> int:
+
+    if (lane := getattr(args, "lane", None)) and (
+        stopped := install_lane.check(_repo_root(), lane, dry_run=bool(args.dry_run))
+    ) is not None:
+        return stopped
+    return _install(args)
+
+
+def _install(args: argparse.Namespace) -> int:
 
     technologies = _validate_install_technologies(getattr(args, "technologies", None))
     if technologies is None:
@@ -4965,6 +4975,13 @@ def _add_lifecycle_parsers(subparsers: argparse._SubParsersAction) -> None:
         "--force",
         action="store_true",
         help="Overwrite hand-edited managed core files instead of keeping them",
+    )
+    install_parser.add_argument(
+        "--lane",
+        help=(
+            "Plan the install in this worktree lane: refuse a dirty lane, name the lane "
+            "and the release wheel; needs --dry-run in this release"
+        ),
     )
     install_parser.add_argument(
         "--overwrite-scaffolds",
