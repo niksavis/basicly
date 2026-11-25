@@ -17,7 +17,9 @@ from orch_error_classes import (
     Use,
     classify,
     command_of,
+    counted,
     expected,
+    healed,
     script_error,
     shown_input,
 )
@@ -175,8 +177,29 @@ def incidents(
     for target, text in script_throws:
         if target in chosen:
             chosen[target].context.append(text.splitlines()[0][:120] if text else "")
+    _mark_healed(chosen.values(), uses, results)
     ordered = sorted(chosen.values(), key=lambda item: item.result.stamp or "")
     return ordered, undated, len(script_throws)
+
+
+def _written(use: Use | None) -> str:
+    if use is None or use.tool not in {"Edit", "Write"} or not isinstance(use.data, dict):
+        return ""
+    return str(use.data.get("file_path") or "")
+
+
+def _mark_healed(found: Any, uses: dict[str, Use], results: dict[str, Result]) -> None:
+    landed = {
+        (result.session, result.stamp, _written(uses.get(key)))
+        for key, result in results.items()
+        if not result.error and _written(uses.get(key))
+    }
+    for item in found:
+        tool, _, rest = item.kind.partition("|")
+        if rest != "read-before-write":
+            continue
+        if (item.result.session, item.result.stamp, _written(item.use)) in landed:
+            item.kind = f"{tool}|healed|{rest}"
 
 
 def load_state(path: Path | None) -> dict[str, Any]:
@@ -210,7 +233,7 @@ def report(
         sessions = Counter(
             item.result.session
             for kind, items in classes.items()
-            if not expected(kind)
+            if counted(kind)
             for item in items
         )
         rows = []
@@ -219,7 +242,7 @@ def report(
             rows.append({
                 "class": kind,
                 "count": len(items),
-                "new_class": kind not in seen and not expected(kind),
+                "new_class": kind not in seen and counted(kind),
                 "new_errors": sum(
                     1 for item in items if until is None or (item.result.stamp or "") > until
                 ),
@@ -235,6 +258,7 @@ def report(
         projects[project] = {
             "results": totals[project],
             "errors": sum(sessions.values()),
+            "healed": sum(len(items) for kind, items in classes.items() if healed(kind)),
             "sessions": dict(sessions.most_common()),
             "classes": rows,
         }
@@ -244,7 +268,8 @@ def report(
 def _render(summary: dict[str, Any]) -> str:
     lines = [
         f"orch errors since {summary['since']}: {summary['errors']} errors"
-        f" in {summary['results']} tool results, {summary['expected']} expected exits"
+        f" in {summary['results']} tool results, {summary['healed']} healed in the call,"
+        f" {summary['expected']} expected exits"
         f" ({summary['script_throws']} script throws merged,"
         f" {summary['undated']} undated errors skipped)",
         f"new classes since last run: {summary['new_classes']}",
@@ -320,11 +345,12 @@ def main(argv: list[str] | None = None) -> int:
         if result.stamp and since <= result.stamp < args.until
     )
     projects = report(found, totals, seen, state.get("until"))
-    new_classes = sorted({item.kind for item in found if not expected(item.kind)} - seen)
+    new_classes = sorted({item.kind for item in found if counted(item.kind)} - seen)
     summary = {
         "since": since,
         "results": sum(totals.values()),
-        "errors": sum(1 for item in found if not expected(item.kind)),
+        "errors": sum(1 for item in found if counted(item.kind)),
+        "healed": sum(1 for item in found if healed(item.kind)),
         "expected": sum(1 for item in found if expected(item.kind)),
         "script_throws": script_throws,
         "undated": undated,

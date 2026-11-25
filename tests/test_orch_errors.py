@@ -117,6 +117,36 @@ def test_reads_session_and_subagent_transcripts_under_the_workspace_slug_only(
     assert summary["projects"]["tools"]["sessions"] == {"tools": 2}
 
 
+def test_a_read_before_write_retry_that_healed_in_the_call_is_its_own_class(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stamp, later = "2026-01-02T01:00:00Z", "2026-01-02T02:00:00Z"
+    unread = "File has not been read yet. Read it first before writing to it."
+    healed = {"file_path": "/work/space/tools/a.py"}
+    rows = [
+        _use("repl_1", "Edit", healed, stamp, "u1"),
+        _result("repl_1", unread, stamp, "r1"),
+        _use("repl_2", "Read", healed, stamp, "u2"),
+        _result("repl_2", "1\tx", stamp, "r2", error=False),
+        _use("repl_3", "Edit", healed, stamp, "u3"),
+        _result("repl_3", "updated", stamp, "r3", error=False),
+        _use("repl_4", "Edit", {"file_path": "/work/space/tools/b.py"}, later, "u4"),
+        _result("repl_4", unread, later, "r4"),
+    ]
+    _write(tmp_path, "-work-space-tools", "s1.jsonl", rows)
+
+    summary = _run(tmp_path, capsys)
+
+    assert summary["errors"] == 1
+    assert summary["healed"] == 1
+    assert _classes(summary, "tools") == {
+        "Edit|read-before-write": 1,
+        "Edit|healed|read-before-write": 1,
+    }
+    assert summary["projects"]["tools"]["errors"] == 1
+    assert summary["projects"]["tools"]["healed"] == 1
+
+
 def test_keeps_each_result_by_its_own_timestamp_and_counts_undated_errors(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -213,6 +213,14 @@ def expected(kind: str) -> bool:
     return kind.split("|")[1] in {"probe", "expected-exit"}
 
 
+def healed(kind: str) -> bool:
+    return kind.split("|")[1] == "healed"
+
+
+def counted(kind: str) -> bool:
+    return not expected(kind) and not healed(kind)
+
+
 def script_error(text: str) -> bool:
     return bool(_JS_ERROR.match(text)) or text.startswith("Timed out after")
 
