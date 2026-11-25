@@ -1,0 +1,1 @@
+- `basicly worktree cleanup` deletes rebuildable caches, `build/` and the bundled `.basicly/bin` files instead of copying them to `.git/basicly-preserved`. It archives `.basicly/usage` and unrecognized files in those folders instead of refusing, so a merged lane no longer needs `--force`. It refuses to archive past 500 MB.

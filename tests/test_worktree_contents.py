@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import py_compile
@@ -38,16 +37,6 @@ def test_cleanup_recognizes_only_untracked_generated_verification_cache(
     assert verdict.may_remove is allowed
 
 
-def test_cleanup_reclaims_generated_verification_cache(safety_repo: Path) -> None:
-    session = worktree.create("cache-result", repo_root=safety_repo)
-    path = session.path / verify_cache.CACHE_PATH
-    path.parent.mkdir(parents=True)
-    path.with_name(".gitignore").write_text("*\n", encoding="utf-8")
-    path.write_text('{"checks": []}\n', encoding="utf-8")
-    worktree.cleanup("cache-result", repo_root=safety_repo)
-    assert not session.path.exists()
-
-
 def _hook_pass_store() -> Path:
     path = Path(__file__).resolve().parents[1] / ".basicly" / "core" / "hooks" / "check_reuse.py"
     spec = importlib.util.spec_from_file_location("check_reuse_cleanup_test", path)
@@ -62,16 +51,16 @@ def test_cleanup_names_the_store_the_hook_pass_cache_writes() -> None:
 
 
 @pytest.mark.parametrize(
-    ("body", "removed"),
+    "body",
     [
-        ({"inputs:abc": {"checks": ["ruff", "pyright"], "at": "2026-11-05T00:00:00+00:00"}}, True),
-        ({"inputs:abc": {"checks": "ruff", "at": "2026-11-05T00:00:00+00:00"}}, False),
-        ({"inputs:abc": {"checks": ["ruff"]}}, False),
-        (["ruff"], False),
+        {"inputs:abc": {"checks": ["ruff", "pyright"], "at": "2026-11-05T00:00:00+00:00"}},
+        {"inputs:abc": {"checks": "ruff", "at": "2026-11-05T00:00:00+00:00"}},
+        {"inputs:abc": {"checks": ["ruff"]}},
+        ["ruff"],
     ],
 )
-def test_cleanup_reclaims_only_a_valid_hook_pass_cache(
-    safety_repo: Path, body: object, removed: bool
+def test_cleanup_archives_every_hook_pass_cache_before_removal(
+    safety_repo: Path, capsys: pytest.CaptureFixture[str], body: object
 ) -> None:
     session = worktree.create("pass-cache", repo_root=safety_repo)
     path = session.path / worktree_contents.CHECK_PASSES
@@ -79,13 +68,11 @@ def test_cleanup_reclaims_only_a_valid_hook_pass_cache(
     path.with_name(".gitignore").write_text("*\n", encoding="utf-8")
     path.write_text(json.dumps(body), encoding="utf-8")
 
-    if removed:
-        worktree.cleanup("pass-cache", repo_root=safety_repo)
-    else:
-        with pytest.raises(SystemExit):
-            worktree.cleanup("pass-cache", repo_root=safety_repo)
+    worktree.cleanup("pass-cache", repo_root=safety_repo)
 
-    assert session.path.exists() is not removed
+    assert not session.path.exists()
+    archived = test_worktree_safety.archived_files(capsys.readouterr().out)
+    assert archived[worktree_contents.CHECK_PASSES.as_posix()] == json.dumps(body).encode()
 
 
 @pytest.mark.parametrize("contents", ["bytecode", "unexpected", "symlink", "outside", "directory"])
@@ -128,8 +115,8 @@ def test_cleanup_recognizes_only_regular_bytecode_in_owned_python_cache(
 @pytest.mark.parametrize(
     "contents", ["managed", "unknown", "binary", "license", "ignore", "symlink"]
 )
-def test_cleanup_removes_only_verified_repository_local_lefthook_assets(
-    safety_repo: Path, contents: str
+def test_cleanup_deletes_verified_lefthook_assets_and_archives_the_rest(
+    safety_repo: Path, capsys: pytest.CaptureFixture[str], contents: str
 ) -> None:
     session = worktree.create("binary", repo_root=safety_repo)
     lefthook_binary.sync_binary(session.path)
@@ -147,16 +134,26 @@ def test_cleanup_removes_only_verified_repository_local_lefthook_assets(
         saved = safety_repo.parent / "saved-binary"
         path.rename(saved)
         path.symlink_to(saved)
-    if contents == "managed":
-        worktree.cleanup("binary", repo_root=safety_repo)
-        assert not session.path.exists()
-    else:
-        with pytest.raises(SystemExit, match="uncommitted changes"):
+    before = {
+        path.relative_to(session.path).as_posix(): path.read_bytes()
+        for path in directory.iterdir()
+        if path.is_file() and not path.is_symlink()
+    }
+    if contents == "symlink":
+        with pytest.raises(SystemExit, match="symlink"):
             worktree.cleanup("binary", repo_root=safety_repo)
         assert directory.exists()
+        return
+    worktree.cleanup("binary", repo_root=safety_repo)
+    assert not session.path.exists()
+    output = capsys.readouterr().out
+    if contents == "managed":
+        assert "inventory: " not in output
+    else:
+        assert test_worktree_safety.archived_files(output) == before
 
 
-def test_cleanup_preserves_actual_pytest_outputs_and_reports_a_verified_inventory(
+def test_cleanup_deletes_actual_pytest_outputs_without_copying_them(
     safety_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     session = worktree.create("pytest-output", repo_root=safety_repo)
@@ -172,28 +169,35 @@ def test_cleanup_preserves_actual_pytest_outputs_and_reports_a_verified_inventor
         check=True,
     )
 
+    assert (session.path / ".pytest_cache/v/cache/nodeids").is_file()
+    assert any((session.path / "__pycache__").iterdir())
+
     worktree.cleanup(session.name, repo_root=safety_repo)
 
     assert not session.path.exists()
-    output = capsys.readouterr().out
-    manifest = Path(
-        next(
-            line.split("inventory: ", 1)[1] for line in output.splitlines() if "inventory: " in line
-        )
-    )
-    entries = json.loads(manifest.read_text())["files"]
-    assert any(entry["path"].startswith("__pycache__/") for entry in entries)
-    assert any(entry["path"] == ".pytest_cache/v/cache/nodeids" for entry in entries)
-    for entry in entries:
-        data = (manifest.parent / entry["path"]).read_bytes()
-        assert entry["preserved"] is True
-        assert hashlib.sha256(data).hexdigest() == entry["sha256"]
-        assert len(data) == entry["bytes"]
+    assert "inventory: " not in capsys.readouterr().out
+    assert not (safety_repo / ".git" / "basicly-preserved").exists()
 
 
-@pytest.mark.parametrize("tamper", ["foreign", "malformed", "symlink", "tracked"])
-def test_tool_cache_refusals_preserve_the_checkout_and_its_contents(
-    safety_repo: Path, tamper: str
+def test_cleanup_reclaims_generated_verification_cache(
+    safety_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    session = worktree.create("cache-result", repo_root=safety_repo)
+    path = session.path / verify_cache.CACHE_PATH
+    path.parent.mkdir(parents=True)
+    path.with_name(".gitignore").write_text("*\n", encoding="utf-8")
+    path.write_text('{"checks": []}\n', encoding="utf-8")
+    worktree.cleanup("cache-result", repo_root=safety_repo)
+    assert not session.path.exists()
+    assert test_worktree_safety.archived_files(capsys.readouterr().out) == {
+        verify_cache.CACHE_PATH.as_posix(): b'{"checks": []}\n',
+        verify_cache.CACHE_PATH.with_name(".gitignore").as_posix(): b"*\n",
+    }
+
+
+@pytest.mark.parametrize("tamper", ["foreign", "malformed", "symlink", "tracked", "untracked"])
+def test_tool_cache_cleanup_archives_unrecognized_content_and_refuses_the_rest(
+    safety_repo: Path, capsys: pytest.CaptureFixture[str], tamper: str
 ) -> None:
     session = worktree.create("cache-control", repo_root=safety_repo)
     directory = session.path / ".pytest_cache"
@@ -210,10 +214,22 @@ def test_tool_cache_refusals_preserve_the_checkout_and_its_contents(
     elif tamper == "symlink":
         artifact.unlink()
         artifact.symlink_to(session.path / "README.md")
+    elif tamper == "untracked":
+        artifact = session.path / "notes.txt"
+        artifact.write_text("user data", encoding="utf-8")
     else:
         _git(session.path, "add", "-f", "--", artifact.relative_to(session.path).as_posix())
         _git(session.path, "commit", "-m", "test: track a fixture cache deliberately")
         artifact.write_text('["changed"]', encoding="utf-8")
+
+    if tamper in {"foreign", "malformed"}:
+        data = artifact.read_bytes()
+        worktree.cleanup(session.name, repo_root=safety_repo)
+        assert not session.path.exists()
+        assert test_worktree_safety.archived_files(capsys.readouterr().out) == {
+            artifact.relative_to(session.path).as_posix(): data
+        }
+        return
 
     with pytest.raises(SystemExit):
         worktree.cleanup(session.name, repo_root=safety_repo)

@@ -30,6 +30,12 @@ class RemovalVerdict:
     preserve: tuple[Path, ...] = ()
 
 
+@dataclass(frozen=True)
+class Kept:
+    delete: tuple[Path, ...] = ()
+    archive: tuple[Path, ...] = ()
+
+
 def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
 
     if returncode != 0:
@@ -211,7 +217,7 @@ def _allowed_member(kind: str, member: Path, names: set[str]) -> bool:
 
 def _regular_members(
     worktree: Path, directory: Path, kind: str, names: set[str]
-) -> tuple[Path, ...]:
+) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
     if any(
         path.is_symlink()
         for path in (directory, *directory.parents)
@@ -220,60 +226,57 @@ def _regular_members(
         raise ValueError(
             f"{directory.relative_to(worktree)}: generated artifact directory is a symlink"
         )
-    files = []
+    known = []
+    unknown = []
     for path in directory.rglob("*"):
         member = path.relative_to(directory)
         if path.is_symlink():
             raise ValueError(f"{path.relative_to(worktree)}: symlink is not disposable")
-        if not _allowed_member(kind, member, names):
-            raise ValueError(f"{path.relative_to(worktree)}: unknown generated-artifact content")
         if path.is_file():
-            files.append(path)
+            (known if _allowed_member(kind, member, names) else unknown).append(path)
         elif not path.is_dir():
             raise ValueError(f"{path.relative_to(worktree)}: not a regular artifact")
-    return tuple(files)
+    return tuple(known), tuple(unknown)
 
 
-def _validate_generated(directory: Path, kind: str, files: tuple[Path, ...]) -> None:
+def _unrecognized(directory: Path, kind: str, files: tuple[Path, ...]) -> tuple[Path, ...]:
+    if kind == "usage":
+        return files
     if kind == "build":
-        lefthook_artifacts.validate_artifacts(directory / "lefthook" / lefthook_artifacts.VERSION)
-    elif kind == "usage":
-        for path in files:
-            if path.name == ".gitignore":
-                if path.read_bytes() != b"*\n":
-                    raise ValueError("unknown usage ignore marker")
-            elif path.suffix != ".log" and not isinstance(json.loads(path.read_bytes()), dict):
-                raise ValueError("unrecognized usage artifact shape")
-            elif path.name == CHECK_PASSES.name and not _check_passes(path):
-                raise ValueError("unrecognized hook pass cache entry")
-    else:
+        try:
+            lefthook_artifacts.validate_artifacts(
+                directory / "lefthook" / lefthook_artifacts.VERSION
+            )
+        except ValueError, OSError:
+            return files
+        return ()
+    try:
         with (directory / "CACHEDIR.TAG").open("rb") as marker:
-            if marker.readline(100).rstrip(b"\r\n") != _CACHE_TAG:
-                raise ValueError(f"{directory.name}: invalid cache directory tag")
-        if (directory / ".gitignore").read_bytes() != _TOOL_IGNORES[kind]:
-            raise ValueError(f"{directory.name}: unknown tool cache ignore marker")
-        for path in files:
-            if path.suffix == ".json" or path.parent.name == "cache":
+            has_tag = marker.readline(100).rstrip(b"\r\n") == _CACHE_TAG
+        marked = (directory / ".gitignore").read_bytes() == _TOOL_IGNORES[kind]
+    except OSError:
+        return files
+    if not (has_tag and marked):
+        return files
+    malformed = []
+    for path in files:
+        if path.suffix == ".json" or path.parent.name == "cache":
+            try:
                 json.loads(path.read_bytes())
+            except ValueError:
+                malformed.append(path)
+    return tuple(malformed)
 
 
-def _check_passes(path: Path) -> bool:
-    return all(
-        isinstance(entry, dict)
-        and isinstance(entry.get("at"), str)
-        and isinstance(entry.get("checks"), list)
-        and all(isinstance(name, str) for name in entry["checks"])
-        for entry in json.loads(path.read_bytes()).values()
-    )
-
-
-def kept_files(worktree: Path, line: str, failure_logs: tuple[str, ...]) -> tuple[Path, ...] | None:
+def kept_files(worktree: Path, line: str, failure_logs: tuple[str, ...]) -> Kept | None:
     generated = generated_files(worktree, line, failure_logs=failure_logs)
     if generated is not None:
         return generated
-    if owned_lefthook_assets(worktree, line):
-        return ()
-    return ignored_files(worktree, line)
+    assets = lefthook_assets(worktree, line)
+    if assets is not None:
+        return assets
+    ignored = ignored_files(worktree, line)
+    return None if ignored is None else Kept(archive=ignored)
 
 
 def ignored_files(worktree: Path, line: str) -> tuple[Path, ...] | None:
@@ -292,7 +295,7 @@ def ignored_files(worktree: Path, line: str) -> tuple[Path, ...] | None:
 
 def generated_files(
     worktree: Path, line: str, *, failure_logs: tuple[str, ...] = ()
-) -> tuple[Path, ...] | None:
+) -> Kept | None:
     if line[:2] not in ("!!", "??"):
         return None
     relative = _relative(line)
@@ -300,28 +303,41 @@ def generated_files(
     if candidate.name == "__pycache__":
         if not owned_bytecode_cache(worktree, line):
             raise ValueError(f"{relative}: cache header or source association is not recognized")
-        return tuple(candidate.iterdir())
+        return Kept(delete=tuple(candidate.iterdir()))
     tree = _generated_tree(worktree, relative, failure_logs)
     if tree is None:
         return None
     directory, kind, names = tree
-    files = _regular_members(worktree, directory, kind, names)
-    _validate_generated(directory, kind, files)
-    return files
+    known, unknown = _regular_members(worktree, directory, kind, names)
+    archive = _unrecognized(directory, kind, known)
+    return Kept(
+        delete=tuple(path for path in known if path not in archive),
+        archive=(*archive, *unknown),
+    )
 
 
-def owned_lefthook_assets(worktree: Path, line: str) -> bool:
+def lefthook_assets(worktree: Path, line: str) -> Kept | None:
     directory = worktree / ".basicly/bin"
     binary = lefthook_binary.binary_path(worktree).name
     names = {binary, "LICENSE.lefthook", ".gitignore"}
     path = line[3:].strip().strip('"').rstrip("/")
-    if not line.startswith("!! ") or path not in {
-        ".basicly/bin",
-        *(f".basicly/bin/{name}" for name in names),
-    }:
-        return False
+    if not line.startswith("!! ") or path.split("/")[:2] != [".basicly", "bin"]:
+        return None
     if any(candidate.is_symlink() for candidate in (directory, directory.parent)):
-        return False
+        raise ValueError(".basicly/bin: symlink is not disposable")
+    files = []
+    for candidate in sorted(directory.rglob("*")):
+        if candidate.is_symlink():
+            raise ValueError(f"{candidate.relative_to(worktree)}: symlink is not disposable")
+        if candidate.is_file():
+            files.append(candidate)
+        elif not candidate.is_dir():
+            raise ValueError(f"{candidate.relative_to(worktree)}: not a regular artifact")
+    owned = _owned_lefthook_assets(worktree, directory, names)
+    return Kept(delete=tuple(files)) if owned else Kept(archive=tuple(files))
+
+
+def _owned_lefthook_assets(worktree: Path, directory: Path, names: set[str]) -> bool:
     children = tuple(directory.iterdir())
     if any(
         child.name not in names or child.is_symlink() or not child.is_file() for child in children

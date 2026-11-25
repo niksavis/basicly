@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from .checkout import git_common_dir
 
+ARCHIVE_LIMIT_BYTES = 500 * 1024 * 1024
+
 if TYPE_CHECKING:
     from .worktree_contents import RemovalVerdict
 
@@ -19,12 +21,32 @@ def preserve(main: Path, worktree: Path, paths: tuple[Path, ...]) -> Path | None
     parent = git_common_dir(main) / "basicly-preserved"
     if parent.is_symlink():
         raise RuntimeError("generated artifact preservation directory must not be a symlink")
-    destination = parent / f"{worktree.name}-{uuid.uuid4().hex}"
-    destination.mkdir(parents=True, exist_ok=False)
-    files = []
+    held = sum(path.stat().st_size for path in parent.rglob("*") if path.is_file())
     for path in paths:
         if path.is_symlink() or not path.is_file():
             raise RuntimeError(f"generated artifact changed before preservation: {path}")
+    incoming = sum(path.stat().st_size for path in paths)
+    if held + incoming > ARCHIVE_LIMIT_BYTES:
+        mebibyte = 1024 * 1024
+        raise SystemExit(
+            f"cleanup refuses to archive: {parent} holds {held // mebibyte} MB and this cleanup "
+            f"adds {incoming // mebibyte} MB, over the {ARCHIVE_LIMIT_BYTES // mebibyte} MB limit; "
+            "inspect it, move or remove the archives you no longer need, then run the cleanup again"
+        )
+    destination = parent / f"{worktree.name}-{uuid.uuid4().hex}"
+    destination.mkdir(parents=True, exist_ok=False)
+    try:
+        manifest = _copy(worktree, destination, paths)
+    except BaseException:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+    print(f"Preserved {len(paths)} generated artifact(s), with inventory: {manifest}")
+    return manifest
+
+
+def _copy(worktree: Path, destination: Path, paths: tuple[Path, ...]) -> Path:
+    files = []
+    for path in paths:
         data = path.read_bytes()
         files.append({
             "path": path.relative_to(worktree).as_posix(),
@@ -39,14 +61,15 @@ def preserve(main: Path, worktree: Path, paths: tuple[Path, ...]) -> Path | None
         target = destination / str(entry["path"])
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
+        copied = b"" if target.is_symlink() else target.read_bytes()
         if (
             target.is_symlink()
-            or hashlib.sha256(target.read_bytes()).hexdigest() != entry["sha256"]
+            or len(copied) != entry["bytes"]
+            or hashlib.sha256(copied).hexdigest() != entry["sha256"]
         ):
-            raise RuntimeError(f"preserved artifact changed; inspect {manifest}")
+            raise RuntimeError(f"preserved artifact changed; inspect {path}")
         entry["preserved"] = True
         manifest.write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
-    print(f"Preserved {len(files)} generated artifact(s), with inventory: {manifest}")
     return manifest
 
 
