@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release lets a worker session edit CLAUDE.md, AGENTS.md, a skill or an agent for its own record as ordinary work, while settings, hooks and orchestration rule edits still need the person's approval relayed with the exact diff (basicly-1npzooz). An agent may now cut, tag and publish a release when every required workflow is green on the exact commit it tags (basicly-1p8da4b). `basicly worktree cleanup` deletes rebuildable caches instead of copying them and archives `.basicly/usage` instead of refusing, so a merged lane no longer needs `--force` (basicly-8wbmvav). Four refusals now name a command that works, among them the kit `claim --session` flag (basicly-q5a26zo).
+
 ## v0.49.2 - 2026-11-21
 
 Delta: v0.49.1..v0.49.2
