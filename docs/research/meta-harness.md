@@ -100,7 +100,7 @@ A learning passes five steps.
 | 4 Land the patch | normal catalog authoring | never reached |
 | 5 Close the lesson | `orch lesson close` | built, never used |
 
-- **Step 1.** `.scripts/orch_errors.py` counts tool and script errors by class in Claude Code transcripts only (`main`, `.scripts/orch_errors.py:272`). Record basicly-qpr2xmr.3.19 says it moves into the kit after cut 4, and cut 4 has landed. The retrospector fires on a special-cause signal in the gate-failure ledger. Only `loop.py` calls it (`loop._retrospective`). Record basicly-gtb19bg.30.2 names the headless loop as a removal candidate.
+- **Step 1.** `.scripts/orch_errors.py` counts tool and script errors by class in Claude Code transcripts only (`main`, `.scripts/orch_errors.py:297`). Record basicly-qpr2xmr.3.19 says it moves into the kit after cut 4, and cut 4 has landed. The retrospector fires on a special-cause signal in the gate-failure ledger. Only `loop.py` calls it (`loop._retrospective`). Record basicly-gtb19bg.30.2 names the headless loop as a removal candidate.
 - **Step 2.** The workspace lessons log holds 27 lessons from 2026-11-18 and 2026-11-19, from the members dev, orchestrator and Orchestrator. Measured with `jq` over the log.
 - **Step 3.** `orch lessons export --target FILE --out FILE` appends each open lesson to one target file and prints a diff. It is not a patch against catalog sources. It refuses a target outside the current repository (`target.relative_to(repo)` in `.basicly/core/kit/orch/orch_lessons/cli.py`).
 - **Step 5.** `orch lesson close` accepts any text as the change. It does not check that a commit exists. `orch doctor` reports only lessons open longer than 14 days.
