@@ -237,7 +237,7 @@
     },
     {
       "id": "report-command",
-      "rule": "orch report accepts only three states with a record id.",
+      "rule": "orch report accepts only four states with a record id and names the send step.",
       "source": "ARCHITECTURE.md:210",
       "place": "orch",
       "file": ".basicly/core/kit/orch/orch_relay/messages.py",

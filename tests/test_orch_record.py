@@ -114,6 +114,12 @@ def test_risk_without_a_check_line_in_the_action_is_refused_by_name(
     assert fake.comments == []
 
 
+def test_report_says_it_only_records_and_names_the_send_step() -> None:
+    step = messages.send_step("x-1")
+    assert "recorded on x-1 only" in step
+    assert "SendMessage" in step
+
+
 def test_send_order_refuses_an_order_without_goal_limits_and_proof() -> None:
     with pytest.raises(log.RefusedError, match=r"--goal, --limits, --proof"):
         messages.order("app", "x-1", "", "", "")
@@ -124,8 +130,8 @@ def test_send_order_refuses_a_placeholder() -> None:
         messages.order("app", "x-1", "ship <NAME>", "no push", "tests pass")
 
 
-@pytest.mark.parametrize("state", ["done", "blocked", "needs-decision", "progress"])
-def test_report_accepts_only_three_states_with_a_record(repo: Path, state: str) -> None:
+@pytest.mark.parametrize("state", ["working", "done", "blocked", "needs-decision", "progress"])
+def test_report_accepts_only_the_report_states_with_a_record(repo: Path, state: str) -> None:
     fake = FakeTracker([])
     if state == "progress":
         with pytest.raises(log.RefusedError, match=r"refuses state 'progress'"):
