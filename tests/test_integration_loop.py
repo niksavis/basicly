@@ -657,7 +657,12 @@ def test_a_parked_supervised_mini_loop_preserves_worker_and_ship_guards(
     assert (repo / f"{subtask}.txt").read_text(encoding="utf-8") == f"work for {subtask}\n"
     assert (repo / "app.txt").read_text(encoding="utf-8") == "start\n"
     assert [item["outcome"] for item in _dispatches(repo, subtask)] == [run_record.EXECUTED]
-    assert [item.route for item in routed] == ["merged"]
-    assert loop_state.read_node_state(repo, lane).phase == "ship"
-    assert _status(repo, lane) == "in_progress"
+    assert [item.route for item in routed] == ["shipped"], [item.detail for item in routed]
+    assert _status(repo, lane) == "closed"
     assert _dispatches(repo, lane)[-1]["outcome"] == run_record.FAILED
+    archived = [
+        entry["path"]
+        for manifest in (repo / ".git" / "basicly-preserved").glob("*/manifest.json")
+        for entry in json.loads(manifest.read_text(encoding="utf-8"))["files"]
+    ]
+    assert ".basicly/usage/run-records.json" in archived

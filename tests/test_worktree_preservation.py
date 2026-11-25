@@ -64,20 +64,27 @@ def test_partial_preservation_failure_leaves_sources_intact_and_cleanup_retryabl
     with pytest.raises(OSError, match="fixture interruption"):
         worktree.cleanup(session.name, repo_root=safety_repo)
     assert {p.relative_to(cache): p.read_bytes() for p in cache.rglob("*") if p.is_file()} == before
+    assert not any((safety_repo / ".git" / "basicly-preserved").iterdir())
     monkeypatch.setattr(shutil, "copyfile", copy)
     worktree.cleanup(session.name, repo_root=safety_repo)
     assert not session.path.exists()
 
 
+@pytest.mark.parametrize("held", [True, False])
 def test_cleanup_refuses_to_archive_past_the_growth_limit(
-    safety_repo: Path, monkeypatch: pytest.MonkeyPatch
+    safety_repo: Path, monkeypatch: pytest.MonkeyPatch, held: bool
 ) -> None:
-    first = worktree.create("first-archive", repo_root=safety_repo)
-    _fixture_usage(first.path)
-    worktree.cleanup(first.name, repo_root=safety_repo)
+    if held:
+        first = worktree.create("first-archive", repo_root=safety_repo)
+        _fixture_usage(first.path)
+        worktree.cleanup(first.name, repo_root=safety_repo)
+    archives = safety_repo / ".git" / "basicly-preserved"
+    before = sorted(archives.rglob("*")) if archives.exists() else []
     second = worktree.create("over-limit", repo_root=safety_repo)
     usage = _fixture_usage(second.path)
-    monkeypatch.setattr(worktree_preservation, "ARCHIVE_LIMIT_BYTES", 0)
+    incoming = sum(path.stat().st_size for path in usage.iterdir())
+    monkeypatch.setattr(worktree_preservation, "ARCHIVE_LIMIT_BYTES", 0 if held else incoming - 1)
     with pytest.raises(SystemExit, match="over the 0 MB limit"):
         worktree.cleanup(second.name, repo_root=safety_repo)
     assert (usage / "lane-notes.json").exists()
+    assert (sorted(archives.rglob("*")) if archives.exists() else []) == before
