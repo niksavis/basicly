@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from .checkout import git_common_dir
 
+ARCHIVE_LIMIT_BYTES = 500 * 1024 * 1024
+
 if TYPE_CHECKING:
     from .worktree_contents import RemovalVerdict
 
@@ -19,6 +21,13 @@ def preserve(main: Path, worktree: Path, paths: tuple[Path, ...]) -> Path | None
     parent = git_common_dir(main) / "basicly-preserved"
     if parent.is_symlink():
         raise RuntimeError("generated artifact preservation directory must not be a symlink")
+    held = sum(path.stat().st_size for path in parent.rglob("*") if path.is_file())
+    if held > ARCHIVE_LIMIT_BYTES:
+        raise SystemExit(
+            f"cleanup refuses to archive more: {parent} already holds {held // (1024 * 1024)} MB, "
+            f"over the {ARCHIVE_LIMIT_BYTES // (1024 * 1024)} MB limit; inspect it, move or remove "
+            "the archives you no longer need, then run the cleanup again"
+        )
     destination = parent / f"{worktree.name}-{uuid.uuid4().hex}"
     destination.mkdir(parents=True, exist_ok=False)
     files = []
@@ -39,9 +48,11 @@ def preserve(main: Path, worktree: Path, paths: tuple[Path, ...]) -> Path | None
         target = destination / str(entry["path"])
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
+        copied = b"" if target.is_symlink() else target.read_bytes()
         if (
             target.is_symlink()
-            or hashlib.sha256(target.read_bytes()).hexdigest() != entry["sha256"]
+            or len(copied) != entry["bytes"]
+            or hashlib.sha256(copied).hexdigest() != entry["sha256"]
         ):
             raise RuntimeError(f"preserved artifact changed; inspect {manifest}")
         entry["preserved"] = True

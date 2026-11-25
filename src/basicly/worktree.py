@@ -354,7 +354,8 @@ def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
         )
     try:
         retained = []
-        preserve: set[Path] = set()
+        generated: set[Path] = set()
+        archive: set[Path] = set()
         failure_logs = tuple(
             verify_log.log_path(worktree, check.name).name
             for check in load_verify_config(worktree).checks
@@ -364,15 +365,16 @@ def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
             if found is None:
                 retained.append(line)
             else:
-                preserve.update(found)
+                generated.update(found.delete, found.archive)
+                archive.update(found.archive)
         verdict = classify_worktree_tree(proc.returncode, "\n".join(retained))
-        if preserve and verdict.may_remove:
+        if generated and verdict.may_remove:
             tracked = set(git(["ls-files", "-z"], cwd=worktree).stdout.split("\0"))
-            held = [path for path in preserve if path.relative_to(worktree).as_posix() in tracked]
+            held = [path for path in generated if path.relative_to(worktree).as_posix() in tracked]
             if held:
                 return RemovalVerdict(False, f"generated artifact is tracked: {held[0]}")
         return RemovalVerdict(
-            verdict.may_remove, verdict.holds, verdict.indeterminate, tuple(sorted(preserve))
+            verdict.may_remove, verdict.holds, verdict.indeterminate, tuple(sorted(archive))
         )
     except ValueError as exc:
         return RemovalVerdict(False, str(exc))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from dataclasses import asdict
@@ -9,6 +10,22 @@ import pytest
 
 from basicly import verify, verify_artifact, worktree, worktree_preservation
 from tests.test_worktree import _git, _init_repo
+
+
+def archived_files(output: str) -> dict[str, bytes]:
+    manifest = Path(
+        next(
+            line.split("inventory: ", 1)[1] for line in output.splitlines() if "inventory: " in line
+        )
+    )
+    archived = {}
+    for entry in json.loads(manifest.read_text())["files"]:
+        data = (manifest.parent / entry["path"]).read_bytes()
+        assert entry["preserved"] is True
+        assert hashlib.sha256(data).hexdigest() == entry["sha256"]
+        assert len(data) == entry["bytes"]
+        archived[entry["path"]] = data
+    return archived
 
 
 @pytest.fixture
@@ -212,21 +229,21 @@ def test_creation_never_reads_the_dotenv_fixture(
 
 
 @pytest.mark.parametrize("user_file", [False, True])
-def test_cleanup_distinguishes_verification_output_from_adjacent_user_data(
-    safety_repo: Path, user_file: bool
+def test_cleanup_archives_verification_output_and_adjacent_user_data(
+    safety_repo: Path, capsys: pytest.CaptureFixture[str], user_file: bool
 ) -> None:
     session = worktree.create("verified", repo_root=safety_repo)
     artifact = verify_artifact.write_run_artifact(session.path, verify.VerifyReport("fast", ()))
     assert artifact is not None
+    expected = {artifact.relative_to(session.path).as_posix(): artifact.read_bytes()}
     if user_file:
         private = artifact.parent / "user-notes.txt"
         private.write_text("user work\n", encoding="utf-8")
-        with pytest.raises(SystemExit, match="user-notes"):
-            worktree.cleanup("verified", repo_root=safety_repo)
-        assert private.exists()
-    else:
-        worktree.cleanup("verified", repo_root=safety_repo)
-        assert not session.path.exists()
+        expected[private.relative_to(session.path).as_posix()] = b"user work\n"
+    worktree.cleanup("verified", repo_root=safety_repo)
+    assert not session.path.exists()
+    archived = archived_files(capsys.readouterr().out)
+    assert {path: archived[path] for path in expected} == expected
 
 
 @pytest.mark.parametrize("tamper", ["path", "path-and-branch", "name", "branch"])
