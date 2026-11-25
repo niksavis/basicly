@@ -1,0 +1,1 @@
+- `basicly install --lane NAME --dry-run` plans an install in a worktree lane. It refuses a lane with uncommitted changes and names the command to inspect it, then names the lane path and the release wheel URL before the dry run. Without `--dry-run` it refuses and names the two commands to run instead.
