@@ -42,7 +42,7 @@ The deepseek-harness citations below are relative to the base URL. "Old" means a
 | A5 | Every registration has a disposer | cordis-primer.md:13,45 | adapt | Uninstall and disable remove what was projected; user effects are not undone | basicly-gtb19bg.29.3 |
 | A6 | A profile stacks bundles as ordered layers | architecture.md:15-23 | adapt | A static selection of catalog data, so an install carries only the capabilities it uses | basicly-gtb19bg.29.2 |
 | A7 | A patch replaces a row by id | architecture.md:25 | adapt | Partly built: a `.basicly-local` root overrides core in `catalog dump` | basicly-gtb19bg.29.2 |
-| A8 | `--dump-config` prints the composed tree | architecture.md:31-37 | adopt | `basicly catalog dump` (`cmd_catalog`, `src/basicly/cli.py:3140`) covers fragments; skills and hooks are still missing | basicly-gtb19bg.29.2 |
+| A8 | `--dump-config` prints the composed tree | architecture.md:31-37 | adopt | `basicly catalog dump` (`cmd_catalog`, `src/basicly/cli.py:3151`) covers fragments; skills and hooks are still missing | basicly-gtb19bg.29.2 |
 | A9 | One launcher, with a gate against bypasses | architecture.md:43-45 | refuse | The tracker kit must work without the engine, so it is a deliberate second entry | basicly-gtb19bg.28 |
 | A10 | Three event domains and an authoring rule for them | architecture.md:69-73 | refuse | deepseek-harness dropped the rule at rc.5; rule placement lives in catalog-authoring | basicly-gtb19bg.28 |
 | A11 | Turn, step and round loop | architecture.md:83-114 | refuse | basicly is not a session runtime, and the headless loop is being removed | basicly-gtb19bg.30.2 |

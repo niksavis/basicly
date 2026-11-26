@@ -10,10 +10,31 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-DIST_SOURCE = (
-    f"https://github.com/niksavis/basicly/releases/download/v{__version__}/"
-    f"basicly-{__version__}-py3-none-any.whl"
-)
+
+def wheel_url(version: str) -> str:
+    return (
+        f"https://github.com/niksavis/basicly/releases/download/v{version}/"
+        f"basicly-{version}-py3-none-any.whl"
+    )
+
+
+DIST_SOURCE = wheel_url(__version__)
+_RELEASE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+
+def engine_gap(pinned: str | None, running: str = __version__) -> str | None:
+    have, want = _RELEASE.fullmatch(running), _RELEASE.fullmatch(pinned or "")
+    if have is None or want is None:
+        return None
+    if tuple(map(int, have.groups())) >= tuple(map(int, want.groups())):
+        return None
+    return (
+        f"engine: this basicly is {running} and the repository pins {want.group()} in "
+        ".basicly/state/install.json; upgrade it with: "
+        f"uv tool install --force {wheel_url(want.group())}"
+    )
+
+
 UVX_COMMAND = f"uvx --from {DIST_SOURCE} basicly"
 
 GENERATED_IGNORES: tuple[tuple[str, str], ...] = (
