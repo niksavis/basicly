@@ -197,3 +197,48 @@ def test_consumers_run_in_parallel_each_on_its_own_core_set(
 def test_a_wrong_core_set_is_refused_by_name() -> None:
     with pytest.raises(consumer_proof.ProofError, match="core sets like 16-21"):
         consumer_proof.cpu_sets({consumer_proof.CPUS_ENV: "16-21,all"})
+
+
+def vault_consumer(tmp_path: Path) -> None:
+    app = tmp_path / "app"
+    (app / consumer_proof.VAULT_CONFIG).write_text(
+        'vault = "https://example.invalid/v"\nprefix = "app"\n', "utf-8"
+    )
+    git(app, "add", "-A")
+    git(app, "commit", "-q", "-m", "chore: use a vault")
+
+
+@pytest.mark.parametrize(
+    ("judged", "record", "said"),
+    [
+        ({"session": "s1", "filled": "app-7"}, "app-7", ""),
+        ({"session": "s1", "held": ["app-8", "app-9"]}, "app-8", ""),
+        ({"session": "s1", "filled": "tool-3", "held": []}, None, "this session holds no open"),
+        ({"session": "s1", "held": ["tool-3", "app-4"]}, "app-4", ""),
+        ({"session": "s1", "held": []}, None, "this session holds no open record"),
+        ({"session": ""}, None, "no tracker session"),
+    ],
+)
+def test_a_vault_consumer_names_only_a_record_this_session_holds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    judged: dict[str, object],
+    record: str | None,
+    said: str,
+) -> None:
+    repo = workspace(tmp_path)
+    vault_consumer(tmp_path)
+    monkeypatch.setattr(consumer_proof, "vault_held", lambda _c, _e, _u: judged)
+
+    result = prove(repo, tmp_path, held)
+
+    item = consumer_proof.consumer_results(result)[0]
+    subject = git(tmp_path / "work" / "app", "log", "-1", "--format=%s")
+    if record:
+        assert result["passed"] is True
+        assert subject.endswith(f"({record})")
+    else:
+        assert result["passed"] is False
+        assert said in consumer_proof.failure(item)
+        assert "claim RECORD --vault https://example.invalid/v" in consumer_proof.failure(item)
+        assert not subject.startswith("chore(basicly): install the kit")
