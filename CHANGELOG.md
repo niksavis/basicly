@@ -6,12 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.49.4 - 2026-11-26
+
+Delta: v0.49.3..v0.49.4
+
 This release lets the Orchestrator install a basicly release into a lane of each repository from one window. It is proved on a scratch clone; the first real run follows this release. A queued vault event of one repository no longer blocks commits in another, and `basicly session start` warns when the running basicly is older than the pinned one.
 
 - Kit upgrade: `orch install --release X.Y.Z --repo NAME=RECORD` installs a release in a lane per repository, commits it through that repository's hooks and prints the exact commit. Each repository needs one existing record; the command never pushes (basicly-d9u8roi).
 - Kit upgrade: reinstall basicly-orch from the tag to get `orch install`, because `uv tool upgrade` ignores a tag pin: `uv tool install --force "basicly-orch @ git+https://github.com/niksavis/basicly@v0.49.4#subdirectory=packages/basicly-orch"` (basicly-d9u8roi).
 - Vault queue: `tracker-path-scan` scans only this repository's queued events, and the queue refuses the machine user name (basicly-ndlzlv6).
 - Session start: a warning names an older running basicly and the command that installs the pinned one (basicly-36fpj8d).
+
+### Added
+
+- `orch install --release X.Y.Z --repo NAME=RECORD` installs a basicly release in a lane of each named repository, commits it through that repository's hooks and prints the exact commit; `--dry-run` writes nothing. `basicly install --lane NAME --dry-run` refuses a dirty lane and names the lane and the release wheel. (basicly-d9u8roi)
+
+### Fixed
+
+- `basicly session start` warns when the running basicly is older than the version the repository pins in `.basicly/state/install.json`. It names both versions and the `uv tool install --force` command for the pinned release wheel. When they match, it says nothing about it. (basicly-36fpj8d)
+
+- **A queued vault event of another repository no longer blocks your commit.** `tracker-path-scan` now scans only queued events whose record has this repository's prefix. A comment that names the machine user name is refused when it is queued, with the repair, so it never reaches the shared queue (basicly-ndlzlv6).
 
 ## v0.49.3 - 2026-11-25
 

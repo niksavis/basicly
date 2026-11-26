@@ -1,1 +1,0 @@
-- `orch install --release X.Y.Z --repo NAME=RECORD` installs a basicly release in a lane of each named repository, commits it through that repository's hooks and prints the exact commit; `--dry-run` writes nothing. `basicly install --lane NAME --dry-run` refuses a dirty lane and names the lane and the release wheel.

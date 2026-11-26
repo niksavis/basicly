@@ -1,1 +1,0 @@
-- `basicly session start` warns when the running basicly is older than the version the repository pins in `.basicly/state/install.json`. It names both versions and the `uv tool install --force` command for the pinned release wheel. When they match, it says nothing about it.

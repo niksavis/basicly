@@ -115,7 +115,7 @@ Technology-tagged sources (the shell references of `cli-tools`, shell and platfo
 fragments) are skipped at projection time when they fall outside your stack:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.49.3/basicly-0.49.3-py3-none-any.whl basicly install --technologies python,zsh
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.49.4/basicly-0.49.4-py3-none-any.whl basicly install --technologies python,zsh
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
