@@ -110,21 +110,36 @@ def fit(window: Window, now: int, working: int) -> tuple[int | None, str]:
     return (found.count if found else None), basis
 
 
-def sessions_line(window: Window, now: int, working: int) -> str:
-    found, basis = measure(window, now, working)
-    if found is None:
-        return f"sessions: unknown ({basis})"
-    change = found.count - found.working
+def needed_rate(window: Window, now: int) -> float:
+    used, resets = _num(window, "used_percentage"), _num(window, "resets_at")
+    if resets <= now:
+        return CLOSE_AT * HOUR_S / LENGTH_S["five_hour"]
+    return (CLOSE_AT - used) * HOUR_S / (resets - now)
+
+
+def _verb(count: int, working: int) -> str:
+    change = count - working
     if change > 0:
-        verb = f"start {change} more"
-    elif change == 0:
-        verb = f"hold at {found.working}"
-    else:
-        verb = f"start none; let {-change} of {found.working} finish"
+        return f"start {change} more"
+    if change == 0:
+        return f"hold at {working}"
+    return f"start none; let {-change} of {working} finish"
+
+
+def sessions_line(window: Window, now: int, working: int, assumed: float) -> str:
+    found, basis = measure(window, now, working)
+    if found is not None:
+        return (
+            f"sessions: {_verb(found.count, found.working)} (needed {found.needed:.1f}%/h until "
+            f"the reset, {found.burn / found.working:.1f}%/h per working session, "
+            f"{found.working} working, {found.count} fit)"
+        )
+    needed = needed_rate(window, now)
+    count = int(needed // assumed)
     return (
-        f"sessions: {verb} (needed {found.needed:.1f}%/h until the reset, "
-        f"{found.burn / found.working:.1f}%/h per working session, {found.working} working, "
-        f"{found.count} fit)"
+        f"sessions: {_verb(count, working)} (assumed {assumed:g}%/h per session from config; "
+        f"needed {needed:.1f}%/h until the reset, {working} working, {count} fit; "
+        f"no measured burn: {basis})"
     )
 
 

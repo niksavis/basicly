@@ -289,13 +289,41 @@ def test_the_fit_is_unknown_without_a_recent_rate_or_a_working_session(
             "sessions: start none; let 1 of 4 finish (needed 10.0%/h until the reset, "
             "3.0%/h per working session, 4 working, 3 fit)",
         ),
-        (80.0, [[NOW - 600, 79.0], [NOW, 80.0]], 0, "sessions: unknown (no session is working)"),
-        (80.0, [[NOW - 600, 80.0], [NOW, 80.0]], 1, "sessions: unknown (no use measured"),
+        (
+            80.0,
+            [[NOW - 600, 79.0], [NOW, 80.0]],
+            0,
+            "sessions: start 2 more (assumed 5%/h per session from config; needed 10.0%/h until "
+            "the reset, 0 working, 2 fit; no measured burn: no session is working)",
+        ),
+        (
+            80.0,
+            [[NOW - 600, 80.0], [NOW, 80.0]],
+            1,
+            "sessions: start 1 more (assumed 5%/h per session from config; needed 10.0%/h until "
+            "the reset, 1 working, 2 fit; no measured burn: no use measured",
+        ),
     ],
 )
 def test_the_sessions_line_names_how_many_to_start_hold_or_let_finish(
     used: float, readings: list[list[float]], working: int, shown: str
 ) -> None:
-    line = plan.sessions_line(window(used, readings), NOW, working)
+    line = plan.sessions_line(window(used, readings), NOW, working, 5.0)
 
     assert line.startswith(shown)
+
+
+def test_an_idle_window_after_a_reset_says_start_from_the_config_rate(tmp_path: Path) -> None:
+    (tmp_path / commands.PACE_CONFIG).write_text('{"session_rate_pct_per_hour": 4}', "utf-8")
+    old = window(90.0, [[NOW - 600, 89.0], [NOW - 300, 90.0]], resets=NOW - 60)
+
+    line = plan.sessions_line(old, NOW, 0, commands.session_rate(tmp_path))
+
+    assert line == (
+        "sessions: start 5 more (assumed 4%/h per session from config; needed 20.0%/h until "
+        "the reset, 0 working, 5 fit; no measured burn: the window reset and has no reading yet)"
+    )
+    assert commands.session_rate(None) == commands.SESSION_RATE_DEFAULT
+    (tmp_path / commands.PACE_CONFIG).write_text('{"session_rate_pct_per_hour": 0}', "utf-8")
+    with pytest.raises(log.RefusedError, match="needs session_rate_pct_per_hour as a number"):
+        commands.session_rate(tmp_path)
