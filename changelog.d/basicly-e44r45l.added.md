@@ -1,0 +1,1 @@
+- `orch delegate --vendor claude|codex|copilot --record RECORD --prompt TEXT` hands one turn to another coding agent in its own lane, writes the answer on the record and prints the session id; `--resume SESSION` continues it. Each coding agent is an adapter plugin (entry point group `basicly_orch.adapters`). A usage limit exits 3 and names the reset time.

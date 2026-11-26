@@ -6,7 +6,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from orch_relay import accept, brief, classes, install, messages, record, start
+from orch_relay import accept, brief, classes, delegate, install, messages, record, start
 from orch_state import commands, relay_guard, store
 
 from orch_lessons import doctor, log
@@ -30,6 +30,7 @@ def parser() -> argparse.ArgumentParser:
     groups = top.add_subparsers(dest="group", required=True)
     _lesson_parsers(groups)
     install.add_parser(groups)
+    delegate.add_parser(groups)
     groups.add_parser("doctor")
     _relay_parsers(groups)
     commands.add_parsers(groups)
@@ -139,7 +140,21 @@ def run_send(args: argparse.Namespace, _cwd: Path, _environ: dict[str, str]) -> 
     return 0
 
 
-DIRECT = {"install": run_install, "send": run_send}
+def run_delegate(args: argparse.Namespace, cwd: Path, environ: dict[str, str]) -> int:
+    found = store.find(cwd, environ)
+    if found is None:
+        raise log.RefusedError(commands.NO_STORE.format(cwd=cwd))
+    ports = delegate.Ports(record.Tracker, log.scanner)
+    try:
+        lines = delegate.run(args, log.repo_root(cwd), found, ports)
+    except delegate.adapters.UsageLimitError as limited:
+        print(f"orch: {limited}", file=sys.stderr)
+        return 3
+    print("\n".join(lines))
+    return 0
+
+
+DIRECT = {"install": run_install, "send": run_send, "delegate": run_delegate}
 
 
 def run_relay(args: argparse.Namespace, cwd: Path, environ: dict[str, str]) -> int | None:
