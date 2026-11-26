@@ -556,6 +556,8 @@ class _Landing:
             last=f"landing {result.status}: {result.detail}",
             ok=result.merged,
         )
+        if result.merged:
+            orch_note.pace(self.repo_root, self.bead, "done")
         total = round(self.clock() - self.started, 3)
         attributed = round(sum(seconds for _, seconds in self.stages), 3)
         _write_landing_timing(

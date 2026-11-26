@@ -40,3 +40,10 @@ def note(
     return bool(
         found.note(cwd, os.environ if environ is None else environ, item=item, last=last, ok=ok)
     )
+
+
+def pace(cwd: Path, record: str, moment: str, environ: Mapping[str, str] | None = None) -> bool:
+    found = _kit_note()
+    if found is None or not hasattr(found, "pace"):
+        return False
+    return bool(found.pace(cwd, os.environ if environ is None else environ, record, moment))
