@@ -304,3 +304,25 @@ def test_the_ci_guard_refuses_only_the_guarded_repository_s_vault_and_ledger(
     with pytest.raises(events.RecordsInCIError):
         events.read_events(main / ".basicly/ledger")
     assert not issubclass(events.RecordsInCIError, ValueError)
+
+
+def test_two_writers_of_one_file_never_share_a_temporary_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "view.tried"
+    synced = os.fsync
+    nested: list[bool] = []
+
+    def fsync(handle: int) -> None:
+        synced(handle)
+        if not nested:
+            nested.append(True)
+            vault_clone.durable(target, "second\n")
+
+    monkeypatch.setattr(vault_clone.os, "fsync", fsync)
+
+    vault_clone.durable(target, "first\n")
+
+    assert nested == [True]
+    assert target.read_text(encoding="utf-8") in {"first\n", "second\n"}
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["view.tried"]
