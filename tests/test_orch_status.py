@@ -297,3 +297,17 @@ def test_a_wide_terminal_shows_more_of_now_and_a_narrow_one_keeps_forty(tmp_path
 
     assert status.width(wide) == 100
     assert status.width(narrow) == status.WIDTH
+
+
+def test_a_request_hook_stamps_the_request_age_and_a_state_write_leaves_it(tmp_path: Path) -> None:
+    base, repo = workspace(tmp_path)
+    asked = {"hook_event_name": "UserPromptSubmit", "session_id": "sess-1", "cwd": str(repo)}
+    reporter.run(json.dumps(asked), {"PATH": "/usr/bin:/bin"}, lambda: at(0))
+    reporter.run(json.dumps({**asked, **NOTICE}), {"PATH": "/usr/bin:/bin"}, lambda: at(5))
+    saved(base, "sess-1", 10, name="dev", now="waits for the reset", now_at=at(10).isoformat())
+
+    record = store.read(store.session_path(base, "sess-1"))
+    rows = status.render([record], [], at(30), never_dead, 80)
+
+    assert record["request_at"] == at(0).isoformat(timespec="seconds")
+    assert "request 30m ago" in rows[0]
