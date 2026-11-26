@@ -169,7 +169,7 @@ def _push_ref(root: Path, head: str, ref: str) -> None:
 def _find(candidate: Candidate, flow: str, ref: str, gh: Gh, clock: Clock) -> dict:
     started = clock.monotonic()
     fields = "databaseId,url,status,conclusion,attempt"
-    argv = ["run", "list", "--workflow", flow, "--commit", candidate.head]
+    argv = ["run", "list", "--workflow", flow, "--commit", candidate.head, "--branch", ref]
     argv += ["--event", "workflow_dispatch", "--json", fields]
     while True:
         listed = gh(argv)
