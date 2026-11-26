@@ -756,7 +756,12 @@ def _engine_preflight(
 
 
 def _replay_verify_merge(
-    session: Session, *, verify_mode: str, override_gate: bool, clock: _Landing, delivery: str
+    session: Session,
+    *,
+    verify_mode: str,
+    override_gate: bool,
+    clock: _Landing,
+    delivery: str = "lander",
 ) -> MergeResult:
 
     repo_root, bead = clock.repo_root, clock.bead
