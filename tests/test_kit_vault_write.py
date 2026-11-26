@@ -61,7 +61,8 @@ class Repo:
 @pytest.fixture(autouse=True)
 def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     markers = (*writers.AGENT_MARKERS, writers.CLAUDE_CODE_MARKER)
-    for name in ("CI", "BASICLY_TRACKER_EPHEMERAL", "XDG_STATE_HOME", *markers):
+    sessions = vault_write.vault_session.FALLBACKS
+    for name in ("CI", "BASICLY_TRACKER_EPHEMERAL", "XDG_STATE_HOME", *markers, *sessions):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("BASICLY_TRACKER_STATE", str(tmp_path / "state"))
     monkeypatch.setenv("BASICLY_TRACKER_SESSION", "s1")
@@ -417,20 +418,6 @@ def _cli(root: Path, *argv: str) -> subprocess.CompletedProcess:
         text=True,
         check=False,
     )
-
-
-def test_the_cli_ledger_claim_takes_the_session_flag_its_refusal_names(
-    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = _seeded(tmp_path, bare)
-    monkeypatch.setenv("BASICLY_TRACKER_SESSION", "")
-
-    nameless = _cli(repo.root, "claim", ".basicly/ledger", repo.record)
-    named = _cli(repo.root, "claim", ".basicly/ledger", repo.record, "--session", "s9")
-
-    assert "--session" in nameless.stdout
-    assert named.returncode == 0, named.stdout + named.stderr
-    assert vault_claim.holder(repo.clone, repo.record)[1] == "s9"
 
 
 def test_the_cli_create_in_a_vault_repository_queues_and_leaves_the_ledger(

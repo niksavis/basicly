@@ -130,7 +130,7 @@ def _queue_comment(args: argparse.Namespace, context: Any) -> dict[str, object]:
     clone = vault_clone.locate(state, args.vault)
     now = any(os.environ.get(name) for name in ("CI", "BASICLY_TRACKER_EPHEMERAL"))
     target = vault_write.Target(
-        clone, state, os.environ.get(vault_write.SESSION, ""), now, clock, prefix
+        clone, state, vault_write.session_of(os.environ), now, clock, prefix
     )
     source = clone.folder / "native-ledger"
     config = vault_config.load(Path.cwd())
@@ -258,7 +258,7 @@ def _claim_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
         _clone(args),
         _state(args),
         args.record,
-        args.session or os.environ.get("BASICLY_TRACKER_SESSION", ""),
+        vault_write.session_of(os.environ, args.session),
         clock,
         name=vault_write.holders.chosen_holder(Path.cwd(), os.environ),
     )
@@ -276,7 +276,7 @@ def _claim_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
 
 
 def _unassign_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
-    session = args.session or os.environ.get(vault_write.SESSION, "")
+    session = vault_write.session_of(os.environ, args.session)
     now = any(os.environ.get(name) for name in vault_write.IMMEDIATE)
     target = vault_write.Target(_clone(args), _state(args), session, now, clock)
     return vault_write.release(target, args.record, take=args.take)
@@ -376,7 +376,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace, Any], dict[str, object]]] = {
             _clone(a),
             _state(a),
             Path(a.message),
-            a.session or os.environ.get("BASICLY_TRACKER_SESSION", ""),
+            vault_write.session_of(os.environ, a.session),
             c,
         )
     ),

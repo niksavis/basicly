@@ -41,7 +41,10 @@ STALL = 5.0
 POLL = 0.1
 LANDED = 0
 FIX = 1
-NAME_SESSION = "name the session with --session or BASICLY_TRACKER_SESSION"
+NAME_SESSION = (
+    "name the session with --session, or set BASICLY_TRACKER_SESSION; "
+    "a Claude Code or orch session uses its own session id"
+)
 LOST = 3
 UNSETTLED = 4
 UNREACHABLE = 5
