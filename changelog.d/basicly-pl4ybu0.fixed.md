@@ -1,0 +1,1 @@
+- **Two tracker sessions that write the same vault state file at once no longer crash one of them.** Each write now uses its own temporary file, so a session can no longer lose its rename to another one and exit with FileNotFoundError (basicly-pl4ybu0).
