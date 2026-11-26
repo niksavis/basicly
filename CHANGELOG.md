@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release lets the Orchestrator install a basicly release into a lane of each repository from one window, so a kit upgrade needs no owner step in a worker window. A queued vault event of one repository no longer blocks commits in another, and `basicly session start` warns when the running basicly is older than the pinned one.
+
+- Kit upgrade: `orch install` installs a release in a lane per repository and prints the exact commit (basicly-d9u8roi).
+- Vault queue: `tracker-path-scan` scans only this repository's queued events, and the queue refuses the machine user name (basicly-ndlzlv6).
+- Session start: a warning names an older running basicly and the command that installs the pinned one (basicly-36fpj8d).
+
 ## v0.49.3 - 2026-11-25
 
 Delta: v0.49.2..v0.49.3
