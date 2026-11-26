@@ -397,5 +397,5 @@ def claim(
             "exit": INTERNAL,
             "record": record,
             "log": str(log),
-            "next": f"sync --vault {clone.url}",
+            "next": vault_queue.share_command(clone.url),
         }

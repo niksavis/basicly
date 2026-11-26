@@ -334,7 +334,10 @@ python3 .basicly/kit/tracker/cli.py status --vault path/to/vault.git
 
 `hook EVENT --vault` runs from an agent hook and never fails the agent. `session-start` and
 `prompt` fetch with a 3 s deadline at most every 20 s, then share only when this clone's bulk
-slot is due (180 s after its last share). `stop` and `session-end` share the whole queue. A
+slot is due (180 s after its last share). `stop` and `session-end` share the whole queue. Their report gives `queued`, the count still
+queued, and `left`, each queued id. When an event stays queued, because the vault cannot be
+reached or another share holds the lock, `next` names the command that shares it:
+`sync --vault URL`. A
 person's write shares at once when the slot is due; otherwise a later `fetch` or write shares
 it. `status --vault` makes no network call: it prints the fetch age, the last shared event and
 its age per writer, the queued count and the oldest queued age, and any unrepaired retraction.
