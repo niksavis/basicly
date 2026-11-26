@@ -48,10 +48,10 @@ The config file names the repositories:
 {"host": "github.com", "owner": "<account>", "workspace": "~/development",
  "repositories": [{"name": "<repo>", "visibility": "public", "project": true, "tag": "v<version>"},
                   {"name": "<private-repo>", "visibility": "private", "project": false}],
- "omit": []}
+ "omit": [], "drop": []}
 ```
 
-- A `project` repository is a folder `<workspace>/<name>` with lanes. `tag` is `v<version>` or `<name>--v<version>`. `omit` names rules to leave out.
+- A `project` repository is a folder `<workspace>/<name>` with lanes. `tag` is `v<version>` or `<name>--v<version>`. `omit` names generated rules to leave out. `drop` names labels of the user's own entries to remove, for example a rule that a deny rule makes dead.
 - Each value must match its token class. Any other character is refused by name before any text is made.
 - The rules are one source, `orch_automode/rules.json`. The token and guard definitions are written once, in the entry "Shared Terms". The critique of the rules returns nothing once the rules are long, so they stay short.
 - The plan replaces an entry whose label (the text before the first colon) is a generated label, and keeps every other entry. Each list keeps `$defaults` first.

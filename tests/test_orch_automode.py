@@ -88,6 +88,14 @@ def test_the_generated_rules_parse_and_keep_defaults_first(tmp_path: Path) -> No
     assert text.count("<lane> is [a-z0-9]") == 1
 
 
+def test_a_dropped_label_removes_the_users_entry(tmp_path: Path) -> None:
+    config = render.load_config(config_file(tmp_path, drop=["Merged Branch Cleanup"]))
+    old = {"autoMode": {"allow": ["Merged Branch Cleanup: old", "Mine: keep"]}}
+    merged = render.merge(old, render.entries(config), config.drop)["autoMode"]["allow"]
+    assert "Merged Branch Cleanup: old" not in merged
+    assert "Mine: keep" in merged
+
+
 def test_a_merge_replaces_entries_by_label_and_keeps_the_others(tmp_path: Path) -> None:
     made = render.entries(render.load_config(config_file(tmp_path)))
     old = {
@@ -125,6 +133,7 @@ def test_a_merge_replaces_entries_by_label_and_keeps_the_others(tmp_path: Path) 
             "visibility",
         ),
         ({"omit": ["Shared Terms"]}, "omit"),
+        ({"drop": ["Bad: label"]}, "drop[0]"),
     ],
 )
 def test_a_config_value_outside_its_token_class_is_refused_by_name(

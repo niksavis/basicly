@@ -80,7 +80,7 @@ def prepare(config_path: Path, settings: Path) -> Planned:
     if not isinstance(document, dict):
         raise RefusedError(f"automode: {settings} is not a JSON object")
     made = render.entries(config)
-    after = _dump(render.merge(document, made))
+    after = _dump(render.merge(document, made, config.drop))
     return Planned(before, after, made, conflicts.find(config, settings))
 
 

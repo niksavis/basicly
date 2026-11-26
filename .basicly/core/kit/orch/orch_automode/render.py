@@ -18,12 +18,13 @@ CLASSES = {
     "name": re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*"),
     "workspace": re.compile(r"~?/[A-Za-z0-9._/-]*"),
     "tag": re.compile(r"(?:<name>--)?v<version>"),
+    "label": re.compile(r"[A-Za-z0-9][A-Za-z0-9 ()'._-]*"),
 }
 LABEL = re.compile(r"^[\s*_`>-]*(?P<label>[^:*]+?)[\s*_`]*:")
 CONFIG_HELP = (
     '{"host": "github.com", "owner": "<account>", "workspace": "~/development", '
     '"repositories": [{"name": "<repo>", "visibility": "public", "project": true, '
-    '"tag": "v<version>"}], "omit": []}'
+    '"tag": "v<version>"}], "omit": [], "drop": []}'
 )
 
 
@@ -42,6 +43,7 @@ class Config:
     workspace: str
     repos: tuple[Repo, ...]
     omit: frozenset[str]
+    drop: frozenset[str] = frozenset()
 
     @property
     def projects(self) -> list[Repo]:
@@ -95,12 +97,19 @@ def load_config(path: Path) -> Config:
         raise RefusedError(
             f"automode config: omit must list rule names from {sorted(names - {'Shared Terms'})}"
         )
+    drop = data.get("drop", [])
+    if not isinstance(drop, list):
+        raise RefusedError("automode config: drop must be a list of rule labels")
+    labels = frozenset(
+        _token("label", item, f"drop[{index}]").lower() for index, item in enumerate(drop)
+    )
     return Config(
         _token("host", data.get("host"), "host"),
         _token("owner", data.get("owner"), "owner"),
         _token("workspace", data.get("workspace"), "workspace"),
         repos,
         frozenset(omit),
+        labels,
     )
 
 
@@ -166,12 +175,14 @@ def label(entry: str) -> str:
     return re.sub(r"\s*\[.*$", "", found["label"]).strip().lower() if found else ""
 
 
-def merge(document: dict[str, object], made: dict[str, list[str]]) -> dict[str, object]:
+def merge(
+    document: dict[str, object], made: dict[str, list[str]], drop: frozenset[str] = frozenset()
+) -> dict[str, object]:
     merged = dict(document)
     found = merged.get("autoMode")
     auto: dict[str, object] = dict(found) if isinstance(found, dict) else {}
     for kind in LISTS:
-        owned = {label(entry) for entry in made[kind]}
+        owned = {label(entry) for entry in made[kind]} | drop
         existing = auto.get(kind)
         kept = [
             e
