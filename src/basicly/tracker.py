@@ -203,6 +203,8 @@ HOLDER_FIELD = "assignee"
 def owned_record(repo_root: Path, issue_id: str) -> dict | None:
 
     try:
+        if tracker_absent(repo_root):
+            return None
         kit_module = kit(repo_root)
         found = kit_module.read_ledger(present_ledger(repo_root))
         ledger_fold = kit_module.events.fold(found)
@@ -210,8 +212,8 @@ def owned_record(repo_root: Path, issue_id: str) -> dict | None:
         if state is None or state.tombstoned:
             return None
         views = kit_module.views_from_events(found)
-    except TrackerDivergenceError, OSError, ValueError:
-        return None
+    except READ_FAILURES as exc:
+        raise read_refused(exc) from exc
     return _rendered(kit_module, issue_id, state, views, ledger_fold.records)
 
 
@@ -441,9 +443,11 @@ def try_read_comments(repo_root: Path, issue_id: str) -> list[dict]:
 def all_comment_texts(repo_root: Path) -> dict[str, list[str]]:
 
     try:
+        if tracker_absent(repo_root):
+            return {}
         rows = all_comment_rows(repo_root)
-    except TrackerDivergenceError, OSError, ValueError:
-        return {}
+    except READ_FAILURES as exc:
+        raise read_refused(exc) from exc
     return {record: [str(row[COMMENT_TEXT_KEY]) for row in found] for record, found in rows.items()}
 
 

@@ -360,6 +360,7 @@ def test_a_corrupt_corpus_reads_as_no_evidence(tmp_path: Path) -> None:
 
     assert report.dispatches_read == 0
     assert all(parameter.recommendation is None for parameter in report.parameters)
+    assert "could not be read" in report.refused
 
 
 def test_render_value_prints_a_value_a_reader_can_paste() -> None:

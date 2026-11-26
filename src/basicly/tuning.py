@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from . import config, run_record
+from . import config, run_record, tracker
 
 LOCAL = "local"
 TRACKER = "tracker"
@@ -34,11 +34,13 @@ class Dispatch:
     attempt: int = 0
 
 
-def read_dispatches(repo_root: Path) -> tuple[Dispatch, ...]:
+def read_dispatches(
+    repo_root: Path, *, history: Mapping[str, list[dict]] | None = None
+) -> tuple[Dispatch, ...]:
 
     seen: dict[tuple[str, str], Dispatch] = {}
     for source, corpus in (
-        (TRACKER, run_record.tracker_history(repo_root)),
+        (TRACKER, run_record.tracker_history(repo_root) if history is None else history),
         (LOCAL, run_record.load_run_records(repo_root) or {}),
     ):
         for bead_id, entries in corpus.items():
@@ -126,6 +128,7 @@ class TuningReport:
     sources: dict[str, int]
     min_samples: int
     window: int
+    refused: str = ""
 
 
 @dataclass(frozen=True)
@@ -531,7 +534,11 @@ def tuning_report(repo_root: Path) -> TuningReport:
         sizing=sizing,
         worktree=config.load_worktree_config(repo_root),
     )
-    corpus = read_dispatches(repo_root)
+    try:
+        history, refused = run_record.tracker_history(repo_root), ""
+    except tracker.TrackerReadError as exc:
+        history, refused = {}, str(exc)
+    corpus = read_dispatches(repo_root, history=history)
     return TuningReport(
         parameters=tuple(
             _tune_parameter(
@@ -546,4 +553,5 @@ def tuning_report(repo_root: Path) -> TuningReport:
         sources=_census(dispatch.source for dispatch in corpus),
         min_samples=sizing.calibration_min_samples,
         window=sizing.calibration_window,
+        refused=refused,
     )

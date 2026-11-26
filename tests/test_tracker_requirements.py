@@ -267,6 +267,8 @@ def _release_standings(repo: Path) -> object:
         pytest.param(lambda repo: lens_review.latest_per_lens(repo, "b-1"), id="review-gate"),
         pytest.param(lambda repo: decompose.frozen_estimates(repo, "b-1"), id="frozen-forecast"),
         pytest.param(board_snapshot.build_document, id="board-snapshot"),
+        pytest.param(lambda repo: tracker.read_record(repo, "b-1"), id="owned-record"),
+        pytest.param(tracker.all_comment_texts, id="all-comment-texts"),
     ],
 )
 def test_r7_every_reader_class_refuses_an_unreadable_ledger_by_name(
