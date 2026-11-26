@@ -101,6 +101,7 @@ The `command -v` test keeps the plain status line when `orch-statusline-tap` is 
 - A window whose `resets_at` has passed shows "window reset" and `start`.
 - The overall advice is the most careful advice of the windows: `close idle`, then `hold`, then `start`.
 - The `fit:` line names how many working sessions fit until the `five_hour` reset (record `basicly-scpjhge`). It takes the burn of the readings of the last 30 minutes, which must span at least 10 minutes, and divides it by the count of live sessions in the state `working`. The count is `(100 - used) / hours to reset / burn per session`, rounded down. With no such readings, no working session or no measured use, it prints `fit: unknown` and the reason.
+- The `sessions:` line turns the fit into an action (record `basicly-zidiwg9`): `start N more` when more sessions fit than work, `hold at N` when they are equal, and `start none; let N of W finish` when fewer fit. It shows the needed rate `(100 - used) / hours to reset`, the burn per working session and both counts. When the `fit:` line is unknown (no working session, no measured burn, or a reset with no reading of the new window), it assumes a burn per session from `session_rate_pct_per_hour` in `pace.json` in the orch store and prints `assumed X%/h per session from config` with the reason. The default is 5%/h per session (source: the Orchestrator's measurement of 2026-11-26). After a reset with no new reading, the needed rate is 100% over the full 5 hours, 20%/h.
 
 The words mean:
 

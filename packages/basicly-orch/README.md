@@ -27,7 +27,7 @@ The design is `docs/design/session-state.md`.
 | Command | What it does |
 | --- | --- |
 | `orch-statusline-tap -- COMMAND [ARG...]` | the status line command wrapper: passes the status line input to COMMAND, prints its output byte for byte with its exit code, and saves `rate_limits` to its usage snapshot file `statusline.json`. A snapshot error never stops the output |
-| `orch pace` | prints used percent, reset time, burn rate and projection at reset for the 5-hour and 7-day windows, and the advice `start`, `hold` or `close idle`, then a table of cost per record type from the `[pace done]` notes; refuses a missing snapshot or one older than 10 minutes |
+| `orch pace` | prints used percent, reset time, burn rate and projection at reset for the 5-hour and 7-day windows, and the advice `start`, `hold` or `close idle`, the `fit:` count of working sessions that fit until the 5-hour reset, a `sessions:` line that names how many sessions to start, to hold or to let finish (needed rate `(100 - used) / hours to reset` against the burn per working session; with no working session or no measured burn it assumes `session_rate_pct_per_hour` from `pace.json` in the orch store, default 5%/h, and says so), then a table of cost per record type from the `[pace done]` notes; refuses a missing snapshot or one older than 10 minutes |
 | `orch pace note RECORD start\|done` | writes the 5-hour percent on the record; `done` also writes the change since `start` and the record type. A landed vault claim and a merged landing write the same notes by themselves |
 
 The snapshot folder, fields, write rule and reading rule are in `docs/design/usage-snapshot.md`.
