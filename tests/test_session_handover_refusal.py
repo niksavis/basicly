@@ -54,3 +54,23 @@ def test_session_start_says_no_handover_when_the_kit_is_readable(
     out = _start(_repo(tmp_path), monkeypatch, capsys)
     assert "handover: none" in out
     assert "handover: unknown" not in out
+
+
+def test_session_start_names_a_failed_ledger_read_instead_of_bootstrap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path)
+
+    def broken(_root: Path) -> None:
+        raise ValueError("a broken ledger line")
+
+    monkeypatch.setattr(cli.tracker, "all_views", broken)
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["session", "start"]) == 2
+    captured = capsys.readouterr()
+    out = captured.out + captured.err
+
+    assert "could not be read" in out
+    assert "fsck" in out
+    assert "bootstrap" not in out

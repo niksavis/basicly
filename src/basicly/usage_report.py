@@ -157,6 +157,11 @@ def _shown(value: float | str | None, unit: str) -> str:
 def cmd_tuning(_args: argparse.Namespace) -> int:
 
     report = tuning.tuning_report(Path.cwd())
+    if report.refused:
+        ui.say(
+            f"tracker dispatches: unknown - the ledger was not read: {report.refused}",
+            style="warn",
+        )
     ui.table(
         f"Advisory parameter tuning ({report.dispatches_read} dispatch(es) read: "
         f"{_census_text(report.sources)})",

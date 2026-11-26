@@ -957,8 +957,12 @@ def _session_report(repo_root: Path) -> dict[str, Any]:
     report: dict[str, Any] = {"decisions": _decision_targets(repo_root)}
     try:
         views = tracker.all_views(repo_root)
-    except owned_store.TrackerDivergenceError, OSError, ValueError:
-        report["tracker"] = {"present": False, "records": 0}
+    except tracker.READ_FAILURES as exc:
+        report["tracker"] = {
+            "present": False,
+            "records": 0,
+            "refused": str(tracker.read_refused(exc)),
+        }
         return report
     report["tracker"] = {"present": True, "records": len(views)}
     if not views:
@@ -1108,7 +1112,10 @@ def cmd_session_start(args: argparse.Namespace) -> int:
         return 2
     report = _session_report(repo_root)
     if not report["tracker"]["present"]:
-        ui.say("tracker memory became unavailable; run `basicly tracker bootstrap` before work")
+        ui.say(
+            report["tracker"].get("refused")
+            or "tracker memory became unavailable; run `basicly tracker bootstrap` before work"
+        )
         return 2
     if gap := _engine_gap(repo_root):
         ui.say(gap)
