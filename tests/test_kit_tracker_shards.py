@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -86,10 +87,34 @@ def test_the_writer_is_the_branch_so_two_branches_append_to_two_files(repo: Path
     _git(repo, "checkout", "-qb", "feature/two", "main")
     _append(ledger, "demo-two")
 
-    assert [path.name for path in events.pending_paths(ledger)] == [
-        "pending-feature-one.jsonl",
-        "pending-feature-two.jsonl",
-    ]
+    names = [path.name for path in events.pending_paths(ledger)]
+    assert len(names) == 2
+    assert names[0].startswith("pending-feature-one-")
+    assert names[1].startswith("pending-feature-two-")
+
+
+@pytest.mark.parametrize(
+    "pair",
+    [
+        ("feat/a", "feat-a"),
+        ("feat/a", "feat.a"),
+        ("x" * 64 + "-one", "x" * 64 + "-two"),
+    ],
+    ids=["slash-and-hyphen", "slash-and-dot", "same-first-64"],
+)
+def test_two_branches_whose_names_clean_alike_append_to_two_files(
+    repo: Path, pair: tuple[str, str]
+) -> None:
+    ledger = repo / "ledger"
+    ledger.mkdir()
+
+    for branch in pair:
+        _git(repo, "checkout", "-qb", branch, "main")
+        _append(ledger, f"demo-{len(events.pending_paths(ledger))}")
+
+    names = [path.name for path in events.pending_paths(ledger)]
+    assert len(names) == 2
+    assert all(events.WRITER_PATTERN.match(events.writer_of(name)) for name in names)
 
 
 def test_a_detached_head_is_named_rather_than_falling_back_to_the_trunk(repo: Path) -> None:
@@ -100,8 +125,56 @@ def test_a_detached_head_is_named_rather_than_falling_back_to_the_trunk(repo: Pa
 
     _append(ledger, "demo-detached")
 
-    assert events.derive_writer(ledger) == events.DETACHED_WRITER
-    assert (ledger / f"pending-{events.DETACHED_WRITER}.jsonl").exists()
+    writer = events.derive_writer(ledger)
+    assert writer is not None
+    assert writer.startswith(f"{events.DETACHED_WRITER}-")
+    assert (ledger / f"pending-{writer}.jsonl").exists()
+
+
+def test_a_branch_named_like_a_hashed_name_gets_its_own_file(repo: Path) -> None:
+    ledger = repo / "ledger"
+    ledger.mkdir()
+    _git(repo, "checkout", "-qb", "feat/a", "main")
+    _append(ledger, "demo-slash")
+    hashed = events.writer_of(events.pending_paths(ledger)[0])
+    _git(repo, "checkout", "-qb", hashed, "main")
+    _append(ledger, "demo-lookalike")
+
+    names = [path.name for path in events.pending_paths(ledger)]
+
+    assert hashed.startswith("feat-a-")
+    assert len(names) == 2
+
+
+def test_a_long_branch_name_keeps_a_64_character_writer_with_a_16_hex_digest(
+    repo: Path,
+) -> None:
+    ledger = repo / "ledger"
+    ledger.mkdir()
+    stem = "release/" + "a" * 39
+    for branch in (stem + "x" * 30, stem + "y" * 30):
+        _git(repo, "checkout", "-qb", branch, "main")
+        _append(ledger, f"demo-{len(events.pending_paths(ledger))}")
+
+    writers = [events.writer_of(path) for path in events.pending_paths(ledger)]
+
+    assert len(set(writers)) == 2
+    assert all(len(writer) == 64 for writer in writers)
+    assert all(events.WRITER_PATTERN.match(writer) for writer in writers)
+    assert all(re.fullmatch(r"[0-9a-f]{16}", writer[-16:]) for writer in writers)
+    assert writers[0][:47] == writers[1][:47]
+
+
+def test_two_detached_worktrees_append_to_two_files(repo: Path, tmp_path: Path) -> None:
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    folders = [tmp_path / "one", tmp_path / "two"]
+    for folder in folders:
+        _git(repo, "worktree", "add", "-q", "--detach", str(folder), head)
+
+    writers = {events.derive_writer(folder) for folder in folders}
+
+    assert len(writers) == 2
+    assert all(str(writer).startswith(f"{events.DETACHED_WRITER}-") for writer in writers)
 
 
 def test_a_linked_worktree_writes_under_its_own_branch(repo: Path, tmp_path: Path) -> None:

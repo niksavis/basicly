@@ -1076,6 +1076,7 @@ def test_the_module_imports_nothing_outside_the_standard_library() -> None:
         "collections.abc",
         "dataclasses",
         "datetime",
+        "hashlib",
         "importlib.util",
         "json",
         "os",
