@@ -315,3 +315,31 @@ def test_a_ledger_with_no_handover_note_says_so_and_names_the_skill_that_writes_
     out = capsys.readouterr().out
     assert "handover: none" in out and "session-finish" in out
     assert "Handover (" not in out
+
+
+def test_an_engine_older_than_the_pinned_version_names_both_and_the_upgrade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _seeded(tmp_path)
+    monkeypatch.setattr(cli, "installed_kit_version", lambda _root: "99.0.0")
+
+    assert _run(repo, monkeypatch) == 0
+
+    out = capsys.readouterr().out
+    assert f"this basicly is {cli.__version__} and the repository pins 99.0.0" in out
+    assert (
+        "uv tool install --force https://github.com/niksavis/basicly/releases/download/v99.0.0/"
+        in out
+    )
+
+
+def test_an_engine_at_or_past_the_pinned_version_says_nothing_about_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _seeded(tmp_path)
+    for pinned in (cli.__version__, "0.1.0", None):
+        monkeypatch.setattr(cli, "installed_kit_version", lambda _root, p=pinned: p)
+
+        assert _run(repo, monkeypatch) == 0
+
+        assert "engine:" not in capsys.readouterr().out

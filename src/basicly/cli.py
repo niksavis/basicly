@@ -67,6 +67,7 @@ from . import (
     rubrics,
     run_record,
     runner,
+    scaffolds,
     shipped_core,
     skill_reference,
     skill_standard,
@@ -102,6 +103,7 @@ from .config import (
     WORK_TYPES,
     ProjectPaths,
     SizingConfig,
+    installed_kit_version,
     legacy_tracker_prefix,
     load_enabled_features,
     load_policy_config,
@@ -1079,6 +1081,13 @@ def _say_session_decisions(report: dict[str, Any], full: bool) -> None:
     )
 
 
+def _engine_gap(repo_root: Path) -> str | None:
+    try:
+        return scaffolds.engine_gap(installed_kit_version(repo_root))
+    except ValidationError, OSError:
+        return None
+
+
 def cmd_session_start(args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
@@ -1091,6 +1100,8 @@ def cmd_session_start(args: argparse.Namespace) -> int:
     if not report["tracker"]["present"]:
         ui.say("tracker memory became unavailable; run `basicly tracker bootstrap` before work")
         return 2
+    if gap := _engine_gap(repo_root):
+        ui.say(gap)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
