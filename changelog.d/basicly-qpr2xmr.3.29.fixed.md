@@ -1,0 +1,1 @@
+- Vault tracker: the commit-msg hook refuses a commit on a record that another session holds, and names the holder and the take and claim commands. A record with no holder, an unsettled claim or an unreachable vault still passes, now with a `notice:` line (basicly-qpr2xmr.3.29).

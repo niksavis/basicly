@@ -176,9 +176,41 @@ def _claim_command(record: str, url: str) -> str:
     return f"claim {record} --vault {url}"
 
 
-def _judge(commit: Commit, folded: Any, writer: str, record: str) -> dict[str, object]:
+def _take_command(record: str, url: str) -> str:
+    return f"unassign {record} --take --vault {url}"
+
+
+def _held_elsewhere(state: Any, writer: str, session: str) -> bool:
+    if state is None or state.holder is None or state.status == "closed":
+        return False
+    held_writer, held_session = state.holder
+    return held_writer != writer or (bool(session) and held_session != session)
+
+
+def _held_refusal(state: Any, record: str, url: str) -> dict[str, object]:
+    writer, session = state.holder
+    holder = state.name or f"{writer}/{session}"
+    take, claim = _take_command(record, url), _claim_command(record, url)
+    return {
+        "exit": REFUSED,
+        "refused": (
+            f"{record} is held by another session, {holder}; ask its holder to release it, "
+            f"or take it over with `{take}` and then run `{claim}`"
+        ),
+        "holder": {"writer": writer, "session": session, "name": state.name},
+        "next": [take, claim],
+    }
+
+
+def _judge(
+    commit: Commit, folded: Any, writer: str, record: str, reached: bool
+) -> dict[str, object]:
     state = folded.records.get(record)
     mine = (writer, commit.session)
+    if not reached:
+        return {"warning": UNREACHABLE, "next": _claim_command(record, commit.clone.url)}
+    if _held_elsewhere(state, writer, commit.session):
+        return _held_refusal(state, record, commit.clone.url)
     if commit.session and state is not None and state.holder == mine:
         return {}
     if commit.session and _queued_claim(commit, writer, record):
@@ -223,8 +255,12 @@ def check(commit: Commit) -> dict[str, object]:
         subject = _append_id(commit.message, record)
         report["filled"] = record
     else:
-        report.update(_judge(commit, folded, writer, record))
+        report.update(_judge(commit, folded, writer, record, reached))
     report["record"] = record
+    if report["exit"] == REFUSED:
+        return report
     if not reached:
+        report.setdefault("warning", UNREACHABLE)
+        report.setdefault("next", _claim_command(record, commit.clone.url))
         report["miss"] = _miss(commit, record, subject)
     return report
