@@ -169,13 +169,38 @@ def test_a_held_record_is_accepted_without_a_warning(tmp_path: Path, bare: Path)
     assert "miss" not in shown
 
 
-@pytest.mark.parametrize("holder", ["", "s2"])
-def test_a_record_this_session_does_not_hold_is_accepted_with_the_claim_command(
-    tmp_path: Path, bare: Path, holder: str
+@pytest.mark.parametrize("other", ["session", "machine"])
+@pytest.mark.parametrize("queued", [False, True])
+def test_a_record_another_session_holds_is_refused_naming_the_holder_and_the_claim_command(
+    tmp_path: Path, bare: Path, other: str, queued: bool
+) -> None:
+    holder_clone, holder_state = _machine(tmp_path, bare, "holder")
+    _claim(holder_clone, holder_state, ID, session="s2" if other == "session" else "s1")
+    clone, state = (
+        (holder_clone, holder_state) if other == "session" else _machine(tmp_path, bare, "m")
+    )
+    if queued:
+        origin = vault_queue.Origin("s1", False, time.time)
+        vault_queue.write(clone, [{"kind": "claim", "record": ID}], state=state, origin=origin)
+    message = _message(tmp_path, MESSAGES["id"])
+
+    shown = _check(clone, state, message)
+
+    take = f"unassign {ID} --take --vault {clone.url}"
+    claim = f"claim {ID} --vault {clone.url}"
+    assert shown["exit"] == hook.REFUSED
+    assert f"held by another session, {VAULT_TEST_HOLDER}" in shown["refused"]
+    assert take in shown["refused"] and claim in shown["refused"]
+    assert shown["holder"]["name"] == VAULT_TEST_HOLDER
+    assert shown["next"] == [take, claim]
+    assert "miss" not in shown
+    assert message.read_text(encoding="utf-8") == MESSAGES["id"]
+
+
+def test_a_record_with_no_holder_is_accepted_with_a_notice_and_the_claim_command(
+    tmp_path: Path, bare: Path
 ) -> None:
     clone, state = _machine(tmp_path, bare, "m")
-    if holder:
-        _claim(clone, state, ID, session=holder)
 
     shown = _check(clone, state, _message(tmp_path, MESSAGES["id"]))
 
@@ -186,7 +211,23 @@ def test_a_record_this_session_does_not_hold_is_accepted_with_the_claim_command(
     assert hook.vault_clone.vault_source(printed) == (clone.url, True)
 
 
-def test_an_unsettled_claim_is_accepted_with_a_warning_and_the_claim_command(
+def test_a_closed_record_another_session_held_is_accepted_with_a_notice(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    _claim(clone, state, ID, session="s2")
+    origin = vault_queue.Origin("s2", False, time.time)
+    closed = {"kind": "status", "record": ID, "payload": {"status": "closed"}}
+    vault_queue.write(clone, [closed], state=state, origin=origin)
+    _share(clone, state)
+
+    shown = _check(clone, state, _message(tmp_path, MESSAGES["id"]))
+
+    assert shown["exit"] == hook.ACCEPTED
+    assert "does not hold" in shown["warning"]
+
+
+def test_an_unsettled_claim_is_accepted_with_a_notice_and_the_claim_command(
     tmp_path: Path, bare: Path
 ) -> None:
     clone, state = _machine(tmp_path, bare, "m")
@@ -206,11 +247,12 @@ def _unreachable(args: list[str], cwd: Path, **options: Any) -> str:
     return git_runner.run(args, cwd, **options)
 
 
-def test_an_unreachable_vault_queues_one_miss_event_that_shares_as_a_valid_batch(
-    tmp_path: Path, bare: Path
+@pytest.mark.parametrize("session", ["s1", "s2"])
+def test_an_unreachable_vault_accepts_with_a_notice_and_queues_one_miss_that_shares(
+    tmp_path: Path, bare: Path, session: str
 ) -> None:
     clone, state = _machine(tmp_path, bare, "m")
-    _claim(clone, state, ID)
+    _claim(clone, state, ID, session=session)
     (clone.folder / vault_clone.FETCHED_NAME).write_text("0\n", encoding="utf-8")
 
     shown = _check(clone, state, _message(tmp_path, MESSAGES["id"]), runner=_unreachable)
@@ -218,6 +260,8 @@ def test_an_unreachable_vault_queues_one_miss_event_that_shares_as_a_valid_batch
     misses = [line for line in _queued(clone) if line["kind"] == hook.MISS_KIND]
     assert shown["exit"] == hook.ACCEPTED
     assert shown["reached"] is False
+    assert shown["warning"] == hook.UNREACHABLE
+    assert shown["next"] == f"claim {ID} --vault {clone.url}"
     assert [line["id"] for line in misses] == [shown["miss"]]
     assert misses[0]["record"] == ID
     assert misses[0]["payload"]["why"] == hook.UNREACHABLE

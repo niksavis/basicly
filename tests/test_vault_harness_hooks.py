@@ -274,6 +274,7 @@ def test_real_git_commit_uses_native_claims_once_and_preserves_history(
     accepted = git("commit", "-qm", "fix: preserve the queue (acme-a1b2)")
     assert accepted.returncode == 0, accepted.stdout + accepted.stderr
     assert accepted.stderr.count("this session does not hold") == 1
+    assert ("notice: this session does not hold" in accepted.stderr) == (entry == "harness")
     claimed = _kit(root, "claim", "acme-a1b2")
     assert claimed.returncode == 0, claimed.stdout + claimed.stderr
     source.write_text("second\n", encoding="utf-8")
@@ -284,9 +285,12 @@ def test_real_git_commit_uses_native_claims_once_and_preserves_history(
     monkeypatch.setenv("BASICLY_TRACKER_SESSION", "another-session")
     source.write_text("third\n", encoding="utf-8")
     assert git("add", "source.txt").returncode == 0
-    advisory = git("commit", "-qm", "fix: preserve the queue (acme-a1b2)")
-    assert advisory.returncode == 0, advisory.stdout + advisory.stderr
-    assert advisory.stderr.count("this session does not hold") == 1
+    held = git("commit", "-qm", "fix: preserve the queue (acme-a1b2)")
+    assert held.returncode == 1, held.stdout + held.stderr
+    assert "acme-a1b2 is held by another session" in held.stderr
+    assert "unassign acme-a1b2 --take --vault" in held.stderr
+    assert "claim acme-a1b2 --vault" in held.stderr
+    assert git("diff", "--cached", "--name-only").stdout.strip() == "source.txt"
     assert _history(root) == before
 
 
