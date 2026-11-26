@@ -615,6 +615,7 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
     root_issue: str | None = None,
     autonomous: bool = False,
     shipping: str | None = None,
+    tag: bool = True,
 ) -> ReleaseResult:
 
     refusals: list[str] = []
@@ -679,6 +680,9 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
     except (RuntimeError, OSError, SystemExit, release_history.HistoryError) as exc:
         _restore(repo_root)
         raise SystemExit(f"release failed and the tree was restored: {exc}") from exc
+    if not tag:
+        steps.append(f"not tagged: the pr delivery tags the merge commit with {plan.tag}")
+        return ReleaseResult(plan=plan, steps=tuple(steps), dry_run=False, tagged=False)
     _git(repo_root, ["tag", "-a", plan.tag, "-m", f"{plan.tag} ({plan.date})"])
     steps.append(
         f"NOT pushed: run `git push origin main && git push origin {plan.tag}` "

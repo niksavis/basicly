@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, release
+from basicly import cli, release, release_delivery
 
 
 @pytest.fixture
@@ -95,3 +95,30 @@ def test_root_without_autonomous_is_refused_rather_than_ignored(
 def test_the_issue_flag_is_required() -> None:
     with pytest.raises(SystemExit):
         cli.main(["release", "0.6.0"])
+
+
+def test_a_pr_delivery_leaves_the_tag_to_the_pull_request_merge(
+    stub_release: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "basicly.toml").write_text('[delivery]\nadapter = "pr"\n', encoding="utf-8")
+    delivered: list[tuple] = []
+    monkeypatch.setattr(
+        release_delivery,
+        "deliver",
+        lambda *a: delivered.append(a) or ["pull/5 merged as abc; tagged v0.6.0 on it"],
+    )
+
+    assert cli.main(["release", "0.6.0", "--issue", "x-1"]) == 0
+
+    assert stub_release["tag"] is False
+    assert delivered == [(tmp_path, release_delivery.Release("v0.6.0", "2026-07-26", "x-1"))]
+
+
+def test_the_lander_release_tags_locally_and_delivers_nothing(
+    stub_release: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(release_delivery, "deliver", lambda *_a: pytest.fail("delivered"))
+
+    assert cli.main(["release", "0.6.0", "--issue", "x-1"]) == 0
+
+    assert "tag" not in stub_release

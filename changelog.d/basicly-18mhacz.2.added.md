@@ -1,0 +1,1 @@
+- **`basicly release --delivery pr` delivers a release through a pull request.** It commits the release, lets GitHub merge it when every landing workflow is green on the exact head, tags the merge commit only once it is on `origin/main` and its push run there is green, and pushes only the tag; the lander behaviour is unchanged (basicly-18mhacz.2).

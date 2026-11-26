@@ -121,10 +121,14 @@ def _open(
 
 
 def _run(
-    gh: ci_landing.Gh, candidate: ci_landing.Candidate, flow: str, clock: ci_landing.Clock
+    gh: ci_landing.Gh,
+    candidate: ci_landing.Candidate,
+    flow: str,
+    clock: ci_landing.Clock,
+    event: str = EVENT,
 ) -> dict:
     fields = "databaseId,url,status,conclusion,attempt"
-    argv = ["run", "list", "--workflow", flow, "--commit", candidate.head, "--event", EVENT]
+    argv = ["run", "list", "--workflow", flow, "--commit", candidate.head, "--event", event]
     argv += ["--json", fields]
     started = clock.monotonic()
     while True:
@@ -133,10 +137,22 @@ def _run(
             return listed[0]
         if clock.monotonic() - started >= ci_landing.FIND_S:
             raise PrDeliveryError(
-                f"no {flow} run for {candidate.head[:12]} appeared on the pull request; nothing "
-                f"is merged; check that its {EVENT} trigger does not skip these paths"
+                f"no {flow} {event} run for {candidate.head[:12]} appeared; check that its "
+                f"{event} trigger does not skip these paths"
             )
         clock.sleep(ci_landing.POLL_S)
+
+
+def green_after_merge(
+    root: Path, candidate: ci_landing.Candidate, gh: ci_landing.Gh, clock: ci_landing.Clock
+) -> tuple[str, ...]:
+    runs = []
+    for flow in workflows(root):
+        state = _finished(gh, flow, _run(gh, candidate, flow, clock, "push"), clock)
+        if refused := ci_landing.verdict(state, candidate, flow, RETRY):
+            raise PrDeliveryError(refused)
+        runs.append(str(state.get("url")))
+    return tuple(runs)
 
 
 def _finished(gh: ci_landing.Gh, flow: str, run: dict, clock: ci_landing.Clock) -> dict:
