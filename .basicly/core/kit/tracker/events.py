@@ -91,7 +91,7 @@ _GIT_DIR_MARK = "gitdir:"
 _GIT_BRANCH_PREFIX = "refs/heads/"
 DETACHED_WRITER = "detached"
 _BRANCH_WRITER = "branch"
-_SLUG_DIGEST = 8
+_SLUG_DIGEST = 16
 _SLUG_KEPT = 64 - _SLUG_DIGEST - 1
 _HASHED_WRITER = re.compile(rf"^.+-[0-9a-f]{{{_SLUG_DIGEST}}}$")
 

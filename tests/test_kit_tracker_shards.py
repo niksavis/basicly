@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -143,6 +144,25 @@ def test_a_branch_named_like_a_hashed_name_gets_its_own_file(repo: Path) -> None
 
     assert hashed.startswith("feat-a-")
     assert len(names) == 2
+
+
+def test_a_long_branch_name_keeps_a_64_character_writer_with_a_16_hex_digest(
+    repo: Path,
+) -> None:
+    ledger = repo / "ledger"
+    ledger.mkdir()
+    stem = "release/" + "a" * 39
+    for branch in (stem + "x" * 30, stem + "y" * 30):
+        _git(repo, "checkout", "-qb", branch, "main")
+        _append(ledger, f"demo-{len(events.pending_paths(ledger))}")
+
+    writers = [events.writer_of(path) for path in events.pending_paths(ledger)]
+
+    assert len(set(writers)) == 2
+    assert all(len(writer) == 64 for writer in writers)
+    assert all(events.WRITER_PATTERN.match(writer) for writer in writers)
+    assert all(re.fullmatch(r"[0-9a-f]{16}", writer[-16:]) for writer in writers)
+    assert writers[0][:47] == writers[1][:47]
 
 
 def test_two_detached_worktrees_append_to_two_files(repo: Path, tmp_path: Path) -> None:
