@@ -122,6 +122,7 @@ class Consumer:
         for key, value in [
             ("user.name", "Hook Fixture Identity"),
             ("user.email", "fixture@example.invalid"),
+            ("basicly.holder", "hook-fixture"),
         ]:
             self.call(["git", "config", key, value], repo)
         (repo / "README.md").write_text("# Consumer data\n", encoding="utf-8")
@@ -178,6 +179,7 @@ class Consumer:
         for key, value in [
             ("user.name", "Hook Fixture Identity"),
             ("user.email", "fixture@example.invalid"),
+            ("basicly.holder", "hook-fixture"),
         ]:
             self.call(["git", "config", key, value], repo)
         legacy = "# legacy prose\n" if policy == "no-comment-ratchet" else ""
