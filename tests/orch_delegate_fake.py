@@ -9,6 +9,9 @@ name = Path(sys.argv[0]).name
 cwd = Path.cwd()
 with Path(os.environ["FAKE_LOG"]).open("a", encoding="utf-8") as out:
     out.write(json.dumps({"tool": name, "argv": argv, "cwd": str(cwd)}) + "\n")
+if os.environ.get("FAKE_FAIL") == name:
+    sys.stderr.write("ERROR: the model refused the request\n")
+    sys.exit(2)
 if os.environ.get("FAKE_LIMIT") == name:
     sys.stderr.write("ERROR: You've hit your usage limit. Try again at 3:05 PM.\n")
     sys.exit(1)
