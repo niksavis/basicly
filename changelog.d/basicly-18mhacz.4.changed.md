@@ -1,1 +1,0 @@
-- **Staged verification type-checks the importers of a changed module.** When a commit changes a Python module, the staged pyright run also checks the modules that import it, so a signature change that breaks a caller fails before the landing (basicly-18mhacz.4).

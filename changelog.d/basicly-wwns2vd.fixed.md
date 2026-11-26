@@ -1,1 +1,0 @@
-- **`basicly consumer-proof` names only a record that this session holds in a vault consumer, of that consumer's prefix.** It asks the consumer's own commit-msg rule, and refuses by name with the claim command when the session holds none or has no session identity; a failed consumer prints its cause (basicly-wwns2vd).
