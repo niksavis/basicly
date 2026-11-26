@@ -25,7 +25,7 @@ The deepseek-harness citations below are relative to the base URL. "Old" means a
 ## Changes since the last review
 
 1. **deepseek-harness withdrew two August concepts.** It removed the runtime-invariant plane after v0.2.0-rc.2 (remove-runtime-invariants/guide.md:12-14). Its goal fold now checks on replay, not before an append (packages/goal/goal/README.md:100 and :161). So "pre-append validation by an independent fold" no longer has an example to copy.
-2. **The basicly evidence for pre-append validation is gone.** The frozen fsck allowance it cited is empty (`pyproject.toml:313`). The tracker fold counts unknown event kinds (`_folded`, `.basicly/core/kit/tracker/events.py:742-750`), and fsck reports them as a warning (`_unfolded_kind_findings`, `fsck.py:385-404`).
+2. **The basicly evidence for pre-append validation is gone.** The frozen fsck allowance it cited is empty (`pyproject.toml:313`). The tracker fold counts unknown event kinds (`_folded`, `.basicly/core/kit/tracker/events.py:746-754`), and fsck reports them as a warning (`_unfolded_kind_findings`, `fsck.py:385-404`).
 3. **The stopReason idea has no surviving basicly caller.** Every caller of `provider_limit` is in `src/basicly/supervise.py`, which basicly-gtb19bg.30.2 removes.
 4. **Stale citations.** basicly-hnnmk9.4 and basicly-hnnmk9.8 cite the first lines of `provider_limit.py` and lines 78 to 80 of `events.py`. Commit 4f6922db stripped the prose at both places. The records also cite D-43 at the old lines 4833-4882 and deepseek-harness at rc.1.
 
@@ -48,7 +48,7 @@ The deepseek-harness citations below are relative to the base URL. "Old" means a
 | A11 | Turn, step and round loop | architecture.md:83-114 | refuse | basicly is not a session runtime, and the headless loop is being removed | basicly-gtb19bg.30.2 |
 | A12 | What the model sees is logged | architecture.md:130 | refuse | Already disposed: a fact that is not written down does not survive the session | basicly-gtb19bg.28 |
 | A13 | An event is required on read unless marked ignorable | architecture.md:128; session-format-status.md:20-24 | adapt | Tracker design v8 proposes a fold flag on holder and status kinds, so an old tool refuses them | basicly-3ghjmmg |
-| A14 | Projection as registered folds over events | architecture.md:132 | adopt | Already built: the tracker state is a fold over the event log (`fold`, `.basicly/core/kit/tracker/events.py:695`) | basicly-gtb19bg.28 |
+| A14 | Projection as registered folds over events | architecture.md:132 | adopt | Already built: the tracker state is a fold over the event log (`fold`, `.basicly/core/kit/tracker/events.py:699`) | basicly-gtb19bg.28 |
 | A15 | A seam is a definition, a provider and a consumer | architecture.md:138 | adapt | A completeness check on the plugin map | basicly-gtb19bg.29.5 |
 | A16 | Agent scope with shadowing and restriction | glossary.md:13-21 | refuse | basicly filters per target instead, through `applies_to` | basicly-gtb19bg.28 |
 | A17 | A table of where new behaviour goes | architecture.md:144-169 | adapt | A map of where a new plugin capability goes | basicly-gtb19bg.29 |

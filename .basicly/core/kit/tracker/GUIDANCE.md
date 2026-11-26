@@ -389,7 +389,8 @@ Vault writes queue outside the project. Run `sync` to share them and inspect the
 Never compact or edit the frozen guard or archive.
 
 - A write appends to `pending-<branch>.jsonl`, and `merge=union` in `.gitattributes` keeps
-  both sides of a merge. A merge needs nothing from you. If a merge conflicts on the log,
+  both sides of a merge. A branch name that is not a plain file name, such as one with a
+  slash, and a detached head get a short hash, so two branches never share a file. A merge needs nothing from you. If a merge conflicts on the log,
   run `basicly-tracker status`: the attribute is missing.
 - `fsck` checks the log: exit 0 clean, 1 stale derivative, 2 broken. Two writers on one
   record are a warning. When they set one value differently, `fsck` names both values:
