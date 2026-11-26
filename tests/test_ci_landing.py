@@ -26,6 +26,18 @@ def _commit(repo: Path, path: str, text: str) -> str:
     return _git(repo, "rev-parse", "HEAD")
 
 
+BASE_INPUT = "  workflow_dispatch:\n    inputs:\n      base:\n        type: string\n"
+NO_INPUT = "  workflow_dispatch:\n"
+
+
+def _workflow(repo: Path, name: str, dispatch: str) -> None:
+    path = repo / ".github" / "workflows" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"name: {name}\non:\n  push:\n    branches: [main]\n{dispatch}", encoding="utf-8"
+    )
+
+
 def _repo(tmp_path: Path) -> Path:
     origin = tmp_path / "origin.git"
     _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
@@ -36,6 +48,7 @@ def _repo(tmp_path: Path) -> Path:
     _git(repo, "config", "user.name", "T")
     _git(repo, "config", "user.email", "t@example.invalid")
     _git(repo, "remote", "add", "origin", str(origin))
+    _workflow(repo, "quality-gates.yml", BASE_INPUT)
     _commit(repo, "src/app.py", "VALUE = 1\n")
     _git(repo, "push", "-q", "origin", "main")
     return repo

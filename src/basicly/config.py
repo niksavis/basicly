@@ -348,6 +348,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
         keys=frozenset({"core_fragments", "overlay_fragments", "targets", "templates", "manifest"})
     ),
     "catalog": Table(keys=frozenset({"technologies", "rank1_floor", "rank1_floor_high_water"})),
+    "landing": Table(keys=frozenset({"workflows"})),
     "worktree": Table(
         keys=frozenset({"base_branch", "concurrency", "append_only_paths"}),
         tables={"regenerate_commands": _OPEN_TABLE},
@@ -722,6 +723,22 @@ def load_worktree_config(repo_root: Path) -> WorktreeConfig:
         append_only_paths=append_only,
         regenerate_commands=regenerate,
     )
+
+
+LANDING_WORKFLOW = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml")
+
+
+def load_landing_workflows(repo_root: Path) -> tuple[str, ...]:
+    raw = _harness_section(repo_root, "landing").get("workflows")
+    if raw is None:
+        return ()
+    names = raw if isinstance(raw, list) else []
+    if not names or not all(isinstance(n, str) and LANDING_WORKFLOW.fullmatch(n) for n in names):
+        raise ValueError(
+            f"[landing] workflows in {CONFIG_FILE} must list workflow file names in "
+            f'.github/workflows, for example workflows = ["quality-gates.yml"]; got {raw!r}'
+        )
+    return tuple(dict.fromkeys(names))
 
 
 CHANGELOG_FRAGMENT_DIR = "changelog.d"

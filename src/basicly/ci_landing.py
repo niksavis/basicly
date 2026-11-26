@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import json
+import shlex
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+import yaml
+
 from . import checkout, gh_cli, landing_guard, tracker, verify
-from .config import load_verify_config
+from .config import CONFIG_FILE, load_landing_workflows, load_verify_config
 
 MODE = landing_guard.CI_MODE
-WORKFLOW = "quality-gates.yml"
+WORKFLOWS = ("quality-gates.yml", "basicly-gates.yml")
+WORKFLOW_DIR = Path(".github/workflows")
 REF_PREFIX = "land"
 LEDGER = ".basicly/ledger"
 PROOFS = Path(".basicly/usage/ci-proofs.json")
@@ -29,6 +33,12 @@ class CiLandingError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class Workflow:
+    name: str
+    inputs: frozenset[str]
+
+
+@dataclass(frozen=True)
 class Candidate:
     lane: str
     record: str
@@ -40,6 +50,70 @@ class Candidate:
 class Clock:
     sleep: Callable[[float], None] = time.sleep
     monotonic: Callable[[], float] = time.monotonic
+
+
+def _dispatch_inputs(path: Path) -> frozenset[str] | None:
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except OSError, yaml.YAMLError:
+        return None
+    triggers = loaded.get("on", loaded.get(True)) if isinstance(loaded, dict) else None
+    if isinstance(triggers, str):
+        triggers = {triggers: None}
+    if isinstance(triggers, list):
+        triggers = dict.fromkeys(triggers)
+    if not isinstance(triggers, dict) or "workflow_dispatch" not in triggers:
+        return None
+    dispatch = triggers["workflow_dispatch"]
+    inputs = dispatch.get("inputs") if isinstance(dispatch, dict) else None
+    return frozenset(inputs) if isinstance(inputs, dict) else frozenset()
+
+
+def _named(root: Path, names: tuple[str, ...]) -> tuple[Workflow, ...]:
+    found = []
+    for name in names:
+        inputs = _dispatch_inputs(root / WORKFLOW_DIR / name)
+        if inputs is None:
+            raise CiLandingError(
+                f"[landing] workflows in {CONFIG_FILE} names {name}, but "
+                f"{(WORKFLOW_DIR / name).as_posix()} is missing or has no workflow_dispatch "
+                f"trigger; add the trigger or remove the name, {FALLBACK}"
+            )
+        found.append(Workflow(name, inputs))
+    return tuple(found)
+
+
+def workflows(root: Path) -> tuple[Workflow, ...]:
+    try:
+        configured = load_landing_workflows(root)
+    except ValueError as error:
+        raise CiLandingError(str(error)) from error
+    if configured:
+        return _named(root, configured)
+    found = [
+        Workflow(name, inputs)
+        for name in WORKFLOWS
+        if (inputs := _dispatch_inputs(root / WORKFLOW_DIR / name)) is not None
+    ]
+    if len(found) == 1:
+        return (found[0],)
+    if found:
+        listed = ", ".join(f'"{flow.name}"' for flow in found)
+        raise CiLandingError(
+            f"{' and '.join(flow.name for flow in found)} can both prove a landing; name the "
+            f"ones main needs green in {CONFIG_FILE}: [landing] workflows = [{listed}]"
+        )
+    raise CiLandingError(
+        f"no workflow in {WORKFLOW_DIR.as_posix()} can prove a landing: looked for "
+        f"{' and '.join(WORKFLOWS)} with a workflow_dispatch trigger; add the trigger to one, "
+        f"or name the workflows in {CONFIG_FILE} as [landing] workflows = [...], {FALLBACK}"
+    )
+
+
+def gh_cause(gh: Gh, argv: list[str]) -> str:
+    if gh(["auth", "status"]) is None:
+        return "gh is not installed or not logged in; run gh auth login"
+    return f"gh is logged in, so gh refused this call; run gh {shlex.join(argv)} to read why"
 
 
 def _git(root: Path, *args: str, check: bool = True) -> str:
@@ -92,34 +166,25 @@ def _push_ref(root: Path, head: str, ref: str) -> None:
         )
 
 
-def _find(candidate: Candidate, ref: str, gh: Gh, clock: Clock) -> dict:
+def _find(candidate: Candidate, flow: str, ref: str, gh: Gh, clock: Clock) -> dict:
     started = clock.monotonic()
     fields = "databaseId,url,status,conclusion,attempt"
+    argv = ["run", "list", "--workflow", flow, "--commit", candidate.head]
+    argv += ["--event", "workflow_dispatch", "--json", fields]
     while True:
-        listed = gh([
-            "run",
-            "list",
-            "--workflow",
-            WORKFLOW,
-            "--commit",
-            candidate.head,
-            "--event",
-            "workflow_dispatch",
-            "--json",
-            fields,
-        ])
+        listed = gh(argv)
         runs = json.loads(listed) if listed else []
         if runs:
             return runs[0]
         if clock.monotonic() - started >= FIND_S:
             raise CiLandingError(
-                f"dispatched {WORKFLOW} on {ref} but no run for {candidate.head[:12]} appeared "
+                f"dispatched {flow} on {ref} but no run for {candidate.head[:12]} appeared "
                 f"in {FIND_S / 60:.0f} min; nothing is landed; check gh run list --branch {ref}"
             )
         clock.sleep(POLL_S)
 
 
-def _wait(run: dict, gh: Gh, clock: Clock) -> dict:
+def _wait(flow: str, run: dict, gh: Gh, clock: Clock) -> dict:
     started = clock.monotonic()
     while True:
         viewed = gh([
@@ -135,13 +200,13 @@ def _wait(run: dict, gh: Gh, clock: Clock) -> dict:
         if clock.monotonic() - started >= TIMEOUT_S:
             unread = "" if viewed else "; gh could not read it, check gh auth status"
             raise CiLandingError(
-                f"{WORKFLOW} run {run.get('url')} did not finish in {TIMEOUT_S / 60:.0f} min"
+                f"{flow} run {run.get('url')} did not finish in {TIMEOUT_S / 60:.0f} min"
                 f"{unread}; nothing is landed; run the merge again for a new run, {FALLBACK}"
             )
         clock.sleep(POLL_S)
 
 
-def verdict(state: dict, candidate: Candidate) -> str:
+def verdict(state: dict, candidate: Candidate, flow: str = WORKFLOWS[0]) -> str:
     url = state.get("url")
     conclusion = state.get("conclusion")
     attempt = state.get("attempt")
@@ -149,40 +214,33 @@ def verdict(state: dict, candidate: Candidate) -> str:
         return ""
     if conclusion == "success":
         return (
-            f"{WORKFLOW} run {url} succeeded only on attempt {attempt}; a landing accepts a "
+            f"{flow} run {url} succeeded only on attempt {attempt}; a landing accepts a "
             "first-attempt pass; run the merge again for a new run"
         )
     failed = [
         str(job.get("name")) for job in state.get("jobs", []) if job.get("conclusion") == "failure"
     ]
     return (
-        f"{WORKFLOW} run {url} ended {conclusion} in {', '.join(failed) or 'no named job'}; "
+        f"{flow} run {url} ended {conclusion} in {', '.join(failed) or 'no named job'}; "
         f"{candidate.lane} is not landed; fix the lane and run basicly worktree merge "
         f"{candidate.lane} --bead {candidate.record} --mode ci again"
     )
 
 
-def _failed_runs(root: Path, candidate: Candidate, gh: Gh, tried: list[str]) -> list[dict]:
+def _failed_runs(
+    root: Path, candidate: Candidate, flow: str, gh: Gh, tried: list[str]
+) -> list[dict]:
     heads = [candidate.head]
     heads += [
         h for h in tried if h != candidate.head and same_outside_ledger(root, h, candidate.head)
     ]
     failed = []
     for head in heads:
-        listed = gh([
-            "run",
-            "list",
-            "--workflow",
-            WORKFLOW,
-            "--commit",
-            head,
-            "--json",
-            "databaseId,url,status,conclusion",
-        ])
+        argv = ["run", "list", "--workflow", flow, "--commit", head]
+        listed = gh([*argv, "--json", "databaseId,url,status,conclusion"])
         if listed is None:
             raise CiLandingError(
-                f"cannot read earlier {WORKFLOW} runs of {head[:12]} with gh; "
-                f"run gh auth login, {FALLBACK}"
+                f"cannot read earlier {flow} runs of {head[:12]}; {gh_cause(gh, argv)}, {FALLBACK}"
             )
         failed += [
             run
@@ -192,15 +250,25 @@ def _failed_runs(root: Path, candidate: Candidate, gh: Gh, tried: list[str]) -> 
     return failed
 
 
-def _spent(failed: list[dict], candidate: Candidate) -> str:
+def _spent(failed: list[dict], candidate: Candidate, flow: str = WORKFLOWS[0]) -> str:
     if len(failed) <= RERUNS:
         return ""
     urls = ", ".join(str(run.get("url")) for run in failed)
     return (
-        f"{WORKFLOW} already failed {len(failed)} times on this tree ({urls}); a landing takes "
+        f"{flow} already failed {len(failed)} times on this tree ({urls}); a landing takes "
         f"a first attempt and {RERUNS} rerun; change the lane, then run basicly worktree merge "
         f"{candidate.lane} --bead {candidate.record} --mode ci again"
     )
+
+
+def _dispatch(candidate: Candidate, flow: Workflow, ref: str, gh: Gh) -> None:
+    argv = ["workflow", "run", flow.name, "--ref", ref]
+    if "base" in flow.inputs:
+        argv += ["-f", f"base={candidate.base}"]
+    if gh(argv) is None:
+        raise CiLandingError(
+            f"cannot dispatch {flow.name} on {ref}; {gh_cause(gh, argv)}, {FALLBACK}"
+        )
 
 
 def prove(
@@ -210,28 +278,35 @@ def prove(
     earlier = proved(root, candidate.lane)
     if earlier.get("head") and same_outside_ledger(root, earlier["head"], candidate.head):
         return earlier
+    flows = workflows(root)
     tried = earlier.get("dispatched", "").split()
-    failed = _failed_runs(root, candidate, gh, tried)
-    if refused := _spent(failed, candidate):
-        raise CiLandingError(refused)
+    failed_before = 0
+    for flow in flows:
+        failed = _failed_runs(root, candidate, flow.name, gh, tried)
+        if refused := _spent(failed, candidate, flow.name):
+            raise CiLandingError(refused)
+        failed_before += len(failed)
     attempt = int(earlier.get("attempt", "0")) + 1
     ref = _ref(candidate.lane, attempt)
     dispatched = " ".join([*tried, candidate.head])
     _remember(root, candidate.lane, {"attempt": str(attempt), "dispatched": dispatched})
     _push_ref(root, candidate.head, ref)
-    if gh(["workflow", "run", WORKFLOW, "--ref", ref, "-f", f"base={candidate.base}"]) is None:
-        raise CiLandingError(f"cannot dispatch {WORKFLOW} with gh; run gh auth login, {FALLBACK}")
-    state = _wait(_find(candidate, ref, gh, clock), gh, clock)
-    if refused := verdict(state, candidate):
-        raise CiLandingError(refused)
+    for flow in flows:
+        _dispatch(candidate, flow, ref, gh)
+    urls = []
+    for flow in flows:
+        state = _wait(flow.name, _find(candidate, flow.name, ref, gh, clock), gh, clock)
+        if refused := verdict(state, candidate, flow.name):
+            raise CiLandingError(refused)
+        urls.append(str(state.get("url")))
     proof = {
         "head": candidate.head,
         "tree": _git(root, "rev-parse", f"{candidate.head}^{{tree}}"),
-        "run": str(state.get("url")),
+        "run": " ".join(urls),
         "ref": ref,
         "attempt": str(attempt),
         "dispatched": dispatched,
-        "failed_before": str(len(failed)),
+        "failed_before": str(failed_before),
     }
     _remember(root, candidate.lane, proof)
     return proof
@@ -313,7 +388,8 @@ def _proved_commit(root: Path, head: str) -> str:
 def reusable(root: Path, head: str, current_run: str, gh: Gh = gh_cli.run) -> str:
     candidate = _proved_commit(root, head)
     fields = "databaseId,url,conclusion,attempt"
-    listed = gh(["run", "list", "--workflow", WORKFLOW, "--commit", candidate, "--json", fields])
+    flow = workflows(root)[0].name
+    listed = gh(["run", "list", "--workflow", flow, "--commit", candidate, "--json", fields])
     for run in json.loads(listed) if listed else []:
         if (
             run.get("conclusion") == "success"
