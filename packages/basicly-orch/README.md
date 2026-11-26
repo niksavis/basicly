@@ -22,6 +22,16 @@ timeout, and any error ends the hook with exit code 0.
 
 The design is `docs/design/session-state.md`.
 
+## orch pace
+
+| Command | What it does |
+| --- | --- |
+| `orch-statusline-tap -- COMMAND [ARG...]` | the status line command wrapper: passes the status line input to COMMAND, prints its output byte for byte with its exit code, and saves `rate_limits` to its usage snapshot file `statusline.json`. A snapshot error never stops the output |
+| `orch pace` | prints used percent, reset time, burn rate and projection at reset for the 5-hour and 7-day windows, and the advice `start`, `hold` or `close idle`; refuses a missing snapshot or one older than 10 minutes |
+| `orch pace note RECORD start\|done` | writes the 5-hour percent on the record; `done` also writes the change since `start` and the record type |
+
+The snapshot folder, fields, write rule and reading rule are in `docs/design/usage-snapshot.md`.
+
 ## orch relay commands
 
 | Command | What it does |
