@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shlex
 import shutil
 import subprocess
@@ -130,6 +131,23 @@ def test_all_surfaces_refuse_an_archive_changed_by_an_old_tool(
     assert result.returncode == (2 if entry == "kit" else 1), result.stdout + result.stderr
     assert "archive" in result.stdout + result.stderr
     assert shard.read_text(encoding="utf-8") == '{"record":"acme-a1b2"}\n'
+
+
+@pytest.mark.parametrize("extra", [(), ("--rebuild",)])
+def test_fsck_on_the_frozen_ledger_file_names_the_vault_command(
+    tmp_path: Path, bare: Path, extra: tuple[str, ...]
+) -> None:
+    root = _frozen(tmp_path, bare)
+    before = _history(root)
+
+    result = _kit(root, "fsck", LEDGER, *extra)
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "Traceback" not in result.stdout + result.stderr
+    refused = json.loads(result.stdout)["refused"]
+    assert "\n" not in refused
+    assert f"fsck --vault {bare}" in refused
+    assert _history(root) == before
 
 
 def test_merge_reads_vault_ids_and_never_folds_or_commits_local_tracker_data(

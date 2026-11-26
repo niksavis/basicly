@@ -223,6 +223,7 @@ def _dor(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
 
 
 def _fsck(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
+    vault_cli.ledger_freeze.refuse_local_fsck(Path(args.directory))
     rebuilt: dict[str, object] = {}
     if args.rebuild:
         done = fsck.rebuild(args.directory)

@@ -1,0 +1,1 @@
+- **fsck on the frozen ledger file of a vault consumer names the vault command.** `fsck .basicly/ledger` printed a Python traceback; it now exits 2 with one line that names `fsck --vault URL` (basicly-jw1kmii).
