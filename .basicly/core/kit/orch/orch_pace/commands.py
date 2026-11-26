@@ -95,7 +95,9 @@ def show(
     lines += [plan.line(p, now) for p in paces]
     lines.append(f"advice: {plan.overall(paces)}")
     if "five_hour" in windows:
-        lines.append(plan.fit_line(windows["five_hour"], now, working_count(cwd, environ)))
+        count = working_count(cwd, environ)
+        lines.append(plan.fit_line(windows["five_hour"], now, count))
+        lines.append(plan.sessions_line(windows["five_hour"], now, count))
     lines += costs.lines(cwd, tracker)
     return "\n".join(lines)
 

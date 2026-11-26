@@ -79,7 +79,15 @@ def pace(name: str, window: Window, now: int) -> Pace:
     )
 
 
-def fit(window: Window, now: int, working: int) -> tuple[int | None, str]:
+@dataclass(frozen=True)
+class Fit:
+    needed: float
+    burn: float
+    working: int
+    count: int
+
+
+def measure(window: Window, now: int, working: int) -> tuple[Fit | None, str]:
     used, resets = _num(window, "used_percentage"), _num(window, "resets_at")
     if resets <= now:
         return None, "the window reset and has no reading yet"
@@ -92,9 +100,32 @@ def fit(window: Window, now: int, working: int) -> tuple[int | None, str]:
     burn = (recent[-1][1] - recent[0][1]) * HOUR_S / taken
     if burn <= 0:
         return None, "no use measured in the last readings"
-    room = (CLOSE_AT - used) * HOUR_S / (resets - now)
+    needed = (CLOSE_AT - used) * HOUR_S / (resets - now)
     basis = f"burn {burn:.1f}%/h over the last {int(taken // 60)} min with {working} working"
-    return int(room * working // burn), basis
+    return Fit(needed, burn, working, int(needed * working // burn)), basis
+
+
+def fit(window: Window, now: int, working: int) -> tuple[int | None, str]:
+    found, basis = measure(window, now, working)
+    return (found.count if found else None), basis
+
+
+def sessions_line(window: Window, now: int, working: int) -> str:
+    found, basis = measure(window, now, working)
+    if found is None:
+        return f"sessions: unknown ({basis})"
+    change = found.count - found.working
+    if change > 0:
+        verb = f"start {change} more"
+    elif change == 0:
+        verb = f"hold at {found.working}"
+    else:
+        verb = f"start none; let {-change} of {found.working} finish"
+    return (
+        f"sessions: {verb} (needed {found.needed:.1f}%/h until the reset, "
+        f"{found.burn / found.working:.1f}%/h per working session, {found.working} working, "
+        f"{found.count} fit)"
+    )
 
 
 def fit_line(window: Window, now: int, working: int) -> str:
