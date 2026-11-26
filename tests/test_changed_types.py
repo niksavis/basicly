@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parent.parent / ".scripts" / "check_changed_types.py"
 BROKEN = 'def f() -> int:\n    return "x"\n'
 FINE = "def f() -> int:\n    return 1\n"
@@ -55,3 +57,37 @@ def test_a_changed_file_outside_the_included_folders_is_not_checked(tmp_path: Pa
     root = _project(tmp_path, {"other/bad.py": BROKEN})
 
     assert checker.main(["--root", str(root), "other/bad.py"]) == 0
+
+
+LIB = "def f(a: int) -> int:\n    return a\n"
+
+
+@pytest.mark.parametrize(
+    "caller",
+    [
+        "from pkg.lib import f\n\nf(1, 2)\n",
+        "from . import lib\n\nlib.f(1, 2)\n",
+        "from pkg import (\n    lib,\n)\n\nlib.f(1, 2)\n",
+    ],
+)
+def test_a_changed_signature_fails_on_its_unchanged_caller(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], caller: str
+) -> None:
+    root = _project(
+        tmp_path, {"src/pkg/__init__.py": "", "src/pkg/lib.py": LIB, "src/pkg/user.py": caller}
+    )
+
+    assert checker.main(["--root", str(root), "src/pkg/lib.py"]) == 1
+
+    out = capsys.readouterr().out
+    assert "user.py" in out
+    assert "checked 2 files, 1 of them importers of a changed module" in out
+
+
+def test_a_module_that_does_not_import_the_change_is_not_checked(tmp_path: Path) -> None:
+    root = _project(
+        tmp_path,
+        {"src/pkg/__init__.py": "", "src/pkg/lib.py": LIB, "src/pkg/other.py": BROKEN},
+    )
+
+    assert checker.main(["--root", str(root), "src/pkg/lib.py"]) == 0
