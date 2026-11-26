@@ -293,6 +293,39 @@ def test_a_tree_that_failed_once_gets_one_recorded_rerun(tmp_path: Path) -> None
     assert proof["failed_before"] == "1"
 
 
+class Rerun(Gh):
+    def __init__(self) -> None:
+        super().__init__()
+        self.old = {**self.state, "databaseId": 3, "url": "old-run", "conclusion": "failure"}
+        self.old["headBranch"] = "land/lane-a/1"
+        self.new = {**self.state, "headBranch": "land/lane-a/2"}
+
+    def __call__(self, argv: list[str]) -> str | None:
+        if argv[:2] == ["run", "view"]:
+            self.calls.append(argv)
+            return json.dumps(self.old if argv[2] == "3" else self.new)
+        if argv[:2] == ["run", "list"]:
+            self.calls.append(argv)
+            runs = [self.old, self.new] if self.dispatched else [self.old]
+            if "--branch" in argv:
+                runs = [
+                    run for run in runs if run["headBranch"] == argv[argv.index("--branch") + 1]
+                ]
+            return json.dumps(runs)
+        return super().__call__(argv)
+
+
+def test_a_rerun_reports_the_run_of_its_new_ref_not_the_earlier_failure(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    with pytest.raises(ci_landing.CiLandingError):
+        ci_landing.prove(repo, _candidate(repo), Gh("failure"), CLOCK)
+
+    proof = ci_landing.prove(repo, _candidate(repo), Rerun(), CLOCK)
+
+    assert proof["ref"] == "land/lane-a/2"
+    assert proof["run"] == "https://example.invalid/runs/7"
+
+
 def test_a_changed_lane_after_a_failure_gets_a_new_branch(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     with pytest.raises(ci_landing.CiLandingError):
