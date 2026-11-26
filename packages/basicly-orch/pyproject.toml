@@ -33,3 +33,4 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "../../.basicly/core/kit/orch/orch_guard" = "orch_guard"
 "../../.basicly/core/kit/orch/orch_relay" = "orch_relay"
 "../../.basicly/core/kit/orch/orch_pace" = "orch_pace"
+"../../.basicly/core/kit/orch/orch_automode" = "orch_automode"

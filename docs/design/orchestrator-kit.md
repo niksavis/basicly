@@ -400,3 +400,13 @@ The first lessons, from operating the workspace orchestrator, are requirements f
 | L10 | The core has no terminal dependency; terminal wake is an optional, detected adapter | `orch doctor` reports the active adapter and what is lost without one; the kit tests run with no adapter installed (section 15.1) |
 | L11 | Every risk the orchestrator names to the person becomes a check in the relayed action | `orch approve` and `orch decide` take a risk list; each risk maps to a check line in the action, or the tool refuses by name |
 | L12 | An orchestrator decision that stands in for an ask-first approval carries the rule words, the rule date, the record and entry stamp, and the exact action, in the relayed-approval format | `orch decide` writes the record entry and builds the message from it; the worker relayed-approval fragment gains the decision class |
+
+## 17. Auto mode rules
+
+A worker under Claude Code auto mode runs lanes, landings, cleanup and tags without a prompt only when the user's `autoMode` settings allow them.
+`orch automode plan` and `apply` write those settings from one source, `orch_automode/rules.json`, with the repositories from a config file (`packages/basicly-orch/README.md`, section "orch automode").
+
+- Compact rules. `claude auto-mode critique` cut its answer at 2.5 to 5 KB and returned "No feedback came back" for the long rule set of 2026-11-26. The token and guard definitions are written once.
+- One source for rules and permissions. A deny rule blocks before the classifier: `Bash(git rebase*)` in a project's settings refused a lane rebase that the allow rule names (measured 2026-11-26). The plan names each such conflict, and apply refuses until none is left.
+- One guarded step per call. Most classifier refusals in 7 days came from calls that bundled a safe step with a risky one.
+- Fail closed. A guard that runs `git -C <path> status --porcelain` inside `test -z "$(...)"` passes when git fails, because the failed command prints nothing to standard output. The generated guard adds `2>&1`.

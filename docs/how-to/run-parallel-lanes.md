@@ -199,7 +199,8 @@ uv run basicly worktree merge <name> --bead <record> --mode ci
 basicly worktree cleanup <name>
 ```
 
-- Auto mode treats a lane folder as part of the project only when the user's `autoMode` settings say so. Add an `environment` entry that says the lane folders `<repo>.worktrees/<lane>/` belong to the project, and an `allow` entry for git work in a lane folder.
+- Auto mode treats a lane folder as part of the project only when the user's `autoMode` settings say so. `orch automode plan` and `orch automode apply` write these entries, with the guarded landing, cleanup and tag lines (see `packages/basicly-orch/README.md`, section "orch automode").
+- Run one guarded step per tool call. The classifier judges a call as a whole, so a call that bundles a safe step with a risky one is refused whole.
 - Run the merge with `uv run basicly`. The globally installed `basicly` does not put the project's `.venv` on the path of a check, so a check that runs a bare `pytest` fails.
 - When the lane changes the landing engine, the merge refuses with `NOT-READY` and names the command to run from the lane's engine. Run that command.
 
