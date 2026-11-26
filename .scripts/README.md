@@ -13,6 +13,9 @@ Cross-platform scripts for this repository.
 
 - `python src/basicly/lefthook_artifacts.py --download` prepares the pinned,
   checksum-verified Lefthook release for source development and packaging.
+  A failed or timed-out download is tried up to 3 times, with a 60 s read
+  timeout each and no new try after 240 s for all downloads; an HTTP 4xx
+  answer is not retried.
   Use `--from-dir <directory>` for supplied local artifacts. Assets stay in
   ignored `build/lefthook/`; builds and consumer installs never download them.
   Every entry names the official upstream release URL, so the repository holds no
