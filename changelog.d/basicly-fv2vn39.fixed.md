@@ -1,0 +1,1 @@
+- `lefthook_artifacts.py --download` now tries a timed-out or failed Lefthook artifact download up to 3 times, after 5 s and 15 s waits, with the 60 s read timeout unchanged and no new try after 240 s for all downloads; a final failure names the host, the attempts and the limits.

@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import shutil
 import tempfile
+import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
@@ -13,6 +17,9 @@ METADATA = Path(__file__).with_name("lefthook_assets")
 MANIFEST = json.loads((METADATA / "manifest.json").read_text(encoding="utf-8"))
 VERSION: str = MANIFEST["version"]
 PREPARE = "python src/basicly/lefthook_artifacts.py --from-dir <artifacts> (or --download)"
+READ_TIMEOUT_S = 60
+RETRY_WAITS_S = (5, 15)
+DEADLINE_S = 240
 
 
 def prepared_directory(root: Path) -> Path:
@@ -47,6 +54,7 @@ def artifact_directory() -> Path:
 def prepare(root: Path, source: Path | None) -> Path:
     destination = prepared_directory(root)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + DEADLINE_S
     with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
         staged = Path(temporary)
         for entry in MANIFEST["assets"]:
@@ -55,8 +63,7 @@ def prepare(root: Path, source: Path | None) -> Path:
                 url = entry["url"]
                 if not url.startswith("https://"):
                     raise ValueError(f"Lefthook artifact URL must use HTTPS: {name}")
-                with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 — HTTPS is checked above; URLs and artifact hashes are pinned in the committed manifest
-                    (staged / name).write_bytes(response.read())
+                (staged / name).write_bytes(_download(url, deadline))
             else:
                 shutil.copyfile(source / name, staged / name)
         validate_artifacts(staged)
@@ -64,6 +71,39 @@ def prepare(root: Path, source: Path | None) -> Path:
             shutil.rmtree(destination)
         staged.replace(destination)
     return destination
+
+
+def _fetch(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=READ_TIMEOUT_S) as response:  # noqa: S310 — HTTPS is checked by the caller; URLs and artifact hashes are pinned in the committed manifest
+        return response.read()
+
+
+def _download(url: str, deadline: float) -> bytes:
+    attempts = len(RETRY_WAITS_S) + 1
+    failure: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return _fetch(url)
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500:
+                raise
+            failure = exc
+        except (OSError, http.client.HTTPException) as exc:
+            failure = exc
+        wait = RETRY_WAITS_S[attempt - 1] if attempt < attempts else 0
+        if attempt == attempts or time.monotonic() + wait + READ_TIMEOUT_S > deadline:
+            host = urllib.parse.urlsplit(url).hostname
+            raise OSError(
+                f"download from {host} failed after {attempt} of {attempts} attempts"
+                f" with a {READ_TIMEOUT_S} s read timeout each"
+                f" and a {DEADLINE_S} s limit for all downloads: {failure}"
+            ) from failure
+        print(
+            f"Lefthook artifact download attempt {attempt} of {attempts}"
+            f" failed: {failure}; retrying"
+        )
+        time.sleep(wait)
+    raise AssertionError(attempts)
 
 
 def _verified(directory: Path) -> bool:

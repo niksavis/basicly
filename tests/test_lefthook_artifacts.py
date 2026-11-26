@@ -6,6 +6,7 @@ import io
 import json
 import re
 import subprocess  # nosec B404
+from email.message import Message
 from pathlib import Path
 
 import pytest
@@ -85,6 +86,89 @@ def test_explicit_download_uses_pinned_manifest_urls_and_verifies_bytes(
     monkeypatch.setattr(artifacts.urllib.request, "urlopen", download)
     artifacts.validate_artifacts(artifacts.prepare(tmp_path / "checkout", None))
     assert seen == [entry["url"] for entry in artifacts.MANIFEST["assets"]]
+
+
+def test_a_timed_out_download_is_retried_and_preparation_continues(
+    tmp_path: Path, supplied: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    waits: list[float] = []
+
+    def flaky(url: str, *, timeout: int):
+        assert timeout == artifacts.READ_TIMEOUT_S
+        calls.append(url)
+        if calls.count(url) == 1:
+            raise TimeoutError("The read operation timed out")
+        return io.BytesIO((supplied / url.rsplit("/", 1)[1]).read_bytes())
+
+    monkeypatch.setattr(artifacts.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(artifacts.time, "sleep", waits.append)
+    artifacts.validate_artifacts(artifacts.prepare(tmp_path / "checkout", None))
+    urls = [entry["url"] for entry in artifacts.MANIFEST["assets"]]
+    assert calls == [url for url in urls for _ in range(2)]
+    assert waits == [artifacts.RETRY_WAITS_S[0]] * len(urls)
+
+
+@pytest.mark.usefixtures("supplied")
+def test_a_download_that_never_answers_names_host_attempts_and_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def stalled(url: str, *, timeout: int):
+        assert timeout == artifacts.READ_TIMEOUT_S
+        calls.append(url)
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(artifacts.urllib.request, "urlopen", stalled)
+    monkeypatch.setattr(artifacts.time, "sleep", lambda _seconds: None)
+    attempts = len(artifacts.RETRY_WAITS_S) + 1
+    with pytest.raises(
+        OSError,
+        match=rf"example\.invalid failed after {attempts} of {attempts} attempts"
+        r" with a 60 s read timeout",
+    ):
+        artifacts.prepare(tmp_path / "checkout", None)
+    assert len(calls) == attempts
+
+
+@pytest.mark.usefixtures("supplied")
+def test_no_retry_starts_past_the_limit_for_all_downloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = [0.0]
+    calls: list[str] = []
+
+    def stalled(url: str, *, timeout: int):
+        assert timeout == artifacts.READ_TIMEOUT_S
+        calls.append(url)
+        clock[0] += timeout
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(artifacts.urllib.request, "urlopen", stalled)
+    monkeypatch.setattr(artifacts.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        artifacts.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+    )
+    monkeypatch.setattr(artifacts, "DEADLINE_S", 100)
+    with pytest.raises(OSError, match=r"failed after 1 of 3 attempts .* and a 100 s limit"):
+        artifacts.prepare(tmp_path / "checkout", None)
+    assert len(calls) == 1
+
+
+@pytest.mark.usefixtures("supplied")
+def test_a_refused_download_is_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def missing(url: str, *, timeout: int):
+        assert timeout == artifacts.READ_TIMEOUT_S
+        calls.append(url)
+        raise artifacts.urllib.error.HTTPError(url, 404, "Not Found", Message(), None)
+
+    monkeypatch.setattr(artifacts.urllib.request, "urlopen", missing)
+    with pytest.raises(artifacts.urllib.error.HTTPError):
+        artifacts.prepare(tmp_path / "checkout", None)
+    assert len(calls) == 1
 
 
 @pytest.mark.usefixtures("supplied")
