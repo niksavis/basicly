@@ -376,19 +376,35 @@ def test_the_vault_tests_start_without_the_ci_variables() -> None:
     assert not {"CI", "BASICLY_TRACKER_EPHEMERAL", "BASICLY_TRACKER_SESSION"} & set(os.environ)
 
 
+def _timed_share_of_a_write(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    hooks = sys.modules["basicly_tracker_kit_vault_write"].vault_hooks
+    original = hooks.due_share
+    spent: list[float] = []
+
+    def timed(*args: Any, **options: Any) -> dict | None:
+        started = time.monotonic()
+        try:
+            return original(*args, **options)
+        finally:
+            spent.append(time.monotonic() - started)
+
+    monkeypatch.setattr(hooks, "due_share", timed)
+    return spent
+
+
 def test_a_write_whose_share_steps_aside_is_shared_by_the_next_trigger(
-    tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seed_native_target(cli, tmp_path, bare, "r-1")
     state = tmp_path / "s"
     clone = vault_clone.locate(state, str(bare))
     base = ["--vault", str(bare), "--state", str(state)]
     clone.folder.mkdir(parents=True, exist_ok=True)
+    stepped = _timed_share_of_a_write(monkeypatch)
 
     with vault_hooks.events.LedgerLock(clone.folder / vault_share.SHARE_LOCK):
-        started = time.monotonic()
         code, shown = _cli(["comment", "r-1", "--text", "stepped aside", *base], capsys)
-        spent = time.monotonic() - started
+    [spent] = stepped
     (clone.folder / vault_share.SHARED_AT).write_text("0\n", encoding="utf-8")
     later = _hook("prompt", clone, state)
 
