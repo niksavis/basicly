@@ -44,6 +44,7 @@ REFUSED_ON_A_FRESH_LEDGER = {
     "hook --vault": "is neither a local repository folder",
     "claim --vault": "is neither a local repository folder",
     "commit-msg --vault": "is neither a local repository folder",
+    "close --landed": "names no commit in this repository",
 }
 LEFT_BEHIND = frozenset({".basicly", ".git", ".gitattributes", ".gitignore", ".agents", ".claude"})
 LEFT_BEHIND |= {"issues.jsonl", "tracker-board.html"}
@@ -272,7 +273,9 @@ def test_every_documented_command_runs_on_a_fresh_install(
     expected = (
         None
         if vault
-        else REFUSED_ON_A_FRESH_LEDGER.get(argv[0] + (" --vault" if "--vault" in argv else ""))
+        else REFUSED_ON_A_FRESH_LEDGER.get(
+            argv[0] + next((flag for flag in (" --vault", " --landed") if flag[1:] in argv), "")
+        )
     )
     if expected is not None:
         assert expected in str(report.get("refused")), report

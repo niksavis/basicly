@@ -305,7 +305,7 @@ def test_a_reviewed_task_keeps_its_cross_project_dependency_context(
     assert cli.main(["tracker", "list", "--json", "--all-projects"]) == 0
 
     rows = {row["id"]: row for row in json.loads(capsys.readouterr().out)["records"]}
-    assert rows[OTHER]["ready"] is (dependency_closed and current_review)
+    assert rows[OTHER]["ready"] is dependency_closed
     ledger = owned_store.present_ledger(repo, all_projects=True)
     found = events.read_events(ledger)[0]
     assert process.confirmation_report(found, OTHER)["review_current"] is current_review

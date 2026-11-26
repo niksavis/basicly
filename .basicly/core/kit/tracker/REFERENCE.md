@@ -179,6 +179,17 @@ Move one or more records to `closed`. The reason is the permanent record of what
 python3 .basicly/kit/tracker/cli.py close .basicly/ledger acme-a1b2 --reason "Shipped the importer fix; the round-trip test passes"
 ```
 
+A task, bug or chore that landed with `basicly worktree merge --mode ci` closes in one call by
+its landing evidence. The record must carry the landing-verification artifact for the commit,
+and `--tests` maps each acceptance criterion to a test file in that commit, or to `null`,
+which opens a follow-up record. `--superseded-by` closes a record that another record or a
+release tag replaced, as cancelled.
+
+```sh
+python3 .basicly/kit/tracker/cli.py close .basicly/ledger acme-a1b2 --reason "Landed the fix" --landed 4f1a7b3c --tests '{"the import round-trips": "tests/test_import.py"}'
+python3 .basicly/kit/tracker/cli.py close .basicly/ledger acme-a1b2 --reason "Replaced" --superseded-by acme-c3d4
+```
+
 ### assign
 
 Reserve a record for a person without changing its status, so that others see it is taken.

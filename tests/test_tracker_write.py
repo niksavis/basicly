@@ -81,7 +81,7 @@ def test_a_shaped_capture_reports_process_evidence_it_still_owes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     body = "## Trigger\n\nWhen X happens, I want a record, so I can track it."
-    argv = ["tracker", "write", "--", "create", "shaped", "-t", "task", "-d", body]
+    argv = ["tracker", "write", "--", "create", "shaped", "-t", "feature", "-d", body]
     argv += ["--acceptance", "- [ ] it exists", "--requirements", "It exists."]
 
     assert cli.main(argv) == 0

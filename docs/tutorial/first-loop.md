@@ -229,15 +229,14 @@ When a reader opens the repo, I want a one line getting started note, so I can r
 
 ```text
 created: myrepo-2i3r
-myrepo-2i3r is not ready: it owes ## Confirmation Plan; claim refuses it
 ...
 ```
 
-The record is filed, but the claim refuses it until someone has reviewed it. Tasks, bugs
-and chores can submit a compact review containing only `checks`. This walkthrough uses
-the supported full review to show how to retain a real discussion: six INVEST rationales,
-conversation references and a check for each criterion. Write the agreement on the card
-first:
+The record is filed and ready: a task, bug or chore starts without a review. A review is
+still how you agree the checks with a person, and a close needs it unless the record closes
+by its landing evidence. This walkthrough records the full review to show how to retain a
+real discussion: six INVEST rationales, conversation references and a check for each
+criterion. Write the agreement on the card first:
 
 ```sh
 python3 .basicly/core/kit/tracker/cli.py comment .basicly/ledger myrepo-2i3r 'Agreed: one line in NOTES.md that points a reader at basicly status.'

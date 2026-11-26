@@ -49,13 +49,14 @@ def test_a_small_task_starts_without_a_review_and_closes_on_one_confirmed_check(
     assert _run(capsys, "close", str(ledger), record, "--reason", "Saved.")[0] == cli.EXIT_OK
 
 
-def test_without_the_size_field_a_task_still_needs_a_review(
+def test_without_the_size_field_a_task_starts_but_still_needs_a_review_to_close(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ledger = tmp_path / "ledger"
     record = _record(ledger, capsys, "issue_type=task")
 
-    code, refusal = _run(capsys, "claim", str(ledger), record, "--to", "agent")
+    assert _run(capsys, "claim", str(ledger), record, "--to", "agent")[0] == cli.EXIT_OK
+    code, refusal = _run(capsys, "close", str(ledger), record, "--reason", "Saved.")
 
     assert code == cli.EXIT_REFUSED
     assert "Confirmation Plan" in json.dumps(refusal)

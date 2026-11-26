@@ -55,7 +55,10 @@ def test_a_new_readiness_batch_refuses_a_review_after_its_contract_changes(
     template = kit.scheduler.templates.load(ledger)
     after = process.readiness_many(found, fields, template=template)
 
-    assert after[source] == ("## Confirmation Plan",)
+    assert (
+        "## Confirmation Plan"
+        in process.confirmation_report(found, source, template=template)["owed"]
+    )
     assert after == {
         record: process.readiness(found, record, held, template=template)
         for record, held in fields.items()

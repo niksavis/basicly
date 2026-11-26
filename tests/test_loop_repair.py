@@ -342,7 +342,7 @@ def test_a_same_holder_resume_refuses_a_review_staled_by_changed_criteria(
         description="## Trigger\n\nWhen resuming, I want a current review, so I can build safely.",
         acceptance_criteria="Given a held record when resumed then its current review is required",
         requirements="A review must describe the current criterion",
-        issue_type="task",
+        issue_type="feature",
     )
     kit = tracker.kit(tmp_path)
     recorded_review(

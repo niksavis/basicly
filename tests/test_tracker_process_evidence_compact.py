@@ -168,10 +168,13 @@ def test_compact_review_and_confirmation_are_invalidated_by_contract_changes(
             "issue_type=feature" if change == "type" else "requirements=Show the saved identifier."
         )
         assert _run(capsys, "update", str(ledger), record, "--field", field)[0] == 0
-    result, report = _run(capsys, "dor", str(ledger), record)
-    assert result == cli.EXIT_REFUSED
-    assert "## Confirmation Plan" in report["owed"]
     before = cli.events.read_events(ledger)[0]
+    process = cli.commands.review.process
+    template = cli.scheduler.templates.load(ledger)
+    assert (
+        "## Confirmation Plan"
+        in process.confirmation_report(before, record, template=template)["owed"]
+    )
     assert (
         _run(capsys, "close", str(ledger), record, "--reason", "Fixture completed.")[0]
         == cli.EXIT_REFUSED

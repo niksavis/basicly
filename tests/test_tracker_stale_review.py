@@ -48,11 +48,13 @@ def test_an_edge_that_voids_a_review_says_so_in_its_remedy(
     first, second = _task(ledger, capsys, "first"), _task(ledger, capsys, "second")
     _review(ledger, capsys, first, "first")
 
-    code, written = _run(capsys, "dep", str(ledger), first, second)
+    assert _run(capsys, "dep", str(ledger), first, second)[0] == cli.EXIT_OK
 
-    assert code == cli.EXIT_OK
-    assert written["remedy"].startswith(VOID)
-    assert "review --evidence" in written["remedy"]
+    code, refused = _run(capsys, "close", str(ledger), first, "--reason", "done")
+
+    assert code == cli.EXIT_REFUSED
+    assert VOID in refused["refused"]
+    assert "review --evidence" in refused["refused"]
 
 
 def test_a_record_never_reviewed_is_not_told_its_review_is_void(
@@ -61,8 +63,10 @@ def test_a_record_never_reviewed_is_not_told_its_review_is_void(
     ledger = tmp_path / "ledger"
     first, second = _task(ledger, capsys, "first"), _task(ledger, capsys, "second")
 
-    code, written = _run(capsys, "dep", str(ledger), first, second)
+    assert _run(capsys, "dep", str(ledger), first, second)[0] == cli.EXIT_OK
 
-    assert code == cli.EXIT_OK
-    assert written["owed"] == ["## Confirmation Plan"]
-    assert VOID not in written["remedy"]
+    code, refused = _run(capsys, "close", str(ledger), first, "--reason", "done")
+
+    assert code == cli.EXIT_REFUSED
+    assert "## Confirmation Plan" in refused["refused"]
+    assert VOID not in refused["refused"]
