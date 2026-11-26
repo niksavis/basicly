@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the tracker refuse instead of guess. A tracker read that fails, a ledger line that is not an event, and fsck on a frozen ledger now stop with a named cause and the command that fixes it, where before they showed an empty or wrong tracker. **Breaking:** a claim no longer records your git `user.name`. Choose a pseudonym once with `git config basicly.holder PSEUDONYM`, or the claim refuses. `orch pace` now says how many sessions to start or hold.
+
+- Breaking, tracker: `claim`, `assign`, `update --status in_progress` and the engine loop refuse when no `--to`, `BASICLY_HOLDER` or `basicly.holder` names a pseudonym, so no real name enters the ledger. Remedy: `git config basicly.holder PSEUDONYM` (basicly-d6cfl4v).
+- Tracker reads: a failed read is refused by name in the engine readers, the release-note and waiver gates, the review gate, the frozen forecast, the board, record lookups and session start (basicly-wutgzws, basicly-309ouz7), and a ledger line that is not an event is named with its file and line (basicly-1jlh5si).
+- Tracker writes: two branches never share a shard file (basicly-qlf1ed3), a vault commit names only records of its own prefix (basicly-0ma7n7w), the vault hooks name queued events and `sync --vault` (basicly-vrqrkxy), `vault-init` keeps `--prefix` (basicly-bi81emt.1), `fsck` on the frozen ledger names `fsck --vault` (basicly-jw1kmii), and a `close --landed` follow-up accepts a recorded run (basicly-zr6f16f).
+- Orchestrator: `orch pace` prints a `sessions:` line (basicly-zidiwg9).
+- CI: the Lefthook download retries (basicly-fv2vn39), and a CI landing rerun reports its own run (basicly-7pclh13).
+- Orchestrator tools need a reinstall from the tag, because `uv tool upgrade` ignores a tag pin: `uv tool install --force "basicly-orch @ git+https://github.com/niksavis/basicly@v0.50.0#subdirectory=packages/basicly-orch"`.
+
 ## v0.49.6 - 2026-11-26
 
 Delta: v0.49.5..v0.49.6
