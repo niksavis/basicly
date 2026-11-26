@@ -4926,7 +4926,13 @@ def _bind_provisioned_worktree(repo_root: Path, issue_id: str, session: worktree
 
 
 def _cmd_worktree_cleanup(args: argparse.Namespace) -> int:
-    worktree.cleanup(args.name, force=args.force, repo_root=_repo_root())
+    root = _repo_root()
+    lane = worktree.load_session(args.name, root)
+    base = lane.base if lane is not None else checkout.current_branch(root)
+    swept = bool(delivery_pr.branches(root, args.name))
+    worktree.cleanup(args.name, force=args.force, repo_root=root, missing_ok=swept)
+    for note in delivery_pr.sweep(root, args.name, base):
+        print(f"  {note}")
     return 0
 
 

@@ -91,6 +91,21 @@ def test_a_replaced_lane_whose_work_landed_by_copy_has_its_remote_branch_deleted
     assert not _on_origin(main, "harness/old")
 
 
+def test_a_branch_whose_head_is_on_the_base_is_deleted_after_the_base_changed_its_path(
+    main: Path,
+) -> None:
+    _lane(main, "pr/lane/old", "e.txt")
+    _git(main, "merge", "-q", "--no-ff", "-m", "land", "pr/lane/old")
+    (main / "e.txt").write_text("changed on main\n", encoding="utf-8")
+    _git(main, "commit", "-q", "-am", "main changes the path again")
+    _git(main, "push", "-q", "origin", "main")
+
+    note = remote_branches.delete_landed(main, "pr/lane/old", "main", worktree.unlanded_paths)
+
+    assert note.startswith("deleted origin/pr/lane/old")
+    assert not _on_origin(main, "pr/lane/old")
+
+
 def test_a_branch_with_no_remote_copy_is_left_alone(main: Path) -> None:
     assert (
         remote_branches.delete_landed(main, "harness/none", "main", worktree.unlanded_paths) == ""

@@ -1,0 +1,1 @@
+- **A pr delivery closes the pull requests it replaced.** After a merge, and in `basicly worktree cleanup NAME`, every other open `pr/NAME/` pull request is closed with a comment that names the merged one, and its branch is deleted when its head is on the base or the base holds every path it changed (basicly-iqc0k85).

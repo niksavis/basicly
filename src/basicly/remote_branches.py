@@ -31,6 +31,18 @@ def _base_head(main: Path, base: str | None) -> tuple[str, str]:
     return landed, ""
 
 
+def _by_ancestry(
+    main: Path, head: str, landed: str, base: str | None, started: str | None
+) -> str | None:
+    trunk = git(["rev-list", "--first-parent", landed], cwd=main, check=False).stdout.split()
+    fresh = not started or head.startswith(started) or started.startswith(head)
+    if head in trunk and fresh:
+        return f"it has no commit of its own beyond {REMOTE}/{base}"
+    if git(["merge-base", "--is-ancestor", head, landed], cwd=main, check=False).returncode == 0:
+        return ""
+    return None
+
+
 def _keep_reason(
     main: Path, head: str, base: str | None, unlanded: Unlanded, started: str | None
 ) -> str:
@@ -42,6 +54,8 @@ def _keep_reason(
             f"its head or {REMOTE}/{base} is not fetched here; "
             f"run git fetch {REMOTE} and clean up again"
         )
+    if (decided := _by_ancestry(main, head, landed, base, started)) is not None:
+        return decided
     missing = unlanded(main, landed, head)
     if missing is None:
         return f"it could not be compared with {REMOTE}/{base}"
@@ -50,10 +64,6 @@ def _keep_reason(
             f"{REMOTE}/{base} does not hold {len(missing)} path(s) it changed, so it has not "
             f"landed: {', '.join(missing)}"
         )
-    trunk = git(["rev-list", "--first-parent", landed], cwd=main, check=False).stdout.split()
-    fresh = not started or head.startswith(started) or started.startswith(head)
-    if head in trunk and fresh:
-        return f"it has no commit of its own beyond {REMOTE}/{base}"
     return ""
 
 
