@@ -3514,6 +3514,7 @@ def test_another_holder_is_preserved_without_claim_write(
     ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs(execution="worker"))
     monkeypatch.setattr(loop.tracker, "read_record", lambda *_a: {"status": "in_progress"})
     monkeypatch.setattr(loop.tracker, "held_by_another", lambda *_a: "Other Builder")
+    monkeypatch.setattr(loop.tracker, "holder_name", lambda *_a: "Builder")
     writes: list[list[str]] = []
     monkeypatch.setattr(loop.tracker, "write", lambda _r, args: writes.append(args))
     result = loop._hold_for_this_session(ctx)

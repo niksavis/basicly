@@ -184,6 +184,7 @@ def _seed_repo(tmp_path: Path, runner_config: str) -> Path:
     repo.mkdir()
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.name", "Harness Test")
+    _git(repo, "config", "basicly.holder", "Harness Test")
     _git(repo, "config", "user.email", "harness@example.invalid")
     _git(repo, "config", "commit.gpgsign", "false")
     (repo / "basicly.toml").write_text(_BASE_CONFIG + runner_config, encoding="utf-8")

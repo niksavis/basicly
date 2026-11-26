@@ -536,6 +536,10 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
 
 def _hold_for_this_session(ctx: _Ctx) -> AdvanceResult | None:
 
+    me = tracker.holder_name(ctx.repo_root)
+    if not me:
+        refusal = tracker.no_holder_refusal(ctx.repo_root)
+        return _blocked(ctx, f"start claim for {ctx.issue_id} refused: {refusal}")
     record = tracker.read_record(ctx.repo_root, ctx.issue_id) or {}
     other = tracker.held_by_another(ctx.repo_root, record)
     if other:
@@ -545,13 +549,9 @@ def _hold_for_this_session(ctx: _Ctx) -> AdvanceResult | None:
             f"`python3 .basicly/core/kit/tracker/cli.py claim .basicly/ledger "
             f"{ctx.issue_id} --take`",
         )
-    me = tracker.holder_name(ctx.repo_root)
-    held = not me or record.get(tracker.HOLDER_FIELD) == me
-    if record.get("status") == "in_progress" and held:
+    if record.get("status") == "in_progress" and record.get(tracker.HOLDER_FIELD) == me:
         return _stale_review(ctx, record)
-    args = ["update", ctx.issue_id, "--status", "in_progress"]
-    if me:
-        args.extend(["--assignee", me])
+    args = ["update", ctx.issue_id, "--status", "in_progress", "--assignee", me]
     try:
         tracker.write(ctx.repo_root, args)
     except RuntimeError as exc:

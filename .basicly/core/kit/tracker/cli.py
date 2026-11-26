@@ -148,7 +148,7 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
 
 
 def _holder(args: argparse.Namespace, given: str = "to") -> str:
-    return getattr(args, given, "") or commands.holders.default_holder(Path.cwd(), os.environ)
+    return getattr(args, given, "") or commands.holders.chosen_holder(Path.cwd(), os.environ)
 
 
 def _compacted(args: argparse.Namespace) -> dict[str, object]:

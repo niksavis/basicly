@@ -215,12 +215,14 @@ def test_an_in_progress_record_with_no_holder_is_held_out_of_ready_until_claimed
 
 
 def test_a_native_in_progress_record_with_no_holder_is_held_out_of_ready_too(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ledger = _imported(tmp_path, capsys, [_issue(4, acceptance_criteria="It works.")])
     assert _run(capsys, "ready", str(ledger))[1]["count"] == 1
+    monkeypatch.setenv("BASICLY_HOLDER", "fixture-holder")
 
     _run(capsys, "update", str(ledger), "smp-4", "--status", "in_progress")
+    _run(capsys, "unassign", str(ledger), "smp-4")
 
     assert _run(capsys, "ready", str(ledger))[1]["count"] == 0
     _, blocked = _run(capsys, "blocked", str(ledger))

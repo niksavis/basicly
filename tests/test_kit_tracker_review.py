@@ -110,8 +110,13 @@ def test_a_shaped_draft_owing_only_its_review_is_told_to_record_the_review(
     [(("--field", "labels=refine", *SHAPED), "waits for an agent review"), ((), "it owes")],
 )
 def test_work_cannot_start_on_a_story_no_agent_reviewed(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], extra: tuple[str, ...], reason: str
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    extra: tuple[str, ...],
+    reason: str,
 ) -> None:
+    monkeypatch.setenv("BASICLY_HOLDER", "fixture-holder")
     ledger = tmp_path / "ledger"
     record = _create(capsys, ledger, *extra)
 

@@ -34,6 +34,7 @@ def repo(tmp_path: Path) -> Path:
     root.mkdir()
     _git(root, "init", "-q")
     _git(root, "config", "user.name", "Dev A")
+    _git(root, "config", "basicly.holder", "Dev A")
     _git(root, "config", "user.email", "dev-a@example.invalid")
     ignored = shutil.ignore_patterns("__pycache__")
     shutil.copytree(KIT_DIR, root / ".basicly" / "kit" / "tracker", ignore=ignored)

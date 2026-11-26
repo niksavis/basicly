@@ -59,6 +59,7 @@ def _tracker(monkeypatch: pytest.MonkeyPatch, body: str | None) -> None:
         return _Proc(json.dumps([{"id": args[1], "description": body}]))
 
     fake_tracker.install(monkeypatch, _show)
+    monkeypatch.setattr(loop.tracker, "holder_name", lambda _root: "fixture-holder")
 
 
 def test_a_selector_matching_nothing_collects_nothing(tmp_path: Path) -> None:

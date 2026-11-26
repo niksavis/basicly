@@ -137,7 +137,7 @@ def _admitted(
     held = events.fold(events.read_events(ledger)[0]).records if ledger.is_dir() else {}
     holders = owned_store.kit(repo_root, "holders")
     if read_ledger is None:
-        drafts = holders.claimed_by(held, drafts, holders.default_holder(repo_root, os.environ))
+        drafts = holders.claimed_by(held, drafts, holders.chosen_holder(repo_root, os.environ))
     holders.refuse(held, drafts)
     owned_store.kit(repo_root, "review").refuse(
         held,

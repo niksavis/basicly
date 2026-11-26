@@ -84,7 +84,10 @@ def test_compact_review_does_not_replace_a_complex_work_review(
     assert cli.events.read_events(ledger)[0] == before
 
 
-def test_committed_redaction_preserves_a_meaningful_confirmed_observation(tmp_path: Path) -> None:
+def test_committed_redaction_preserves_a_meaningful_confirmed_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("BASICLY_HOLDER", "fixture-holder")
     flipped_tracker.flipped_repo(tmp_path)
     flipped_tracker.seed(
         tmp_path,
@@ -217,8 +220,9 @@ def test_redaction_does_not_certify_meaningless_or_unfinished_results(
 
 
 def test_engine_compact_review_uses_the_same_no_comment_completion_contract(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("BASICLY_HOLDER", "fixture-holder")
     flipped_tracker.flipped_repo(tmp_path)
     ledger = tracker.ledger_dir(tmp_path)
     record = _card(ledger, capsys)

@@ -295,9 +295,11 @@ makes the review stale, so record the review again after it.
 
 Now the install output has an id to reference. The `tracker-claim` hook refuses a
 commit that changes files outside the ledger unless you hold the record it names, so
-claim the record, then commit:
+claim the record, then commit. A claim records a holder name, and the ledger must not
+record your real name, so choose a pseudonym once first:
 
 ```sh
+git config basicly.holder alex
 basicly tracker write -- update myrepo-2i3r --status in_progress
 git add -A
 git commit -m "chore: install basicly (myrepo-2i3r)"
