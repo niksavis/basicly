@@ -1,1 +1,0 @@
-- **`orch pace` plans the 5-hour Claude usage window.** `orch-statusline-tap -- <status line command>` saves the status line usage to one snapshot file and prints the output unchanged. `orch pace` prints the used percent, reset, burn rate, projection at reset and `start`, `hold` or `close idle`. Format: `docs/design/usage-snapshot.md` (basicly-qpr2xmr.3.39).

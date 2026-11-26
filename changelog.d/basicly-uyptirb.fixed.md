@@ -1,1 +1,0 @@
-- A vault claim with no `--session` and no `BASICLY_TRACKER_SESSION` now uses `ORCH_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`, so the fenced `cli.py claim .basicly/ledger RECORD` command runs as written in a Claude Code session. Unassign, comments and the commit-msg hook read the session the same way, so a claim and the hook of one session agree.

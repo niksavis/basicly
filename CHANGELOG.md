@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.49.5 - 2026-11-26
+
+Delta: v0.49.4..v0.49.5
+
 This release adds two Orchestrator tools and fixes four faults that cost tool calls today. `orch delegate` hands one turn to another coding agent, and `orch pace` plans the 5-hour usage window from a status line snapshot. A vault claim with a short deadline now settles on a loaded machine, and a comment on a running child no longer restarts its reopened parent.
 
 - Orchestrator: `orch delegate` runs one turn of Claude, Codex or Copilot in its own lane through an adapter plugin (basicly-e44r45l).
@@ -13,6 +17,24 @@ This release adds two Orchestrator tools and fixes four faults that cost tool ca
 - Orchestrator tools need a reinstall from the tag, because `uv tool upgrade` ignores a tag pin: `uv tool install --force "basicly-orch @ git+https://github.com/niksavis/basicly@v0.49.5#subdirectory=packages/basicly-orch"`.
 - Tracker: a vault claim takes the agent session when no tracker session is set (basicly-uyptirb), reserves time for its takeover share (basicly-t5sa3pp), and a parent starts only when a child starts (basicly-sw2kgb4).
 - Landing: `worktree merge --mode ci` takes its workflows from the repository and names the real `gh` cause (basicly-lnrkfe3).
+
+### Added
+
+- `orch delegate --vendor claude|codex|copilot --record RECORD --prompt TEXT` hands one turn to another coding agent in its own lane, writes the answer on the record and prints the session id; `--resume SESSION` continues it. Each coding agent is an adapter plugin (entry point group `basicly_orch.adapters`). A usage limit exits 3 and names the reset time. (basicly-e44r45l)
+
+- **`orch pace` plans the 5-hour Claude usage window.** `orch-statusline-tap -- <status line command>` saves the status line usage to one snapshot file and prints the output unchanged. `orch pace` prints the used percent, reset, burn rate, projection at reset and `start`, `hold` or `close idle`. Format: `docs/design/usage-snapshot.md` (basicly-qpr2xmr.3.39).
+
+- **The claim and the landing note the usage, and `orch pace` sums the cost per record type.** A landed vault claim writes `[pace start]` and a merged landing writes `[pace done]` on the record, in vault mode with an orchestrator store and a fresh usage snapshot; a failure never changes the claim or landing. `orch pace` prints the mean and max cost per type (basicly-qpr2xmr.3.40).
+
+### Fixed
+
+- `basicly worktree merge --mode ci` takes its landing workflows from `[landing] workflows` in `basicly.toml`, or else from the one of `quality-gates.yml` and `basicly-gates.yml` that accepts `workflow_dispatch`, and refuses with the key line when both do. It passes `base` only to a workflow that declares it, and names `gh auth login` only when gh is not logged in. (basicly-lnrkfe3)
+
+- **A comment on a running child no longer restarts its reopened parent.** The tracker starts an open parent only when one of its children starts, not on any write to a child, and the write output names each parent it started under `started_parents` (basicly-sw2kgb4).
+
+- **A joined vault claim with a short deadline now settles on a loaded machine.** The claim starts its takeover share while enough time is left for it: the larger of 1.35 s and 1.5 times the longest takeover it has recorded. The 5 s grace for a silent holder is unchanged (basicly-t5sa3pp).
+
+- A vault claim with no `--session` and no `BASICLY_TRACKER_SESSION` now uses `ORCH_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`, so the fenced `cli.py claim .basicly/ledger RECORD` command runs as written in a Claude Code session. Unassign, comments and the commit-msg hook read the session the same way, so a claim and the hook of one session agree. (basicly-uyptirb)
 
 ## v0.49.4 - 2026-11-26
 
