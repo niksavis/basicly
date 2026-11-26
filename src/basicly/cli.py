@@ -62,6 +62,7 @@ from . import (
     policy,
     projection,
     release,
+    release_delivery,
     retention,
     review,
     routing_evals,
@@ -3118,6 +3119,12 @@ def cmd_release(args: argparse.Namespace) -> int:
     if args.root and not args.autonomous:
         print("release: --root only applies with --autonomous", file=sys.stderr)
         return 1
+    try:
+        delivery = args.delivery or load_delivery_adapter(repo_root)
+    except ValueError as error:
+        ui.fail(str(error))
+        return 1
+    pr = delivery == delivery_pr.ADAPTER and not args.dry_run
     plan = release.plan_release(repo_root, args.version, date=args.date)
     print(f"release:  {plan.current_tag} -> {plan.tag} on {plan.date}")
     sys.stdout.flush()
@@ -3129,12 +3136,27 @@ def cmd_release(args: argparse.Namespace) -> int:
         root_issue=args.root,
         autonomous=args.autonomous,
         shipping=args.shipping,
+        **({"tag": False} if pr else {}),
     )
     if result.refused:
         for reason in result.refusals:
             print(f"refused:  {reason}", file=sys.stderr)
         return 1
     for step in result.steps:
+        print(f"step:     {step}")
+    if not pr:
+        return 0
+    try:
+        delivered = release_delivery.deliver(
+            repo_root, release_delivery.Release(plan.tag, plan.date, args.issue)
+        )
+    except delivery_pr.PrDeliveryError as error:
+        print(
+            f"refused:  {error}; the release commit stays on the local base, untagged",
+            file=sys.stderr,
+        )
+        return 1
+    for step in delivered:
         print(f"step:     {step}")
     return 0
 
@@ -5349,6 +5371,14 @@ def _add_release_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="ISSUE",
         help="Node whose required gates must be green for --autonomous "
         "(default: --root; an open epic's own verify gate is never green, kjc5.39)",
+    )
+    release_parser.add_argument(
+        "--delivery",
+        choices=DELIVERY_ADAPTERS,
+        default=None,
+        help="lander stops at the local tag; pr delivers the release commit through a pull "
+        "request, tags GitHub's merge commit and pushes the tag; "
+        "default: [delivery] adapter in basicly.toml, else lander",
     )
 
 
