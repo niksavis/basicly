@@ -1,0 +1,1 @@
+- Tracker: `vault-init` keeps `--prefix` in its preview next command, and in a checkout with no tracker it refuses `--yes` without `--prefix` before it pushes, so a new repository is never left with a published vault it cannot attach to (basicly-bi81emt.1).
