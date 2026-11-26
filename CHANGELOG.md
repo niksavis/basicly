@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release adds two Orchestrator tools and fixes four faults that cost tool calls today. `orch delegate` hands one turn to another coding agent, and `orch pace` plans the 5-hour usage window from a status line snapshot. A vault claim with a short deadline now settles on a loaded machine, and a comment on a running child no longer restarts its reopened parent.
+
+- Orchestrator: `orch delegate` runs one turn of Claude, Codex or Copilot in its own lane through an adapter plugin (basicly-e44r45l).
+- Orchestrator: `orch-statusline-tap` saves the usage snapshot, and `orch pace` prints use, burn rate and advice; claims and landings note the usage on the record (basicly-qpr2xmr.3.39, basicly-qpr2xmr.3.40).
+- Orchestrator tools need a reinstall from the tag, because `uv tool upgrade` ignores a tag pin: `uv tool install --force "basicly-orch @ git+https://github.com/niksavis/basicly@v0.49.5#subdirectory=packages/basicly-orch"`.
+- Tracker: a vault claim takes the agent session when no tracker session is set (basicly-uyptirb), reserves time for its takeover share (basicly-t5sa3pp), and a parent starts only when a child starts (basicly-sw2kgb4).
+- Landing: `worktree merge --mode ci` takes its workflows from the repository and names the real `gh` cause (basicly-lnrkfe3).
+
 ## v0.49.4 - 2026-11-26
 
 Delta: v0.49.3..v0.49.4
