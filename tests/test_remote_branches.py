@@ -304,6 +304,9 @@ def test_drop_refs_for_a_lane_with_no_proof_entry_drops_nothing(
 
 
 def test_a_failed_proof_records_its_attempt_before_the_push(main: Path) -> None:
+    flows = main / ".github" / "workflows"
+    flows.mkdir(parents=True, exist_ok=True)
+    (flows / "quality-gates.yml").write_text("on:\n  workflow_dispatch:\n", encoding="utf-8")
     candidate = ci_landing.Candidate("feat", "basicly-x1", "main", _git(main, "rev-parse", "HEAD"))
     _git(main, "remote", "set-url", "--push", "origin", str(main / "missing.git"))
 

@@ -1,0 +1,1 @@
+- `basicly worktree merge --mode ci` takes its landing workflows from `[landing] workflows` in `basicly.toml`, or else from the one of `quality-gates.yml` and `basicly-gates.yml` that accepts `workflow_dispatch`, and refuses with the key line when both do. It passes `base` only to a workflow that declares it, and names `gh auth login` only when gh is not logged in.
