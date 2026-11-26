@@ -13,7 +13,7 @@ import runner
 from orch_lessons.log import RefusedError
 from orch_state import store
 
-from orch_relay import adapters, install, record, tiers
+from orch_relay import adapters, failures, install, record, tiers
 
 FOLDER = "delegations"
 TIMEOUT = 1800
@@ -168,14 +168,19 @@ def run(args: argparse.Namespace, repo: Path, base: Path, ports: Ports) -> list[
     tracker, scan = ports.tracker(found.repo), ports.scan(found.repo)
     lane = found.repo if found.read_only else _lane(found, ports.execute)
     turn = adapters.Turn(args.prompt, found.session or None, resume, model, found.read_only)
-    done = ports.execute(vendor.argv(turn), lane)
-    if limited := adapters.usage_limit(found.vendor, done):
-        raise limited
-    if done.code != 0:
+    argv = vendor.argv(turn)
+    done = ports.execute(argv, lane)
+    limited = adapters.usage_limit(found.vendor, done)
+    saved = failures.save(base, found.vendor, argv, args.prompt, done) if done.code else None
+    if limited:
+        raise adapters.UsageLimitError(
+            f"{limited}; the failure is saved in {saved}" if saved else str(limited)
+        )
+    if saved:
         kept = f"resume it with: {vendor.resume_command(found.session)}" if found.session else ""
         raise RefusedError(
-            f"orch delegate: {found.vendor} exited {done.code} in {lane}; {kept}\n"
-            f"{(done.err or done.out)[-TAIL:]}"
+            f"orch delegate: {found.vendor} exited {done.code} in {lane}; {kept}; "
+            f"the failure is saved in {saved}\n{(done.err or done.out)[-TAIL:]}"
         )
     reply = vendor.reply(done, turn)
     found = replace(found, session=reply.session)

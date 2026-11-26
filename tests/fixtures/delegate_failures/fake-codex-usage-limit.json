@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "codex",
+    "exec",
+    "--json",
+    "-s",
+    "workspace-write",
+    "PROMPT"
+  ],
+  "at": "2026-11-26T13:40:00+00:00",
+  "exit_code": 1,
+  "expect": {
+    "outcome": "usage_limit",
+    "resets": "3:05 PM"
+  },
+  "source": "fake",
+  "stderr": "ERROR: You've hit your usage limit. Try again at 3:05 PM.\n",
+  "stdout": "",
+  "vendor": "codex"
+}

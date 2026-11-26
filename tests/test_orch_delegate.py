@@ -133,12 +133,13 @@ def test_a_usage_limit_is_reported_by_name_with_its_reset_time_and_writes_nothin
             _args(vendor="codex", record="app-x1", prompt="p"), world.repo, world.base, world.ports
         )
 
-    assert (
-        str(limited.value)
-        == "usage limit: codex refused the turn at its usage limit; it resets 3:05 PM"
+    saved = sorted((world.base / delegate.FOLDER / "failures").glob("*-codex-*.json"))
+    assert str(limited.value) == (
+        "usage limit: codex refused the turn at its usage limit; it resets 3:05 PM; "
+        f"the failure is saved in {saved[0]}"
     )
     assert world.tracker.comments == []
-    assert not (world.base / delegate.FOLDER).exists()
+    assert [p.name for p in (world.base / delegate.FOLDER).glob("*.json")] == []
 
 
 @pytest.mark.parametrize(

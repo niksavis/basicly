@@ -1,0 +1,1 @@
+- `orch delegate` saves each non-zero exit of a coding agent as a JSON file under `delegations/failures/` in the orch store, with the prompt hidden, and names the file in its refusal; a redacted copy can become a replay fixture for the usage-limit patterns.
