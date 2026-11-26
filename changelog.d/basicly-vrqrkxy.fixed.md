@@ -1,0 +1,1 @@
+- The vault `stop` and `session-end` hooks name each event they leave queued and print the `sync --vault` command that shares it, and a queued write now names `sync --vault`, the command the kit has, instead of `share --vault`.
