@@ -19,7 +19,7 @@ instructions: |
   - **Never delete a changelog fragment to clear a refusal.** A release note must not disappear without notice.
   - **An agent may cut, tag and publish a release without a person's approval.** It does so only when every required workflow is green on the exact commit it tags. It never reruns a workflow until it passes. It never deletes, moves or retags an existing tag, because that is a delete. It reports each release. A release is not destructive: a user can install the previous version.
   - **With the lander, the command never pushes.** Push the release commit and its tag only under the rule above.
-  - **With `[delivery] adapter = "pr"`, the command delivers the release commit through a pull request.** It tags the merge commit that GitHub made, only after that commit is on `origin/main`, and pushes only the tag. When a run fails, it pushes no tag and the release commit stays on the local base, untagged.
+  - **With `[delivery] adapter = "pr"`, the command delivers the release commit through a pull request.** It tags the merge commit that GitHub made only after that commit is on `origin/main` and every landing workflow is green on its push run there, and it pushes only the tag. When a run fails, it pushes no tag and the release commit stays on the local base, untagged.
 
   ## 1. Check that the repository uses it
 

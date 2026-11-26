@@ -41,6 +41,14 @@ def deliver(
             f"{REMOTE}/{base} does not hold the merge commit {landed.commit[:12]}, so {tag} is "
             f"not created; run git fetch {REMOTE} and check {landed.pull_request}"
         )
+    merged = ci_landing.Candidate(candidate.lane, record, destination, landed.commit)
+    try:
+        pushed = delivery_pr.green_after_merge(root, merged, gh, clock or ci_landing.Clock())
+    except delivery_pr.PrDeliveryError as error:
+        raise delivery_pr.PrDeliveryError(
+            f"{landed.pull_request} merged as {landed.commit[:12]}, but its push run on "
+            f"{base} is not green, so {tag} is not created: {error}"
+        ) from error
     if _git(root, "tag", "-a", tag, "-m", f"{tag} ({date})", landed.commit)[0] != 0:
         raise delivery_pr.PrDeliveryError(
             f"{landed.pull_request} merged as {landed.commit[:12]}, but git tag {tag} was "
@@ -52,7 +60,7 @@ def deliver(
             f"nothing was force-pushed; run git push {REMOTE} refs/tags/{tag}"
         )
     return [
-        f"{landed.pull_request} merged as {landed.commit[:12]}; tagged {tag} on it and pushed "
-        "the tag",
+        f"{landed.pull_request} merged as {landed.commit[:12]}; {', '.join(pushed)} green on it; "
+        f"tagged {tag} on it and pushed the tag",
         *landed.notes,
     ]
