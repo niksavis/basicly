@@ -75,6 +75,8 @@ def _args(**given: Any) -> SimpleNamespace:
         "record": None,
         "resume": None,
         "model": None,
+        "tier": None,
+        "read_only": False,
         **given,
     })
 
@@ -146,7 +148,13 @@ def test_a_usage_limit_is_reported_by_name_with_its_reset_time_and_writes_nothin
         ({"vendor": "claude", "record": "not a record"}, "is not a record id"),
         ({"vendor": "claude"}, "needs --vendor and --record"),
         ({"resume": "nope"}, "no delegation with that session is recorded"),
-        ({"resume": "nope", "vendor": "claude"}, "takes the coding agent and record it recorded"),
+        ({"resume": "nope", "vendor": "claude"}, "takes the coding agent, record and mode"),
+        ({"resume": "nope", "read_only": True}, "takes the coding agent, record and mode"),
+        ({"vendor": "claude", "record": "app-x1", "tier": "top"}, "is not in the tier map"),
+        (
+            {"vendor": "claude", "record": "app-x1", "tier": "cheap", "model": "m"},
+            "takes --tier or --model, not both",
+        ),
     ],
 )
 def test_wrong_input_is_refused_by_name_before_any_lane_or_turn(
@@ -176,3 +184,76 @@ def test_an_installed_plugin_adds_a_coding_agent(monkeypatch: pytest.MonkeyPatch
 
     assert list(adapters.registry()) == ["claude", "codex", "copilot", "echo"]
     assert isinstance(adapters.adapter("echo"), adapters.Copilot)
+
+
+READ_ONLY_ARGV = {
+    "claude": [
+        *["-p", "p", "--output-format", "json", "--permission-mode", "plan"],
+        *["--model", "haiku", "--session-id", "SESSION"],
+    ],
+    "codex": ["exec", "--json", "-s", "read-only", "-m", "gpt-6-luna", "p"],
+    "copilot": [
+        *["-p", "p", "--silent", "--deny-tool=write", "--model", "mai-code-2-flash"],
+        "--session-id=SESSION",
+    ],
+}
+
+
+@pytest.mark.parametrize("vendor", ["claude", "codex", "copilot"])
+def test_a_read_only_cheap_delegation_runs_in_the_repository_with_the_read_only_argv(
+    world: SimpleNamespace, vendor: str
+) -> None:
+    lines = delegate.run(
+        _args(vendor=vendor, record="app-x1", prompt="p", read_only=True, tier="cheap"),
+        world.repo,
+        world.base,
+        world.ports,
+    )
+
+    session = _session(lines)
+    run = _calls(world, vendor)[0]
+    assert run["argv"] == [a.replace("SESSION", session) for a in READ_ONLY_ARGV[vendor]]
+    assert Path(run["cwd"]) == world.repo
+    assert not _calls(world, "basicly")
+    assert not adapters.lane_path(world.repo, f"delegate-app-x1-{vendor}").parent.exists()
+    assert f"session {session}, read-only]" in world.tracker.comments[0][1]
+    assert json.loads((world.base / "tiers.json").read_text(encoding="utf-8"))["cheap"][vendor]
+
+
+def test_a_resumed_read_only_session_stays_read_only_and_codex_refuses_one(
+    world: SimpleNamespace,
+) -> None:
+    given = {"record": "app-x1", "prompt": "p", "read_only": True}
+    claude = _session(
+        delegate.run(_args(vendor="claude", **given), world.repo, world.base, world.ports)
+    )
+    codex = _session(
+        delegate.run(_args(vendor="codex", **given), world.repo, world.base, world.ports)
+    )
+
+    delegate.run(_args(resume=claude, prompt="again"), world.repo, world.base, world.ports)
+    with pytest.raises(log.RefusedError, match="codex cannot resume a read-only session"):
+        delegate.run(_args(resume=codex, prompt="again"), world.repo, world.base, world.ports)
+
+    resumed = _calls(world, "claude")[1]
+    assert resumed["argv"][4:6] == ["--permission-mode", "plan"]
+    assert Path(resumed["cwd"]) == world.repo
+    assert len(_calls(world, "codex")) == 1
+    assert not _calls(world, "basicly")
+
+
+def test_a_tier_with_no_model_for_the_coding_agent_is_refused_before_any_turn(
+    world: SimpleNamespace,
+) -> None:
+    world.base.mkdir()
+    (world.base / "tiers.json").write_text('{"cheap": {"claude": "haiku"}}', encoding="utf-8")
+
+    with pytest.raises(log.RefusedError, match="names no model for the coding agent 'copilot'"):
+        delegate.run(
+            _args(vendor="copilot", record="app-x1", prompt="p", tier="cheap"),
+            world.repo,
+            world.base,
+            world.ports,
+        )
+
+    assert not world.calls.exists()

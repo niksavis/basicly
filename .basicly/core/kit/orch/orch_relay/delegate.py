@@ -13,16 +13,17 @@ import runner
 from orch_lessons.log import RefusedError
 from orch_state import store
 
-from orch_relay import adapters, install, record
+from orch_relay import adapters, install, record, tiers
 
 FOLDER = "delegations"
 TIMEOUT = 1800
 ANSWER_MAX = 6000
 TAIL = 800
 KEYS = ("vendor", "record", "repo", "lane", "session")
+READ_ONLY = "read-only"
 USAGE = (
-    "orch delegate --vendor claude|codex|copilot --record RECORD --prompt TEXT [--model M], "
-    "or orch delegate --resume SESSION --prompt TEXT"
+    "orch delegate --vendor claude|codex|copilot --record RECORD --prompt TEXT "
+    "[--read-only] [--model M | --tier T], or orch delegate --resume SESSION --prompt TEXT"
 )
 
 Exec = Callable[[list[str], Path], runner.Done]
@@ -41,6 +42,8 @@ def add_parser(groups: argparse._SubParsersAction) -> None:
     given.add_argument("--record")
     given.add_argument("--resume", metavar="SESSION")
     given.add_argument("--model")
+    given.add_argument("--tier")
+    given.add_argument("--read-only", action="store_true")
     given.add_argument("--prompt", required=True)
 
 
@@ -51,6 +54,7 @@ class Delegation:
     repo: Path
     lane: str
     session: str
+    read_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,7 @@ def _save(base: Path, found: Delegation) -> None:
     path = _path(base, found.session)
     path.parent.mkdir(parents=True, exist_ok=True)
     value = {key: str(getattr(found, key)) for key in KEYS}
+    value["mode"] = READ_ONLY if found.read_only else "lane"
     handle, name = tempfile.mkstemp(dir=path.parent, prefix=".", suffix=".tmp")
     with os.fdopen(handle, "w", encoding="utf-8") as out:
         json.dump(value, out, sort_keys=True)
@@ -82,7 +87,7 @@ def _load(base: Path, session: str) -> Delegation:
             f"in {base / FOLDER}; start one with: {USAGE.split(', or ', maxsplit=1)[0]}"
         )
     vendor, record_id, repo, lane, found = (str(value[key]) for key in KEYS)
-    return Delegation(vendor, record_id, Path(repo), lane, found)
+    return Delegation(vendor, record_id, Path(repo), lane, found, value.get("mode") == READ_ONLY)
 
 
 def lane_name(record_id: str, vendor: str) -> str:
@@ -96,7 +101,8 @@ def _new(args: argparse.Namespace, repo: Path) -> Delegation:
     if not install.RECORD.fullmatch(args.record):
         raise RefusedError(f"--record {args.record!r} is not a record id; run: {USAGE}")
     session = str(uuid.uuid4()) if vendor.names_session else ""
-    return Delegation(args.vendor, args.record, repo, lane_name(args.record, args.vendor), session)
+    lane = "" if args.read_only else lane_name(args.record, args.vendor)
+    return Delegation(args.vendor, args.record, repo, lane, session, args.read_only)
 
 
 def _lane(found: Delegation, execute: Exec) -> Path:
@@ -118,25 +124,50 @@ def _comment(found: Delegation, answer: str, scan: Scan, resume: bool) -> str:
         body = f"withheld: the secret scanner rule {hit} matched; read it in the agent session"
     else:
         body = answer if len(answer) <= ANSWER_MAX else answer[:ANSWER_MAX] + " [cut]"
-    return f"[delegate {found.vendor} {turn}, session {found.session}, lane {found.lane}] {body}"
+    where = READ_ONLY if found.read_only else f"lane {found.lane}"
+    return f"[delegate {found.vendor} {turn}, session {found.session}, {where}] {body}"
 
 
 def _turn(args: argparse.Namespace, base: Path, repo: Path) -> tuple[Delegation, bool]:
-    if args.resume and (args.vendor or args.record):
+    if args.resume and (args.vendor or args.record or args.read_only):
         raise RefusedError(
-            f"orch delegate --resume takes the coding agent and record it recorded; run: {USAGE}"
+            f"orch delegate --resume takes the coding agent, record and mode it recorded; "
+            f"run: {USAGE}"
         )
+    if args.tier and args.model:
+        raise RefusedError(f"orch delegate takes --tier or --model, not both; run: {USAGE}")
     if args.resume:
         return _load(base, args.resume), True
     return _new(args, repo), False
 
 
+def _model(args: argparse.Namespace, base: Path, vendor: str) -> str | None:
+    return tiers.model(base, args.tier, vendor) if args.tier else args.model
+
+
+def _refuse_read_only_resume(found: Delegation, vendor: adapters.Adapter) -> None:
+    if found.read_only and not getattr(vendor, "resumes_read_only", False):
+        raise RefusedError(
+            f"orch delegate --resume {found.session}: {found.vendor} cannot resume a read-only "
+            f"session read-only; start a new one with --read-only"
+        )
+
+
+def _next(found: Delegation, vendor: adapters.Adapter) -> str:
+    if found.read_only and not getattr(vendor, "resumes_read_only", False):
+        return f"next turn: {found.vendor} resumes no read-only session; start a new one"
+    return f"next turn: orch delegate --resume {found.session} --prompt TEXT"
+
+
 def run(args: argparse.Namespace, repo: Path, base: Path, ports: Ports) -> list[str]:
     found, resume = _turn(args, base, repo)
     vendor = adapters.adapter(found.vendor)
+    if resume:
+        _refuse_read_only_resume(found, vendor)
+    model = _model(args, base, found.vendor)
     tracker, scan = ports.tracker(found.repo), ports.scan(found.repo)
-    lane = _lane(found, ports.execute)
-    turn = adapters.Turn(args.prompt, found.session or None, resume, args.model)
+    lane = found.repo if found.read_only else _lane(found, ports.execute)
+    turn = adapters.Turn(args.prompt, found.session or None, resume, model, found.read_only)
     done = ports.execute(vendor.argv(turn), lane)
     if limited := adapters.usage_limit(found.vendor, done):
         raise limited
@@ -150,10 +181,11 @@ def run(args: argparse.Namespace, repo: Path, base: Path, ports: Ports) -> list[
     found = replace(found, session=reply.session)
     _save(base, found)
     tracker.comment(found.record, _comment(found, reply.text, scan, resume))
+    where = f"read-only in {lane}" if found.read_only else f"in lane {found.lane} ({lane})"
     return [
-        f"delegate: {found.vendor} session {found.session} in lane {found.lane} ({lane})",
+        f"delegate: {found.vendor} session {found.session} {where}",
         f"comment: written on {found.record}",
         f"answer: {reply.text}",
-        f"next turn: orch delegate --resume {found.session} --prompt TEXT",
+        _next(found, vendor),
         f"agent resume: cd {lane} && {vendor.resume_command(found.session)}",
     ]
