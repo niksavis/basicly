@@ -473,9 +473,11 @@ and has no `Record: none` line, and prints the claim command and `Record: none`.
 is the `(id)` that ends the subject, or a `Record: <id>` line. When the session holds exactly
 one claim, the hook adds the id in parentheses to the subject instead. Git-generated
 `Merge`, `Revert "`, `fixup!` and `squash!` messages pass, and a revert or fixup takes the id
-in the subject it repeats. A named record that this session does not hold, or whose claim has not reached the
-vault, passes with a warning and the claim command. When a fetch older than 20 s fails, the
-hook queues a local `miss` event for the record.
+in the subject it repeats. A named record that another session holds is refused: the hook names
+the holder and prints the `unassign RECORD --take` and `claim` commands. A named record with no
+holder, a claim that has not reached the vault, or a vault that cannot be reached passes with a
+notice line and the claim command. A closed record has no holder. When a fetch older than 20 s
+fails, the hook queues a local `miss` event for the record.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py commit-msg --vault path/to/vault.git .git/COMMIT_EDITMSG
