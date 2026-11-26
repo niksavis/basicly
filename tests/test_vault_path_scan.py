@@ -59,6 +59,13 @@ def test_path_scan_refuses_a_queued_event_with_a_home_path(tmp_path: Path, bare:
     assert "private-agent" not in result.stderr
 
 
+def test_path_scan_passes_a_queued_event_of_another_repository(tmp_path: Path, bare: Path) -> None:
+    root = _frozen(tmp_path, bare)
+    _queue(tmp_path, bare, QUEUED.replace("acme-c3d4", "other-c3d4"))
+    result = _surface(root, "path-scan")
+    assert result.returncode == 0, result.stderr
+
+
 def test_path_scan_refuses_a_queued_event_on_a_published_record(
     tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -93,6 +100,7 @@ def test_path_scan_refuses_a_queued_event_that_names_the_user(
     spec.loader.exec_module(scan)
     monkeypatch.setattr(scan.getpass, "getuser", lambda: "agent-tester")
     monkeypatch.setattr(scan, "configured_holder", lambda: "")
+    monkeypatch.setattr(scan, "vault_prefix", lambda: "acme")
     line = '{"id": "acme-c3d4#ev-1", "kind": "note", "payload": {"text": "held by agent-tester"}}'
     monkeypatch.setattr(scan, "vault_queue_text", lambda: line + "\n")
     assert scan.vault_findings(tmp_path) == [("vault/queue.jsonl", 1, "machine-username")]
