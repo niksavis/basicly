@@ -28,6 +28,15 @@ def capture(argv: list[str], timeout: float, cwd: str | None = None) -> Done:
     return Done(done.returncode, done.stdout, done.stderr)
 
 
+def attempt(argv: list[str], timeout: float, cwd: str | None = None) -> Done:
+    try:
+        return capture(argv, timeout, cwd)
+    except OSError as missing:
+        return Done(127, "", f"{argv[0]} cannot start: {missing.strerror or missing}")
+    except subprocess.TimeoutExpired:
+        return Done(124, "", f"{argv[0]} ran past {timeout:.0f} s and was stopped")
+
+
 def quiet(argv: list[str], env: dict[str, str], timeout: float) -> None:
     subprocess.run(  # nosec B603 - list argv from the caller, no shell
         argv,

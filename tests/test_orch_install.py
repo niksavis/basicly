@@ -82,6 +82,19 @@ def test_install_commits_in_the_lane_through_the_hook_and_prints_the_commit(
     assert not (workspace / "app" / "kit.txt").exists()
 
 
+def test_a_second_run_on_the_committed_lane_makes_no_new_commit(workspace: Path) -> None:
+    list(install.run(workspace, "0.49.4", ["app=app-x1y2"], False, fake))
+    head = _git(_lane(workspace), "rev-parse", "HEAD")
+
+    lines = list(install.run(workspace, "0.49.4", ["app=app-x1y2"], False, fake))
+
+    assert lines == [
+        f"app: lane kit-0494 already holds commit {head} "
+        "chore(basicly): install the released kit (app-x1y2); no new commit"
+    ]
+    assert _git(_lane(workspace), "rev-parse", "HEAD") == head
+
+
 def test_a_hook_refusal_stops_with_the_hook_text_and_names_the_lane(workspace: Path) -> None:
     with pytest.raises(log.RefusedError) as refused:
         list(install.run(workspace, "0.49.4", ["app=wrong-x1y2"], False, fake))
@@ -122,7 +135,10 @@ def test_an_install_with_no_change_makes_no_commit(workspace: Path) -> None:
 
     lines = list(install.run(workspace, "0.49.4", ["app=app-x1y2"], False, unchanged))
 
-    assert lines == ["app: lane kit-0494 has no change from basicly 0.49.4; no commit"]
+    head = _git(_lane(workspace), "rev-parse", "HEAD")
+    assert lines == [
+        f"app: lane kit-0494 has no change from basicly 0.49.4; no commit, lane head {head}"
+    ]
     assert _git(_lane(workspace), "log", "--oneline") == _git(workspace / "app", "log", "--oneline")
 
 
@@ -173,3 +189,15 @@ def test_orch_install_without_a_store_is_refused(tmp_path: Path) -> None:
         cli.run(["install", "--release", "0.49.4", "--repo", "app=app-x1y2"], tmp_path, {})
 
     assert "orch lessons init" in str(refused.value)
+
+
+def test_a_missing_tool_is_refused_by_name_without_a_traceback(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(workspace / "empty"))
+
+    with pytest.raises(log.RefusedError) as refused:
+        list(install.run(workspace, "0.49.4", ["app=app-x1y2"], True))
+
+    assert "uvx cannot start" in str(refused.value)
+    assert "exit 127" in str(refused.value)

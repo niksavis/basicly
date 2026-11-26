@@ -28,7 +28,7 @@ def add_parser(groups: argparse._SubParsersAction) -> None:
 
 
 def run_step(argv: list[str], cwd: Path) -> runner.Done:
-    return runner.capture(argv, TIMEOUT, str(cwd))
+    return runner.attempt(argv, TIMEOUT, str(cwd))
 
 
 @dataclass(frozen=True)
@@ -131,7 +131,12 @@ class Installer:
         ]
 
     def install(self, t: Target) -> str:
-        if not t.lane_path.exists():
+        if t.lane_path.exists():
+            top = self._step(t, "git log", ["git", "log", "-1", "--format=%H %s"], t.lane_path)
+            head, _, title = top.out.strip().partition(" ")
+            if title == subject(t.record):
+                return f"{t.name}: lane {t.lane} already holds commit {head} {title}; no new commit"
+        else:
             self._step(
                 t, "basicly worktree create", self._basicly("worktree", "create", t.lane), t.root
             )
@@ -139,7 +144,11 @@ class Installer:
         self._step(t, "git add", ["git", "add", "--all"], t.lane_path)
         staged = self.execute(["git", "diff", "--cached", "--quiet"], t.lane_path)
         if staged.code == 0:
-            return f"{t.name}: lane {t.lane} has no change from basicly {self.release}; no commit"
+            head = self._step(t, "git rev-parse", ["git", "rev-parse", "HEAD"], t.lane_path)
+            return (
+                f"{t.name}: lane {t.lane} has no change from basicly {self.release}; "
+                f"no commit, lane head {head.out.strip()}"
+            )
         body = f"Installs basicly v{self.release} from the release wheel with orch install."
         self._step(
             t, "git commit", ["git", "commit", "-m", subject(t.record), "-m", body], t.lane_path
