@@ -373,7 +373,17 @@ Measured on 2026-11-18 with `claude -p` in a scratch project:
   - Copilot CLI: `copilot --agent orchestrator`
   - Codex CLI: `codex -c "developer_instructions=$(python3 -c 'import json,sys;print(json.dumps(open(sys.argv[1]).read()))' .agents/roles/orchestrator.md)"` (the role file escaped as one TOML string, the form measured in section 15.3)
 
-## 16. Lessons
+## 16. Auto mode rules
+
+A worker under Claude Code auto mode runs lanes, landings, cleanup and tags without a prompt only when the user's `autoMode` settings allow them.
+`orch automode plan` and `apply` write those settings from one source, `orch_automode/rules.json`, with the repositories from a config file (`packages/basicly-orch/README.md`, section "orch automode").
+
+- Compact rules. `claude auto-mode critique` cut its answer at 2.5 to 5 KB and returned "No feedback came back" for the long rule set of 2026-11-26. The token and guard definitions are written once.
+- One source for rules and permissions. A deny rule blocks before the classifier: `Bash(git rebase*)` in a project's settings refused a lane rebase that the allow rule names (measured 2026-11-26). The plan names each such conflict, and apply refuses until none is left.
+- One guarded step per call. Most classifier refusals in 7 days came from calls that bundled a safe step with a risky one.
+- Fail closed. A guard that runs `git -C <path> status --porcelain` inside `test -z "$(...)"` passes when git fails, because the failed command prints nothing to standard output. The generated guard adds `2>&1`.
+
+## 17. Lessons
 
 The orchestrator learns from each worker and each job, and its agent instructions and skills improve inside the harness.
 

@@ -32,6 +32,33 @@ The design is `docs/design/session-state.md`.
 
 The snapshot folder, fields, write rule and reading rule are in `docs/design/usage-snapshot.md`.
 
+## orch automode
+
+Auto mode reads its rules only from the user settings `~/.claude/settings.json`, managed settings or `--settings`, never from a project. `orch automode` writes the rules that an orchestrated workspace needs into the user settings: the lane git work, the guarded landing, the guarded lane cleanup, release tags, the delete rule and the environment entries for the repositories.
+
+| Command | What it does |
+| --- | --- |
+| `orch automode guide` | prints the steps: run `/auto-mode-setup`, then `orch automode plan`, then `orch automode apply`, then `claude auto-mode critique` |
+| `orch automode plan --config FILE [--settings PATH]` | prints the change to the settings file as a diff, each conflict with a permission rule, the size of the rules in characters, and a plan token. It writes nothing. It exits 1 when a conflict is left |
+| `orch automode apply --config FILE --plan TOKEN [--settings PATH]` | refuses when the settings file or the rules changed since the plan, or when a conflict is left. It first checks the planned file in a temporary Claude Code profile, then writes a backup `settings.json.orch-automode-<UTC time>` and the new file, and runs `claude auto-mode config` again. When Claude Code does not show every planned entry, it restores the file and refuses |
+
+The config file names the repositories:
+
+```json
+{"host": "github.com", "owner": "<account>", "workspace": "~/development",
+ "repositories": [{"name": "<repo>", "visibility": "public", "project": true, "tag": "v<version>"},
+                  {"name": "<private-repo>", "visibility": "private", "project": false}],
+ "omit": []}
+```
+
+- A `project` repository is a folder `<workspace>/<name>` with lanes. `tag` is `v<version>` or `<name>--v<version>`. `omit` names rules to leave out.
+- Each value must match its token class. Any other character is refused by name before any text is made.
+- The rules are one source, `orch_automode/rules.json`. The token and guard definitions are written once, in the entry "Shared Terms". The critique of the rules returns nothing once the rules are long, so they stay short.
+- The plan replaces an entry whose label (the text before the first colon) is a generated label, and keeps every other entry. Each list keeps `$defaults` first.
+- A deny rule blocks a command before the classifier sees it, and an ask rule forces a prompt. The plan reads the deny and ask rules of the settings file and of each project's `.claude/settings.json` and `.claude/settings.local.json`. It names each generated command that one of them matches. Remove the pattern or omit the rule.
+- `claude auto-mode config` exits 0 and prints the defaults when the settings file does not parse. So apply checks that each planned entry appears in its output, not the exit code.
+- A guard fails closed. The tests run each guard in a temporary repository: the cleanup guard refuses a lane branch, local or remote, with a commit outside `origin/main`, a dirty lane folder and a lane folder that git cannot read. The tag guard refuses a commit outside `origin/main`. The landing guard refuses a lane that changes a guarded path.
+
 ## orch relay commands
 
 | Command | What it does |

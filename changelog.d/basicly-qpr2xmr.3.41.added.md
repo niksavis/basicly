@@ -1,0 +1,1 @@
+- `orch automode plan` and `orch automode apply` write the Claude Code auto mode rules that an orchestrated workspace needs (lane git work, guarded landing, guarded cleanup, release tags) from one compact source. They name each permission rule that would block a generated command. They also check that Claude Code reads every planned entry, and keep a backup.
