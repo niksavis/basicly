@@ -1,0 +1,1 @@
+- **A tracker read that fails is now refused by name, not read as an empty tracker.** Before, a broken or unreadable ledger made every reader see no records, so checks such as the release-note and waiver gates passed against nothing. The error names the cause and the `fsck` command; a repository with no tracker still reads as empty (basicly-wutgzws).

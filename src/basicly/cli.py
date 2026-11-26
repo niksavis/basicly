@@ -968,7 +968,10 @@ def _session_report(repo_root: Path) -> dict[str, Any]:
     report["handover"] = _latest_handover(repo_root)
     report["ready"] = ready
     report["blocked"] = blocked
-    report["grants"] = _live_grants(repo_root, views)
+    try:
+        report["grants"] = _live_grants(repo_root, views)
+    except tracker.TrackerReadError as exc:
+        report["grants"] = {"count": 0, "records": [], "refused": str(exc)}
     report["tracker"].update({"ready": ready["count"], "blocked": blocked["count"]})
     return report
 
@@ -1033,6 +1036,9 @@ def _say_session_blocked(report: dict[str, Any], rows: int) -> None:
 
 def _say_session_grants(report: dict[str, Any], full: bool) -> None:
     grants = report["grants"]
+    if "refused" in grants:
+        ui.say(f"grants: unknown - the ledger was not read: {grants['refused']}")
+        return
     if not grants["count"]:
         ui.say("authority: task requests authorize work; no grant or budget is required")
         return
