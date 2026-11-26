@@ -263,3 +263,39 @@ def test_the_fit_is_unknown_without_a_recent_rate_or_a_working_session(
 
     assert line.startswith("fit: unknown (")
     assert why in line
+
+
+@pytest.mark.parametrize(
+    ("used", "readings", "working", "shown"),
+    [
+        (
+            57.0,
+            [[NOW - 1200, 55.0], [NOW, 57.0]],
+            1,
+            "sessions: start 2 more (needed 21.5%/h until the reset, "
+            "6.0%/h per working session, 1 working, 3 fit)",
+        ),
+        (
+            80.0,
+            [[NOW - 900, 78.0], [NOW, 80.0]],
+            2,
+            "sessions: hold at 2 (needed 10.0%/h until the reset, "
+            "4.0%/h per working session, 2 working, 2 fit)",
+        ),
+        (
+            80.0,
+            [[NOW - 600, 78.0], [NOW, 80.0]],
+            4,
+            "sessions: start none; let 1 of 4 finish (needed 10.0%/h until the reset, "
+            "3.0%/h per working session, 4 working, 3 fit)",
+        ),
+        (80.0, [[NOW - 600, 79.0], [NOW, 80.0]], 0, "sessions: unknown (no session is working)"),
+        (80.0, [[NOW - 600, 80.0], [NOW, 80.0]], 1, "sessions: unknown (no use measured"),
+    ],
+)
+def test_the_sessions_line_names_how_many_to_start_hold_or_let_finish(
+    used: float, readings: list[list[float]], working: int, shown: str
+) -> None:
+    line = plan.sessions_line(window(used, readings), NOW, working)
+
+    assert line.startswith(shown)
