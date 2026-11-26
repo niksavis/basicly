@@ -45,6 +45,7 @@ def test_session_start_names_the_kit_refusal_in_place_of_no_handover(
     assert "has no differential.py" in out
     assert "basicly install" in out
     assert "handover: none" not in out
+    assert "grants: unknown - the ledger was not read" in out
 
 
 def test_session_start_says_no_handover_when_the_kit_is_readable(
