@@ -1,0 +1,1 @@
+- Local staged verification now runs the guidance wording tests when a fragment, target, template, skill or projected instruction file changes, so a wording conflict shows before the landing.
