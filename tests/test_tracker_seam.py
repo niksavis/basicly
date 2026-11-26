@@ -223,4 +223,5 @@ def test_a_counter_refuses_to_read_a_store_that_cannot_answer(tmp_path: Path) ->
 
     with pytest.raises(tracker.TrackerReadError):
         tracker.read_comments(repo, "seam-0001")
+    assert tracker.try_read_comments(repo, "seam-0001") == []
     assert tracker.all_comment_texts(repo) == {}
