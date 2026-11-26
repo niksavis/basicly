@@ -774,8 +774,9 @@ def all_records(repo_root: Path) -> list[dict]:
     except (TrackerDivergenceError, OSError, ValueError) as exc:
         raise TrackerReadError(
             f"the tracker records could not be read: {exc}; run "
+            "`python3 .basicly/core/kit/tracker/cli.py fsck --vault URL` in a vault consumer, or "
             f"`python3 .basicly/core/kit/tracker/cli.py fsck {owned_store.LEDGER_DIR.as_posix()}` "
-            "to name the broken line"
+            "for a local ledger, to name the broken line"
         ) from exc
     return [
         _rendered(kit_module, issue_id, ledger_fold.records[issue_id], views, ledger_fold.records)

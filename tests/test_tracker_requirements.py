@@ -238,7 +238,8 @@ def test_r7_an_unreadable_ledger_is_refused_by_name_and_never_read_as_empty(
         tracker.all_records(repo)
 
     assert "could not be read" in str(refused.value)
-    assert "fsck" in str(refused.value)
+    assert "fsck --vault URL" in str(refused.value)
+    assert "fsck .basicly/ledger" in str(refused.value)
 
 
 def _release_standings(repo: Path) -> object:
