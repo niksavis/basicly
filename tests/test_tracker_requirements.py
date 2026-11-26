@@ -3,12 +3,14 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from basicly import merge, policy, tracker, verify
+from basicly import board_bodies, decisions, merge, policy, tracker, verify
 from tests import flipped_tracker
 from tests.committed_ledger import committed_ledger
 from tests.plan_fixtures import install_kit
@@ -218,12 +220,48 @@ def test_r7_a_missing_ledger_is_empty_without_waiting(tmp_path: Path) -> None:
     assert time.monotonic() - started < 1.0
 
 
-def test_r7_an_unreadable_ledger_is_not_reported_as_a_populated_one(tmp_path: Path) -> None:
+def _unreadable(tmp_path: Path) -> Path:
     repo = flipped_tracker.flipped_repo(tmp_path)
     flipped_tracker.seed(repo, "b-1", title="whole")
-    (tracker.ledger_dir(repo) / "events-0001.jsonl").write_text("{not json", encoding="utf-8")
+    log = tracker.ledger_dir(repo) / "events-0001.jsonl"
+    log.unlink()
+    log.mkdir()
+    return repo
 
-    assert tracker.all_records(repo) == []
+
+def test_r7_an_unreadable_ledger_is_refused_by_name_and_never_read_as_empty(
+    tmp_path: Path,
+) -> None:
+    repo = _unreadable(tmp_path)
+
+    with pytest.raises(tracker.TrackerReadError) as refused:
+        tracker.all_records(repo)
+
+    assert "could not be read" in str(refused.value)
+    assert "fsck" in str(refused.value)
+
+
+def _release_standings(repo: Path) -> object:
+    gate = _load_hook(REPO_ROOT / ".scripts" / "check_release_notes.py", "check_release_notes")
+    assert gate is not None
+    return sys.modules["release_note_standing"].standings(repo)
+
+
+@pytest.mark.parametrize(
+    "reader",
+    [
+        pytest.param(decisions.closed_ids, id="gate"),
+        pytest.param(_release_standings, id="release-script"),
+        pytest.param(board_bodies.bodies, id="board"),
+    ],
+)
+def test_r7_every_reader_class_refuses_an_unreadable_ledger_by_name(
+    tmp_path: Path, reader: Callable[[Path], object]
+) -> None:
+    repo = _unreadable(tmp_path)
+
+    with pytest.raises(tracker.TrackerReadError):
+        reader(repo)
 
 
 _R8_LOCK_TIMEOUT = (
