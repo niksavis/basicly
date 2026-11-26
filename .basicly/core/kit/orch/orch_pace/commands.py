@@ -7,15 +7,18 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+import runner
 from orch_lessons import log
 from orch_lessons.log import RefusedError
 from orch_relay import record
 from orch_state import store
 
-from orch_pace import plan, snapshot
+from orch_pace import costs, plan, snapshot
 
 Clock = Callable[[], int]
 MOMENTS = ("start", "done")
+VAULT_CONFIG = ".basicly-tracker.toml"
+QUICK_S = 15
 SETUP = (
     "wrap the status line command in ~/.claude/settings.json as "
     "'orch-statusline-tap -- <your command>' (docs/design/usage-snapshot.md)"
@@ -33,6 +36,7 @@ def add_parsers(groups: argparse._SubParsersAction) -> None:
     note = actions.add_parser("note")
     note.add_argument("record")
     note.add_argument("moment", choices=MOMENTS)
+    note.set_defaults(by="manual")
 
 
 def now_s() -> int:
@@ -82,12 +86,15 @@ def fresh(environ: dict[str, str], now: int) -> tuple[Path, list[str], dict[str,
     return where, [writer for writer, _ in kept], combined
 
 
-def show(environ: dict[str, str], now: int) -> str:
+def show(
+    environ: dict[str, str], now: int, cwd: Path, tracker: record.Tracker | None = None
+) -> str:
     where, writers, windows = fresh(environ, now)
     paces = [plan.pace(name, windows[name], now) for name in snapshot.WINDOWS if name in windows]
     lines = [f"usage snapshots in {where}, fresh from: {', '.join(writers)}"]
     lines += [plan.line(p, now) for p in paces]
     lines.append(f"advice: {plan.overall(paces)}")
+    lines += costs.lines(cwd, tracker)
     return "\n".join(lines)
 
 
@@ -111,13 +118,14 @@ def note(
     now: int,
     tracker: record.Tracker | None = None,
 ) -> str:
+    by = getattr(args, "by", "manual")
     _, _, windows = fresh(environ, now)
     five = windows["five_hour"]
     used, resets = float(five["used_percentage"]), int(five["resets_at"])  # type: ignore[arg-type, call-overload]
     found = tracker or record.Tracker(log.repo_root(cwd))
     head = f"five_hour={used:.1f} resets_at={resets}"
     if args.moment == "start":
-        text = f"{START_MARK} {head}{working(cwd, environ)}"
+        text = f"{START_MARK} {head}{working(cwd, environ)} by={by}"
         found.comment(args.record, text)
         return f"noted on {args.record}: {text}"
     shown = json.loads(found.runner([*found.base, "show", found.ledger, args.record]))
@@ -138,9 +146,28 @@ def note(
     kind = fields.get("issue_type", "") if isinstance(fields, dict) else ""
     same = abs(resets - int(began["resets"])) <= snapshot.CYCLE_APART_S
     change = f"{used - float(began['used']):.1f}" if same else "unknown_crossed_reset"
-    text = f"{DONE_MARK} {head} change={change} type={kind or 'unknown'}{working(cwd, environ)}"
+    kind = kind or "unknown"
+    text = f"{DONE_MARK} {head} change={change} type={kind}{working(cwd, environ)} by={by}"
     found.comment(args.record, text)
     return f"noted on {args.record}: {text}"
+
+
+def quick(argv: list[str]) -> str:
+    done = runner.attempt(argv, QUICK_S)
+    if done.code != 0:
+        raise RefusedError(f"the tracker refused: {done.err.strip() or done.out.strip()}")
+    return done.out
+
+
+def auto(cwd: Path, environ: dict[str, str], args: argparse.Namespace) -> bool:
+    try:
+        repo = log.repo_root(cwd)
+        if not (repo / VAULT_CONFIG).is_file():
+            return False
+        note(args, cwd, environ, now_s(), record.Tracker(repo, quick))
+    except RefusedError, OSError, ValueError, KeyError, TypeError:
+        return False
+    return True
 
 
 def run(
@@ -150,4 +177,4 @@ def run(
         return None
     if args.action == "note":
         return note(args, cwd, environ, clock())
-    return show(environ, clock())
+    return show(environ, clock(), cwd)

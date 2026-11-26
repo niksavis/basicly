@@ -1,6 +1,6 @@
 # Usage snapshot
 
-Status: version 1, 2026-11-26. Tracker: `basicly-qpr2xmr.3.39`.
+Status: version 1, 2026-11-26. Tracker: `basicly-qpr2xmr.3.39`, `basicly-qpr2xmr.3.40`.
 
 ## 1. Problem
 
@@ -111,7 +111,18 @@ The words mean:
 
 ## 6. Cost per item
 
-`orch pace note RECORD start` writes `[pace start] five_hour=P resets_at=T` on the record. `orch pace note RECORD done` writes `[pace done] five_hour=P resets_at=T change=C type=TYPE`. C is the percent change since the newest start note, or `unknown_crossed_reset` when a reset came between them. When an orchestrator store exists, both notes add `working_sessions=N`, the count of live sessions in the state `working`.
+`orch pace note RECORD start` writes `[pace start] five_hour=P resets_at=T by=manual` on the record. `orch pace note RECORD done` writes `[pace done] five_hour=P resets_at=T change=C type=TYPE by=manual`. C is the percent change since the newest start note, or `unknown_crossed_reset` when a reset came between them. When an orchestrator store exists, both notes add `working_sessions=N` before `by=`, the count of live sessions in the state `working`.
+
+The tools write the same notes by themselves:
+
+| Moment | Caller | `by=` |
+| --- | --- | --- |
+| a vault claim lands | the tracker kit (`vault_cli.py`) | `claim` |
+| the landing tool merges a lane | `basicly worktree merge` (`merge.py`) | `landing` |
+
+Both call `orch_state/note.py` in the orch kit with `pace="start"` or `pace="done"`. The note is written only when all of these hold: an orchestrator store and a session id exist, the repository has `.basicly-tracker.toml` (vault mode, so the note never changes tracked ledger files), and a fresh snapshot exists. Each tracker call has a 15-second limit. Any error skips the note and never changes the result of the claim or the landing. A consumer without the engine gets the claim note; it writes the done note with `orch pace note RECORD done`.
+
+`orch pace` ends with a table of cost per record type. It reads the records that hold a `[pace done]` note with one `list --query` call, and takes the newest `[pace done]` note with a `by=` field of each record. A note without `by=` is not counted; those are the sample notes of `basicly-qpr2xmr.3.39`. Columns: records, mean and maximum change in percent, and the count that crossed a reset. When the tracker cannot be read, the table line names the reason and the rest of the output stays.
 
 The percent is for the whole account. C includes the usage of every session that worked at the same time. Read it with `working_sessions`.
 
@@ -119,4 +130,4 @@ The percent is for the whole account. C includes the usage of every session that
 
 - The share of cached tokens in plan usage is not documented, so the cost of an item must be measured.
 - A writer clock that is wrong moves `read_at`.
-- Nothing calls `orch pace note` by itself yet, and nothing sums the cost per record type yet.
+- The mean cost per type does not correct for parallel sessions.
