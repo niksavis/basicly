@@ -93,6 +93,7 @@ DETACHED_WRITER = "detached"
 _BRANCH_WRITER = "branch"
 _SLUG_DIGEST = 8
 _SLUG_KEPT = 64 - _SLUG_DIGEST - 1
+_HASHED_WRITER = re.compile(rf"^.+-[0-9a-f]{{{_SLUG_DIGEST}}}$")
 
 LOCK_NAME = locking.LEDGER_LOCK_NAME
 
@@ -835,7 +836,7 @@ def _git_dir(start: Path) -> Path | None:
 
 def _slug(text: str) -> str:
 
-    if WRITER_PATTERN.match(text):
+    if WRITER_PATTERN.match(text) and not _HASHED_WRITER.match(text):
         return text
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-._")[:_SLUG_KEPT].rstrip("-._")
     return f"{cleaned or _BRANCH_WRITER}-{_digest_of(text)}"

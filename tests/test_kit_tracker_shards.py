@@ -130,6 +130,21 @@ def test_a_detached_head_is_named_rather_than_falling_back_to_the_trunk(repo: Pa
     assert (ledger / f"pending-{writer}.jsonl").exists()
 
 
+def test_a_branch_named_like_a_hashed_name_gets_its_own_file(repo: Path) -> None:
+    ledger = repo / "ledger"
+    ledger.mkdir()
+    _git(repo, "checkout", "-qb", "feat/a", "main")
+    _append(ledger, "demo-slash")
+    hashed = events.writer_of(events.pending_paths(ledger)[0])
+    _git(repo, "checkout", "-qb", hashed, "main")
+    _append(ledger, "demo-lookalike")
+
+    names = [path.name for path in events.pending_paths(ledger)]
+
+    assert hashed.startswith("feat-a-")
+    assert len(names) == 2
+
+
 def test_two_detached_worktrees_append_to_two_files(repo: Path, tmp_path: Path) -> None:
     head = _git(repo, "rev-parse", "HEAD").stdout.strip()
     folders = [tmp_path / "one", tmp_path / "two"]
