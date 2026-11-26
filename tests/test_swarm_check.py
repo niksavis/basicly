@@ -12,6 +12,7 @@ def _quiet(directory: Path, *lenses: str) -> None:
         _reply(directory, lens, {"findings": []})
 
 
+@pytest.mark.usefixtures("drawn")
 def test_a_missing_reply_is_not_run_and_fails_the_check_and_its_mermaid(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -88,6 +89,7 @@ def test_the_verdict_is_shown_in_the_table(
     assert "| a | ok | fail |" in capsys.readouterr().out
 
 
+@pytest.mark.usefixtures("drawn")
 def test_an_unverified_finding_is_marked_in_the_report_and_drawn_in_mermaid(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

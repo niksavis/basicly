@@ -15,6 +15,8 @@ sys.modules[_spec.name] = swarm
 with pytest.MonkeyPatch.context() as imports:
     imports.syspath_prepend(str(SCRIPT.parent))
     _spec.loader.exec_module(swarm)
+mermaid = sys.modules["mermaid"]
+capability = sys.modules["capability"]
 
 
 def _reply(directory: Path, lens: str, payload: dict | None, prose: str = "Done.\n") -> None:

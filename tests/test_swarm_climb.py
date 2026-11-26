@@ -46,7 +46,10 @@ def _decision(state: Path) -> str:
     return swarm.decide(json.loads(state.read_text(encoding="utf-8")))
 
 
-def test_the_lowest_grade_is_the_property_score(tmp_path: Path) -> None:
+@pytest.mark.usefixtures("drawn")
+def test_the_lowest_grade_is_the_property_score(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     state = _climb(tmp_path)
     _graded(tmp_path / "r1", "a,b", {"x": 4, "y": 9}, "important")
     _reply(tmp_path / "r1", "c", {"grades": {"x": 6, "y": 7, "w": 5}, "findings": []})
@@ -54,6 +57,9 @@ def test_the_lowest_grade_is_the_property_score(tmp_path: Path) -> None:
     assert _decision(state).startswith("continue")
     scores = json.loads(state.read_text(encoding="utf-8"))["rounds"][0]["scores"]
     assert scores == {"x": 4, "y": 7, "w": 5}
+    out = capsys.readouterr().out
+    assert out.count("```mermaid") == 1
+    assert 'r0["round 1: lowest grade 4, important 1"]' in out
 
 
 def test_no_rise_of_a_full_point_stops_the_climb(tmp_path: Path) -> None:

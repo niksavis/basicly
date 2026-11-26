@@ -11,6 +11,7 @@ def _vote(directory: Path, voter: str, vote: str) -> None:
     _reply(directory, voter, {"vote": vote, "reason": "r", "strongest_counter": f"against {vote}"})
 
 
+@pytest.mark.usefixtures("drawn")
 def test_a_majority_of_all_voters_decides_and_shows_the_dissent_in_text_and_mermaid(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -37,8 +38,10 @@ def test_a_majority_of_all_voters_decides_and_shows_the_dissent_in_text_and_merm
     assert 'q --> v2["skeptic: b"]' in out
     assert "o0 ==> d" in out
     assert "v2 -. dissent .-> d" in out
+    assert "nr" not in out
 
 
+@pytest.mark.usefixtures("drawn")
 def test_a_missing_vote_counts_against_every_option_and_shows_not_run_in_mermaid(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -62,6 +65,24 @@ def test_a_missing_vote_counts_against_every_option_and_shows_not_run_in_mermaid
     assert 'q --> v2["skeptic: not run"]' in out
     assert "v2 --> nr" in out
     assert 'd["decision: none, the user decides"]' in out
+    assert "o0 -. no majority .-> d" in out
+    assert "o1 -. no majority .-> d" in out
+
+
+def test_without_a_fresh_capability_file_the_tally_prints_no_mermaid_and_the_same_text(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _vote(tmp_path, "user", "a")
+    _vote(tmp_path, "safety", "a")
+    _vote(tmp_path, "skeptic", "b")
+    argv = ["tally", "--voters", "user,safety,skeptic", "--options", "a,b", "--dir", str(tmp_path)]
+
+    assert swarm.main(argv) == 0
+
+    out = capsys.readouterr().out
+    assert "mermaid" not in out
+    assert out.endswith("decision: a\ndissent (skeptic, b): r\n")
+    assert "\n\n\n" not in out
 
 
 def test_a_vote_outside_the_options_is_refused_by_name(
