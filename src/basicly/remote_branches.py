@@ -40,6 +40,10 @@ def _by_ancestry(
         return f"it has no commit of its own beyond {REMOTE}/{base}"
     if git(["merge-base", "--is-ancestor", head, landed], cwd=main, check=False).returncode == 0:
         return ""
+    cherry = git(["cherry", landed, head], cwd=main, check=False)
+    rows = [row for row in cherry.stdout.splitlines() if row.strip()]
+    if cherry.returncode == 0 and rows and all(row.startswith("- ") for row in rows):
+        return ""
     return None
 
 

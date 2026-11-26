@@ -1,0 +1,1 @@
+- **Cleanup deletes a rebased branch whose patches are all on the base.** `basicly worktree cleanup` and the pr sweep now count a branch as landed when `git cherry` finds an equivalent patch on `origin/BASE` for every commit of it, even after the base changed those files again (basicly-18mhacz.5).

@@ -3,55 +3,18 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
-import os
-import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
 
 from basicly import ci_landing, cli, merge, remote_branches, worktree
+from tests.remote_branches_fixture import _git, _lane, _on_origin, seeded_main
 from tests.test_worktree import _init_repo
-
-_ID = ["-c", "user.name=t", "-c", "user.email=t@t"]
-
-
-def _git(where: Path, *args: str) -> str:
-    done = subprocess.run(  # nosec B603 B607
-        ["git", "-C", str(where), *_ID, *args],
-        capture_output=True,
-        text=True,
-        check=True,
-        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
-    )
-    return done.stdout.strip()
 
 
 @pytest.fixture
 def main(tmp_path: Path) -> Path:
-    origin = tmp_path / "origin.git"
-    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
-    checkout = tmp_path / "main"
-    _git(tmp_path, "clone", "-q", str(origin), str(checkout))
-    (checkout / "a.txt").write_text("a\n", encoding="utf-8")
-    _git(checkout, "add", "a.txt")
-    _git(checkout, "commit", "-q", "-m", "a")
-    _git(checkout, "push", "-q", "origin", "main")
-    return checkout
-
-
-def _lane(main: Path, name: str, path: str) -> str:
-    _git(main, "switch", "-q", "-c", name, "origin/main")
-    (main / path).write_text(f"{name}\n", encoding="utf-8")
-    _git(main, "add", path)
-    _git(main, "commit", "-q", "-m", name)
-    _git(main, "push", "-q", "origin", name)
-    head = _git(main, "rev-parse", "HEAD")
-    _git(main, "switch", "-q", "main")
-    return head
-
-
-def _on_origin(main: Path, ref: str) -> bool:
-    return bool(_git(main, "ls-remote", "--heads", "origin", ref))
+    return seeded_main(tmp_path)
 
 
 def test_a_landed_lane_has_its_remote_branch_deleted(main: Path) -> None:
@@ -75,35 +38,22 @@ def test_an_unlanded_lane_keeps_its_remote_branch_and_names_the_path(main: Path)
     assert _on_origin(main, "harness/open")
 
 
-def test_a_replaced_lane_whose_work_landed_by_copy_has_its_remote_branch_deleted(
+def test_a_rebased_branch_whose_patch_is_on_the_base_is_deleted_after_the_base_changed_its_path(
     main: Path,
 ) -> None:
-    old = _lane(main, "harness/old", "d.txt")
-    (main / "later.txt").write_text("later\n", encoding="utf-8")
-    _git(main, "add", "later.txt")
-    _git(main, "commit", "-q", "-m", "later work on main")
+    old = _lane(main, "pr/lane/rebased", "f.txt")
+    (main / "other.txt").write_text("other work on main\n", encoding="utf-8")
+    _git(main, "add", "other.txt")
+    _git(main, "commit", "-q", "-m", "other work on main")
     _git(main, "cherry-pick", old)
-    _git(main, "push", "-q", "origin", "main")
-
-    note = remote_branches.delete_landed(main, "harness/old", "main", worktree.unlanded_paths)
-
-    assert note.startswith("deleted origin/harness/old")
-    assert not _on_origin(main, "harness/old")
-
-
-def test_a_branch_whose_head_is_on_the_base_is_deleted_after_the_base_changed_its_path(
-    main: Path,
-) -> None:
-    _lane(main, "pr/lane/old", "e.txt")
-    _git(main, "merge", "-q", "--no-ff", "-m", "land", "pr/lane/old")
-    (main / "e.txt").write_text("changed on main\n", encoding="utf-8")
+    (main / "f.txt").write_text("changed again on main\n", encoding="utf-8")
     _git(main, "commit", "-q", "-am", "main changes the path again")
     _git(main, "push", "-q", "origin", "main")
 
-    note = remote_branches.delete_landed(main, "pr/lane/old", "main", worktree.unlanded_paths)
+    note = remote_branches.delete_landed(main, "pr/lane/rebased", "main", worktree.unlanded_paths)
 
-    assert note.startswith("deleted origin/pr/lane/old")
-    assert not _on_origin(main, "pr/lane/old")
+    assert note.startswith("deleted origin/pr/lane/rebased")
+    assert not _on_origin(main, "pr/lane/rebased")
 
 
 def test_a_branch_with_no_remote_copy_is_left_alone(main: Path) -> None:
