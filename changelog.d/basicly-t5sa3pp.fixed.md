@@ -1,0 +1,1 @@
+- **A joined vault claim with a short deadline now settles on a loaded machine.** The claim starts its takeover share while enough time is left for it: the larger of 1.35 s and 1.5 times the longest takeover it has recorded. The 5 s grace for a silent holder is unchanged (basicly-t5sa3pp).

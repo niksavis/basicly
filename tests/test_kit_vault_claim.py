@@ -372,6 +372,22 @@ def test_a_joined_claim_takes_over_without_the_lock_when_the_holder_stalls(
     assert sum(Counter(_ids_of(bare, "r-stalled")).values()) == 1
 
 
+def test_the_takeover_reserve_is_the_floor_until_a_takeover_is_recorded(tmp_path: Path) -> None:
+    folder = tmp_path / "clone"
+    folder.mkdir()
+    recorded = folder / vault_claim.TAKEOVER_NAME
+
+    floor = vault_claim.takeover_reserve(folder)
+    recorded.write_text("2.0\n", encoding="utf-8")
+    measured = vault_claim.takeover_reserve(folder)
+    recorded.write_text("not a number\n", encoding="utf-8")
+    unreadable = vault_claim.takeover_reserve(folder)
+
+    assert floor == vault_claim.TAKEOVER_FLOOR
+    assert measured == vault_claim.TAKEOVER_MARGIN * 2.0
+    assert unreadable == vault_claim.TAKEOVER_FLOOR
+
+
 def _ids_of(bare: Path, record: str) -> list[str]:
     shapes = vault_claim.vault_clone.vault_shapes
     events = shapes.valid_events(shapes.check(bare, "main"))
