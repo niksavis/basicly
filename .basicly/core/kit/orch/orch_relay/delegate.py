@@ -167,8 +167,16 @@ def run(args: argparse.Namespace, repo: Path, base: Path, ports: Ports) -> list[
     model = _model(args, base, found.vendor)
     tracker, scan = ports.tracker(found.repo), ports.scan(found.repo)
     lane = found.repo if found.read_only else _lane(found, ports.execute)
-    turn = adapters.Turn(args.prompt, found.session or None, resume, model, found.read_only)
+    turn = adapters.Turn(
+        args.prompt,
+        found.session or None,
+        resume,
+        model,
+        found.read_only,
+        None if found.read_only else str(lane),
+    )
     argv = vendor.argv(turn)
+    adapters.refuse_bypass(found.vendor, argv)
     done = ports.execute(argv, lane)
     limited = adapters.usage_limit(found.vendor, done)
     saved = failures.save(base, found.vendor, argv, args.prompt, done) if done.code else None
@@ -193,4 +201,5 @@ def run(args: argparse.Namespace, repo: Path, base: Path, ports: Ports) -> list[
         f"answer: {reply.text}",
         _next(found, vendor),
         f"agent resume: cd {lane} && {vendor.resume_command(found.session)}",
+        f"rules: {' '.join(adapters.rules(argv)) or 'none'}",
     ]
