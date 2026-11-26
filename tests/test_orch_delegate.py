@@ -77,6 +77,7 @@ def _args(**given: Any) -> SimpleNamespace:
         "model": None,
         "tier": None,
         "read_only": False,
+        "billing": None,
         **given,
     })
 
@@ -151,6 +152,8 @@ def test_a_usage_limit_is_reported_by_name_with_its_reset_time_and_writes_nothin
         ({"resume": "nope"}, "no delegation with that session is recorded"),
         ({"resume": "nope", "vendor": "claude"}, "takes the coding agent, record and mode"),
         ({"resume": "nope", "read_only": True}, "takes the coding agent, record and mode"),
+        ({"resume": "nope", "billing": "console"}, "takes the coding agent, record and mode"),
+        ({"vendor": "codex", "record": "app-x1", "billing": "console"}, "runs only claude"),
         ({"vendor": "claude", "record": "app-x1", "tier": "top"}, "is not in the tier map"),
         (
             {"vendor": "claude", "record": "app-x1", "tier": "cheap", "model": "m"},
