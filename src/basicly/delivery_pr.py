@@ -71,15 +71,13 @@ def _git(root: Path, *args: str) -> tuple[int, str]:
     return done.returncode, (done.stdout or "").strip()
 
 
-def _require_current(root: Path, base: str, head: str) -> None:
+def _require_current(root: Path, base: str, head: str, state: str) -> None:
     if _git(root, "fetch", "-q", REMOTE, base)[0] != 0:
-        raise PrDeliveryError(
-            f"git fetch {REMOTE} {base} failed; nothing is pushed; run the merge again"
-        )
+        raise PrDeliveryError(f"git fetch {REMOTE} {base} failed; {state}; run the merge again")
     if _git(root, "merge-base", "--is-ancestor", f"{REMOTE}/{base}", head)[0] != 0:
         raise PrDeliveryError(
             f"the lane head {head[:12]} does not contain {REMOTE}/{base}, so the pull request "
-            f"would prove a tree that {base} never gets; nothing is pushed; run "
+            f"would prove a tree that {base} never gets; {state}; run "
             f"git pull --ff-only in the base checkout, then run the merge again"
         )
 
@@ -166,7 +164,7 @@ def prove(
     clock: ci_landing.Clock,
 ) -> tuple[str, str, str, tuple[str, ...]]:
     flows = workflows(root)
-    _require_current(root, base, candidate.head)
+    _require_current(root, base, candidate.head, "nothing is pushed")
     for flow in flows:
         failed = ci_landing.failed_runs(root, candidate, flow, gh, [])
         if refused := ci_landing.spent(failed, candidate, flow, RETRY):
@@ -202,6 +200,7 @@ def deliver(
 ) -> Landed:
     clock = clock or ci_landing.Clock()
     number, url, branch, runs = prove(root, candidate, base, gh, clock)
+    _require_current(root, base, candidate.head, f"nothing is merged and {url} stays open")
     subject, body = merge_message(candidate.record, number, branch, base)
     argv = ["pr", "merge", number, "--merge", "--match-head-commit", candidate.head]
     _read(gh, [*argv, "--subject", subject, "--body", body], f"merge pull request {url}")

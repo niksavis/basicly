@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -71,6 +72,7 @@ class Gh:
         self.calls: list[list[str]] = []
         self.prs: list[dict] = []
         self.merged = ""
+        self.view: Callable[[list[str]], str] = lambda _argv: json.dumps(self.run)
         self.run = {
             "databaseId": 7,
             "url": "https://example.invalid/runs/7",
@@ -89,7 +91,7 @@ class Gh:
             ("pr", "list"): lambda _argv: json.dumps(self.prs),
             ("pr", "create"): self._create,
             ("run", "list"): lambda argv: json.dumps([self.run] if "--event" in argv else []),
-            ("run", "view"): lambda _argv: json.dumps(self.run),
+            ("run", "view"): self.view,
             ("pr", "merge"): self._merge,
             ("pr", "view"): lambda _argv: json.dumps({
                 "state": "MERGED",
@@ -213,3 +215,27 @@ def test_the_merge_subject_and_body_pass_the_commit_msg_hook(tmp_path: Path) -> 
     )
 
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_a_base_that_moves_during_the_wait_is_refused_before_github_merges(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    candidate = _lane(repo)
+    gh = Gh(repo)
+    viewed = gh.run
+
+    def move_base(_argv: list[str]) -> str:
+        if _git(repo, "rev-parse", "main") == candidate.base:
+            (repo / "src" / "app.py").write_text("VALUE = 3\n", encoding="utf-8")
+            _git(repo, "commit", "-q", "-am", "chore: base moved")
+            _git(repo, "push", "-q", "origin", "main")
+        return json.dumps(viewed)
+
+    gh.view = move_base
+
+    with pytest.raises(delivery_pr.PrDeliveryError, match="stays open"):
+        delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
+
+    assert not [call for call in gh.calls if call[:2] == ["pr", "merge"]]
+    assert _artifact(repo) == {}

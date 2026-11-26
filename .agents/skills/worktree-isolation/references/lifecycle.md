@@ -104,6 +104,7 @@ It runs every check of `--mode ci` up to the proof: the record binding, the reba
 It refuses a lane head that does not contain `origin/BASE`, because the pull request would then prove a tree that the base never gets. Run `git pull --ff-only` in the base checkout and merge again.
 It pushes the head to a new branch `pr/NAME/HEAD12`, never a force-push, and opens a pull request or reuses the open one on the same head.
 It waits for a `pull_request` run of every landing workflow on that exact head. A landing workflow without a `pull_request` trigger is refused by name. A failed run and the rerun limit refuse as `--mode ci` does, and the pull request stays open.
+It checks `origin/BASE` again right before the merge; when the base moved during the wait, it refuses and leaves the pull request open.
 Then `gh pr merge --merge --match-head-commit HEAD` merges it on GitHub with a conventional subject that names the record. The adapter never pushes the base itself.
 It checks that the merge commit has the proved tree, writes the `landing-verification` artifact for the merge commit, fast-forwards the local base and deletes `pr/NAME/HEAD12` through the cleanup path. `close --landed COMMIT` then accepts the merge commit.
 The merge queue of GitHub is not available to repositories that a user account owns, so this adapter uses required checks on the pull request.
