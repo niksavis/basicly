@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from basicly import owned_store, worktree
+from basicly import worktree
 
 FORMAT = 1
 CONFIG_FILE = "basicly.toml"
@@ -29,6 +29,7 @@ SUBJECT = "chore(basicly): install the kit for a consumer proof ({record})"
 CI_ENV = {"GIT_TERMINAL_PROMPT": "0"}
 IDENTITY = ("user.name", "user.email", "basicly.holder")
 VAULT_CONFIG = ".basicly-tracker.toml"
+KIT_CLI = Path(".basicly") / "core" / "kit" / "tracker" / "cli.py"
 PROBE = "chore(basicly): ask which record this session holds\n"
 NO_SESSION = (
     "the proof has no tracker session: set BASICLY_TRACKER_SESSION, or run it from an agent "
@@ -136,10 +137,7 @@ def vault_url(clone: Path) -> str:
 
 
 def vault_held(clone: Path, env: dict[str, str], url: str) -> dict[str, object]:
-    session = owned_store.kit(clone, "vault_session").session_of(env)
-    if not session:
-        return {"session": ""}
-    kit_cli = clone / owned_store.KIT_TRACKER_DIR / "cli.py"
+    kit_cli = clone / KIT_CLI
     with tempfile.NamedTemporaryFile(
         "w", suffix=".msg", dir=clone.parent, delete=False, encoding="utf-8"
     ) as probe:
@@ -153,7 +151,7 @@ def vault_held(clone: Path, env: dict[str, str], url: str) -> dict[str, object]:
         judged = json.loads(done.stdout)
     except ValueError:
         judged = {}
-    return {**judged, "session": session} if isinstance(judged, dict) else {"session": session}
+    return judged if isinstance(judged, dict) else {}
 
 
 def vault_record(clone: Path, env: dict[str, str], held: Held) -> tuple[str | None, str]:

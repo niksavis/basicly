@@ -246,11 +246,15 @@ def check(commit: Commit) -> dict[str, object]:
     writer = vault_queue.writer_of(commit.state)
     record = _named(text)
     folded = vault_fold.fold(vault_clone.valid_events(commit.clone))
-    report: dict[str, object] = {"exit": ACCEPTED, "reached": reached}
+    report: dict[str, object] = {"exit": ACCEPTED, "reached": reached, "session": commit.session}
     if record is None:
         held = _held(folded, writer, commit.session)
         if len(held) != 1:
-            return {**_refusal(commit.clone.url, held), "reached": reached}
+            return {
+                **_refusal(commit.clone.url, held),
+                "reached": reached,
+                "session": commit.session,
+            }
         record = held[0]
         subject = _append_id(commit.message, record)
         report["filled"] = record
