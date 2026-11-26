@@ -24,8 +24,6 @@ def _load(file_name: str, module_name: str) -> Any:
     return module
 
 
-git_runner = _load("git_runner.py", "basicly_tracker_kit_git_runner")
-
 FIELD = "landing_evidence"
 ARTIFACT = "landing-verification"
 VERIFIED = "ci-verified"
@@ -40,6 +38,7 @@ class LandingEvidenceError(ValueError):
 
 
 def _git(args: Sequence[str], cwd: Path) -> str:
+    git_runner = _load("git_runner.py", "basicly_tracker_kit_git_runner")
     try:
         return git_runner.run(list(args), cwd)
     except git_runner.GitRunnerError as exc:

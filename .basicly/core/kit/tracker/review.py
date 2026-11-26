@@ -155,9 +155,14 @@ def refuse(
                     *process.closing_owed(found, record, fields, drafts, template=template),
                 )
                 if missing:
+                    note = (
+                        process.review_note(found, record, fields, drafts, template=template)
+                        if process.PLAN_HEADING in missing
+                        else ""
+                    )
                     raise UnreviewedError(
                         f"{record} cannot complete: it owes {', '.join(missing)}; "
-                        f"{shaping.remedy(missing)}",
+                        f"{shaping.remedy(missing)}" + (f" ({note})" if note else ""),
                         record,
                         _closing_steps(missing),
                     )
