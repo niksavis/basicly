@@ -225,9 +225,60 @@ def deliver(
             "tree": tree,
         },
     )
-    notes = [_fast_forward(root, base)]
-    notes.append(remote_branches.delete_landed(root, branch, base, unlanded_paths))
+    notes = [_fast_forward(root, base), *sweep(root, candidate.lane, base, gh, url)]
     return Landed(commit, url, runs, tuple(note for note in notes if note))
+
+
+def branches(root: Path, lane: str) -> tuple[str, ...]:
+    code, listed = _git(
+        root, "ls-remote", "--heads", REMOTE, f"refs/heads/{BRANCH_PREFIX}/{lane}/*"
+    )
+    if code != 0:
+        return ()
+    heads = (line.split()[-1] for line in listed.splitlines() if line.strip())
+    return tuple(sorted(head.removeprefix("refs/heads/") for head in heads))
+
+
+def _close_open(gh: ci_landing.Gh, branch: str, base: str, merged: str) -> str:
+    argv = [
+        "pr",
+        "list",
+        "--head",
+        branch,
+        "--base",
+        base,
+        "--state",
+        "open",
+        "--json",
+        "number,url",
+    ]
+    try:
+        listed = _read(gh, argv, f"list the open pull requests of {branch}")
+        closed = []
+        for found in listed if isinstance(listed, list) else []:
+            number = str(found.get("number")) if isinstance(found, dict) else ""
+            comment = (
+                f"Superseded by {merged}." if merged else "Superseded: the lane was cleaned up."
+            )
+            _read(gh, ["pr", "close", number, "--comment", comment], f"close #{number}")
+            closed.append(f"closed pull request #{number}")
+    except PrDeliveryError as error:
+        return f"kept {REMOTE}/{branch}: {error}"
+    return "; ".join(closed)
+
+
+def sweep(
+    root: Path, lane: str, base: str, gh: ci_landing.Gh = gh_cli.run, merged: str = ""
+) -> list[str]:
+    notes = []
+    for branch in branches(root, lane):
+        closed = _close_open(gh, branch, base, merged)
+        if closed.startswith("kept"):
+            notes.append(closed)
+            continue
+        deleted = remote_branches.delete_landed(root, branch, base, unlanded_paths)
+        notes.append("; ".join(note for note in (closed, deleted) if note))
+    return [note for note in notes if note]
 
 
 def _require_fetched(root: Path, base: str, commit: str) -> None:

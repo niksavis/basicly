@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -10,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from basicly import ci_landing, delivery_pr, tracker
+from basicly import cli as basicly_cli
 from tests import flipped_tracker
 
 COMMIT_MSG = (
@@ -56,8 +58,14 @@ def _repo(tmp_path: Path, triggers: str = TRIGGERS) -> Path:
 
 
 def _lane(repo: Path) -> ci_landing.Candidate:
-    base = _git(repo, "rev-parse", "main")
     _git(repo, "checkout", "-q", "-b", "harness/lane-a")
+    _git(repo, "checkout", "-q", "main")
+    return _lane_on(repo, "harness/lane-a")
+
+
+def _lane_on(repo: Path, branch: str) -> ci_landing.Candidate:
+    base = _git(repo, "rev-parse", "main")
+    _git(repo, "checkout", "-q", branch)
     (repo / "src" / "lane.py").write_text("LANE = 1\n", encoding="utf-8")
     _git(repo, "add", "src/lane.py")
     _git(repo, "commit", "-q", "-m", "chore: lane")
@@ -88,7 +96,8 @@ class Gh:
     def __call__(self, argv: list[str]) -> str | None:
         self.calls.append(argv)
         handlers = {
-            ("pr", "list"): lambda _argv: json.dumps(self.prs),
+            ("pr", "list"): self._list,
+            ("pr", "close"): self._close,
             ("pr", "create"): self._create,
             ("run", "list"): lambda argv: json.dumps([self.run] if "--event" in argv else []),
             ("run", "view"): self.view,
@@ -101,11 +110,29 @@ class Gh:
         handler = handlers.get((argv[0], argv[1]))
         return handler(argv) if handler else None
 
+    def _list(self, argv: list[str]) -> str:
+        branch = self._value(argv, "--head")
+        return json.dumps([
+            pr for pr in self.prs if pr["branch"] == branch and pr["state"] == "OPEN"
+        ])
+
+    def _close(self, argv: list[str]) -> str:
+        found = next(pr for pr in self.prs if str(pr["number"]) == argv[2])
+        found["state"] = "CLOSED"
+        found["comment"] = self._value(argv, "--comment")
+        return ""
+
     def _create(self, argv: list[str]) -> str:
         branch = self._value(argv, "--head")
         head = _git(self.repo, "ls-remote", "origin", f"refs/heads/{branch}").split()[0]
         url = f"https://example.invalid/pull/{len(self.prs) + 5}"
-        self.prs.append({"number": len(self.prs) + 5, "url": url, "headRefOid": head})
+        self.prs.append({
+            "number": len(self.prs) + 5,
+            "url": url,
+            "headRefOid": head,
+            "branch": branch,
+            "state": "OPEN",
+        })
         return f"{url}\n"
 
     def _merge(self, argv: list[str]) -> str | None:
@@ -119,6 +146,7 @@ class Gh:
             self.repo, "commit-tree", tree, "-p", "origin/main", "-p", head, "-m", message
         )
         _git(self.repo, "push", "-q", "origin", f"{self.merged}:refs/heads/main")
+        self.prs[-1]["state"] = "MERGED"
         return ""
 
 
@@ -159,6 +187,8 @@ def test_an_open_pull_request_on_the_same_head_is_reused(tmp_path: Path) -> None
         "number": 3,
         "url": "https://example.invalid/pull/3",
         "headRefOid": candidate.head,
+        "branch": delivery_pr.branch_name("lane-a", candidate.head),
+        "state": "OPEN",
     })
 
     landed = delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
@@ -239,3 +269,77 @@ def test_a_base_that_moves_during_the_wait_is_refused_before_github_merges(
 
     assert not [call for call in gh.calls if call[:2] == ["pr", "merge"]]
     assert _artifact(repo) == {}
+
+
+def _superseded(repo: Path, gh: Gh, head: str) -> str:
+    branch = delivery_pr.branch_name("lane-a", head)
+    _git(repo, "push", "-q", "origin", f"{head}:refs/heads/{branch}")
+    url = "https://example.invalid/pull/2"
+    gh.prs.append({"number": 2, "url": url, "headRefOid": head, "branch": branch, "state": "OPEN"})
+    return branch
+
+
+def test_a_superseded_pull_request_is_closed_and_its_landed_branch_deleted(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    _git(repo, "checkout", "-q", "-b", "harness/lane-a")
+    (repo / "src" / "old.py").write_text("OLD = 1\n", encoding="utf-8")
+    _git(repo, "add", "src/old.py")
+    _git(repo, "commit", "-q", "-m", "chore: first attempt")
+    old = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    candidate = _lane_on(repo, "harness/lane-a")
+    gh = Gh(repo)
+    branch = _superseded(repo, gh, old)
+
+    landed = delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
+
+    first = gh.prs[0]
+    assert first["state"] == "CLOSED"
+    assert first["comment"] == f"Superseded by {landed.pull_request}."
+    assert not _git(repo, "ls-remote", "origin", f"refs/heads/{branch}")
+
+
+def test_a_superseded_branch_whose_work_is_not_on_the_base_is_kept_and_named(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    _git(repo, "checkout", "-q", "-b", "side")
+    (repo / "src" / "lost.py").write_text("LOST = 1\n", encoding="utf-8")
+    _git(repo, "add", "src/lost.py")
+    _git(repo, "commit", "-q", "-m", "chore: work that never landed")
+    side = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    candidate = _lane(repo)
+    gh = Gh(repo)
+    branch = _superseded(repo, gh, side)
+
+    landed = delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
+
+    assert gh.prs[0]["state"] == "CLOSED"
+    assert _git(repo, "ls-remote", "origin", f"refs/heads/{branch}")
+    assert any(f"kept origin/{branch}" in note for note in landed.notes)
+
+
+def test_cleanup_of_a_removed_lane_sweeps_its_pr_branches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(basicly_cli, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(basicly_cli.worktree, "load_session", lambda *_a: None)
+    monkeypatch.setattr(basicly_cli.checkout, "current_branch", lambda _root: "main")
+    monkeypatch.setattr(delivery_pr, "branches", lambda _root, _lane: ("pr/gone/abc",))
+    monkeypatch.setattr(
+        basicly_cli.worktree, "cleanup", lambda _name, **kw: calls.append(("cleanup", kw))
+    )
+    monkeypatch.setattr(
+        delivery_pr, "sweep", lambda _root, lane, base: calls.append(("sweep", (lane, base))) or []
+    )
+    args = argparse.Namespace(name="gone", force=False)
+
+    assert basicly_cli._cmd_worktree_cleanup(args) == 0
+    assert calls == [
+        ("cleanup", {"force": False, "repo_root": tmp_path, "missing_ok": True}),
+        ("sweep", ("gone", "main")),
+    ]

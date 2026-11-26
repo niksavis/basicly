@@ -106,7 +106,9 @@ It pushes the head to a new branch `pr/NAME/HEAD12`, never a force-push, and ope
 It waits for a `pull_request` run of every landing workflow on that exact head. A landing workflow without a `pull_request` trigger is refused by name. A failed run and the rerun limit refuse as `--mode ci` does, and the pull request stays open.
 It checks `origin/BASE` again right before the merge; when the base moved during the wait, it refuses and leaves the pull request open.
 Then `gh pr merge --merge --match-head-commit HEAD` merges it on GitHub with a conventional subject that names the record. The adapter never pushes the base itself.
-It checks that the merge commit has the proved tree, writes the `landing-verification` artifact for the merge commit, fast-forwards the local base and deletes `pr/NAME/HEAD12` through the cleanup path. `close --landed COMMIT` then accepts the merge commit.
+It checks that the merge commit has the proved tree, writes the `landing-verification` artifact for the merge commit and fast-forwards the local base.
+Then it sweeps every `pr/NAME/` branch: it closes each other open pull request with a comment that names the merged one, and deletes a branch through the cleanup path when its head is on the base or the base holds every path it changed. It lists a kept branch.
+`basicly worktree cleanup NAME` runs the same sweep, also after the lane worktree is gone. `close --landed COMMIT` then accepts the merge commit.
 The merge queue of GitHub is not available to repositories that a user account owns, so this adapter uses required checks on the pull request.
 
 ## Merge several
