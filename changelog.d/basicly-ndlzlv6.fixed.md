@@ -1,0 +1,1 @@
+- **A queued vault event of another repository no longer blocks your commit.** `tracker-path-scan` now scans only queued events whose record has this repository's prefix. A comment that names the machine user name is refused when it is queued, with the repair, so it never reaches the shared queue (basicly-ndlzlv6).

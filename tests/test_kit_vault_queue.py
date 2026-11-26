@@ -102,6 +102,31 @@ def test_proof_t_redact_a_token_and_a_home_path_never_reach_the_queue(
     assert "<redacted:posix-home-path>" in stored
 
 
+def test_a_comment_that_names_the_machine_user_is_refused_before_the_queue(
+    tmp_path: Path,
+    origin: Vault,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(vault_queue.getpass, "getuser", lambda: "agent-tester")
+
+    code, shown = _comment(tmp_path, origin, "held by agent-tester", capsys)
+
+    assert code == cli.EXIT_REFUSED
+    assert "user name" in shown["refused"]
+    assert "agent-tester" not in shown["refused"]
+    assert not _queue(tmp_path, origin).exists()
+
+
+def test_a_claim_keeps_its_holder_name_when_it_is_the_machine_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(vault_queue.getpass, "getuser", lambda: "agent-tester")
+    draft = {"kind": "claim", "record": "acme-c3d4", "payload": {"name": "agent-tester"}}
+
+    assert vault_queue.checked([draft])[0]["payload"]["name"] == "agent-tester"
+
+
 def test_a_queued_write_prints_the_count_the_oldest_age_and_who_shares_it(
     tmp_path: Path, origin: Vault, capsys: pytest.CaptureFixture[str]
 ) -> None:
