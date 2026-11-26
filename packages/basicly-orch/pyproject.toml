@@ -13,6 +13,7 @@ classifiers = [
 orch-state-hook = "orch_state.reporter:main"
 orch = "orch_lessons.cli:main"
 orch-guard-hook = "orch_guard.hook:main"
+orch-statusline-tap = "orch_pace.tap:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -31,3 +32,4 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "../../.basicly/core/kit/orch/orch_lessons" = "orch_lessons"
 "../../.basicly/core/kit/orch/orch_guard" = "orch_guard"
 "../../.basicly/core/kit/orch/orch_relay" = "orch_relay"
+"../../.basicly/core/kit/orch/orch_pace" = "orch_pace"
