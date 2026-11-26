@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import json
 import os
 import subprocess
@@ -137,17 +138,27 @@ def test_every_git_call_gets_only_the_time_that_remains(tmp_path: Path, bare: Pa
     assert later and all(t < 3.6 for t in later)
 
 
+@pytest.mark.parametrize("fetch_s", [0.0, 1.2], ids=["fast-runner", "slow-runner"])
 def test_a_claim_past_its_deadline_exits_4_and_names_wait_and_cancel(
-    tmp_path: Path, bare: Path
+    tmp_path: Path, bare: Path, fetch_s: float
 ) -> None:
     clone, state = _machine(tmp_path, bare, "m")
 
     def refusing(args: list[str], cwd: Path, **options: Any) -> str:
         if "push" in args:
             raise git_runner.GitCommandError("push", 1, "rejected")
+        if args[0] == "fetch":
+            time.sleep(fetch_s)
         return git_runner.run(args, cwd, **options)
 
-    shown = vault_claim.claim(_ask(clone, state, "s1", runner=refusing), deadline=1.0)
+    reads = itertools.count()
+
+    def stepping() -> float:
+        return next(reads) * 0.05
+
+    shown = vault_claim.claim(
+        _ask(clone, state, "s1", runner=refusing), ticks=stepping, deadline=1.0
+    )
 
     assert shown["exit"] == vault_claim.UNSETTLED
     assert any("--wait" in step for step in shown["next"])
