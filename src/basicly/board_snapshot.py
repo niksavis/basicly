@@ -16,6 +16,7 @@ from . import (
     owned_store,
     projection,
     run_record,
+    tracker,
     tracker_paths,
 )
 
@@ -77,11 +78,14 @@ def _read_and_fold(
     repo_root: Path,
 ) -> tuple[Mapping[str, Any], list[Any], list[tuple], Mapping[str, str]] | None:
 
+    absent = tracker.tracker_absent(repo_root)
     try:
         kit = owned_store.kit(repo_root)
         events = kit.read_ledger(owned_store.readable_ledger(repo_root))
-    except owned_store.TrackerDivergenceError, OSError, ValueError:
-        return None
+    except tracker.READ_FAILURES as exc:
+        if absent:
+            return None
+        raise tracker.read_refused(exc) from exc
     return (
         kit.events.fold(events).records,
         board_fields.read_markers(events),

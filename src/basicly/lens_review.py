@@ -38,7 +38,7 @@ def _parse_marker(text: str) -> tuple[str, str] | None:
 def latest_per_lens(repo_root: Path, issue_id: str) -> tuple[LensFindings, ...]:
 
     latest: dict[str, str] = {}
-    for comment in tracker.try_read_comments(repo_root, issue_id):
+    for comment in tracker.read_comments(repo_root, issue_id):
         parsed = _parse_marker(str(comment.get("text", "")))
         if parsed is not None:
             latest[parsed[0]] = parsed[1]
