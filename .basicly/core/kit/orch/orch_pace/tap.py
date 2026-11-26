@@ -8,7 +8,7 @@ import runner
 
 from orch_pace import snapshot
 
-WRITER = "orch-statusline-tap"
+WRITER = "statusline"
 USAGE = "usage: orch-statusline-tap -- COMMAND [ARG...]"
 
 

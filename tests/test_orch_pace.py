@@ -62,15 +62,15 @@ def echo_child(tmp_path: Path, exit_code: int = 0) -> list[str]:
 
 
 def test_the_tap_passes_stdin_through_and_writes_the_snapshot(tmp_path: Path) -> None:
-    target = tmp_path / "state" / "usage-snapshot.json"
+    target = tmp_path / "state" / "statusline.json"
     stdin = json.dumps(status()).encode()
-    done = tap(stdin, {snapshot.PATH_ENV: str(target)}, *echo_child(tmp_path, 3))
+    done = tap(stdin, {snapshot.DIR_ENV: str(target.parent)}, *echo_child(tmp_path, 3))
     assert done.returncode == 3
     assert done.stdout == GLYPHS + str(len(stdin)).encode()
     written = json.loads(target.read_text(encoding="utf-8"))
     assert written["format"] == snapshot.FORMAT
     assert written["version"] == 1
-    assert written["writer"] == "orch-statusline-tap"
+    assert written["writer"] == "statusline"
     assert written["windows"]["five_hour"]["used_percentage"] == 40.0
     assert written["windows"]["seven_day"]["resets_at"] == SEVEN_RESET
     assert list(target.parent.glob(".usage-snapshot.*")) == []
@@ -84,27 +84,26 @@ def test_the_tap_passes_stdin_through_and_writes_the_snapshot(tmp_path: Path) ->
 def test_the_tap_prints_the_output_when_the_input_has_no_usage(
     tmp_path: Path, stdin: bytes
 ) -> None:
-    target = tmp_path / "usage-snapshot.json"
-    done = tap(stdin, {snapshot.PATH_ENV: str(target)}, *echo_child(tmp_path))
+    done = tap(stdin, {snapshot.DIR_ENV: str(tmp_path / "s")}, *echo_child(tmp_path))
     assert done.returncode == 0
     assert done.stdout == GLYPHS + str(len(stdin)).encode()
-    assert not target.exists()
+    assert not (tmp_path / "s").exists()
 
 
 def test_the_tap_prints_the_output_when_the_snapshot_cannot_be_written(tmp_path: Path) -> None:
     blocker = tmp_path / "a-file"
     blocker.write_text("x", encoding="utf-8")
     stdin = json.dumps(status()).encode()
-    env = {snapshot.PATH_ENV: str(blocker / "usage-snapshot.json")}
+    env = {snapshot.DIR_ENV: str(blocker / "snapshots")}
     done = tap(stdin, env, *echo_child(tmp_path))
     assert done.returncode == 0
     assert done.stdout == GLYPHS + str(len(stdin)).encode()
 
 
 def test_the_tap_names_a_command_that_cannot_start(tmp_path: Path) -> None:
-    target = tmp_path / "usage-snapshot.json"
+    target = tmp_path / "statusline.json"
     stdin = json.dumps(status()).encode()
-    done = tap(stdin, {snapshot.PATH_ENV: str(target)}, "--", str(tmp_path / "missing"))
+    done = tap(stdin, {snapshot.DIR_ENV: str(tmp_path)}, "--", str(tmp_path / "missing"))
     assert done.returncode == 127
     assert b"cannot start" in done.stderr
     assert b"orch-statusline-tap -- COMMAND" in done.stderr
@@ -112,21 +111,23 @@ def test_the_tap_names_a_command_that_cannot_start(tmp_path: Path) -> None:
 
 
 def test_the_tap_refuses_no_command_by_name(tmp_path: Path) -> None:
-    done = tap(b"{}", {snapshot.PATH_ENV: str(tmp_path / "s.json")}, "--")
+    done = tap(b"{}", {snapshot.DIR_ENV: str(tmp_path)}, "--")
     assert done.returncode == 2
     assert b"no status line command given" in done.stderr
 
 
-def test_the_snapshot_path_follows_the_documented_order(tmp_path: Path) -> None:
-    named = tmp_path / "named.json"
-    tail = Path("basicly") / "usage-snapshot.json"
-    assert snapshot.path({snapshot.PATH_ENV: str(named)}, "linux", tmp_path) == named
+def test_the_snapshot_folder_follows_the_documented_order(tmp_path: Path) -> None:
+    named = tmp_path / "named"
+    tail = Path("basicly") / "usage-snapshots"
+    assert snapshot.folder({snapshot.DIR_ENV: str(named)}, "linux", tmp_path) == named
     xdg = {"XDG_STATE_HOME": str(tmp_path / "x")}
-    assert snapshot.path(xdg, "linux", tmp_path) == tmp_path / "x" / tail
+    assert snapshot.folder(xdg, "linux", tmp_path) == tmp_path / "x" / tail
     relative = {"XDG_STATE_HOME": "relative"}
-    assert snapshot.path(relative, "linux", tmp_path) == tmp_path / ".local" / "state" / tail
+    assert snapshot.folder(relative, "linux", tmp_path) == tmp_path / ".local" / "state" / tail
     local = {"LOCALAPPDATA": str(tmp_path / "L")}
-    assert snapshot.path(local, "win32", tmp_path) == tmp_path / "L" / tail
+    assert snapshot.folder(local, "win32", tmp_path) == tmp_path / "L" / tail
+    with pytest.raises(ValueError, match="writer name"):
+        snapshot.own_file({snapshot.DIR_ENV: str(named)}, "../x")
 
 
 def merged(old: object, five: float, at: int, resets: int = FIVE_RESET) -> object:
@@ -214,7 +215,7 @@ def write_snapshot(target: Path, five_window: dict[str, object]) -> None:
     document = {
         "format": snapshot.FORMAT,
         "version": 1,
-        "writer": "test",
+        "writer": target.stem,
         "written_at": NOW,
         "windows": {"five_hour": five_window},
     }
@@ -222,8 +223,7 @@ def write_snapshot(target: Path, five_window: dict[str, object]) -> None:
 
 
 def test_orch_pace_prints_both_windows_and_the_advice(tmp_path: Path) -> None:
-    target = tmp_path / "s.json"
-    env = {snapshot.PATH_ENV: str(target)}
+    env = {snapshot.DIR_ENV: str(tmp_path)}
     assert snapshot.record(json.dumps(status(five=30.0)).encode(), env, NOW - 1800, "test")
     assert snapshot.record(json.dumps(status(five=35.0)).encode(), env, NOW, "test")
     args = argparse.Namespace(group="pace", action=None)
@@ -235,17 +235,48 @@ def test_orch_pace_prints_both_windows_and_the_advice(tmp_path: Path) -> None:
 
 
 def test_orch_pace_refuses_a_missing_stale_or_foreign_snapshot(tmp_path: Path) -> None:
-    target = tmp_path / "s.json"
-    env = {snapshot.PATH_ENV: str(target)}
+    target = tmp_path / "statusline.json"
+    env = {snapshot.DIR_ENV: str(tmp_path)}
     args = argparse.Namespace(group="pace", action=None)
-    with pytest.raises(log.RefusedError, match="no usage snapshot at"):
+    with pytest.raises(log.RefusedError, match="no usage snapshot in"):
         commands.run(args, tmp_path, env, lambda: NOW)
     write_snapshot(target, window(30.0, [[NOW - 601, 30.0]]))
-    with pytest.raises(log.RefusedError, match="is stale"):
+    with pytest.raises(log.RefusedError, match=r"statusline\.json: stale"):
         commands.run(args, tmp_path, env, lambda: NOW)
     target.write_text(json.dumps({"format": snapshot.FORMAT, "version": 2}), encoding="utf-8")
-    with pytest.raises(log.RefusedError, match="has version 2; this orch reads version 1"):
+    with pytest.raises(log.RefusedError, match="version 2; this orch reads version 1"):
         commands.run(args, tmp_path, env, lambda: NOW)
+
+
+def test_orch_pace_skips_a_torn_file_and_reads_the_valid_one(tmp_path: Path) -> None:
+    write_snapshot(tmp_path / "statusline.json", window(30.0, [[NOW - 60, 30.0]]))
+    torn = (tmp_path / "statusline.json").read_text(encoding="utf-8")
+    (tmp_path / "handily-board.json").write_text(torn[: len(torn) // 2], encoding="utf-8")
+    args = argparse.Namespace(group="pace", action=None)
+    shown = commands.run(args, tmp_path, {snapshot.DIR_ENV: str(tmp_path)}, lambda: NOW)
+    assert "fresh from: statusline" in shown
+    assert "five_hour: used 30.0%" in shown
+
+
+def test_orch_pace_takes_the_highest_fresh_reading_of_all_writers(tmp_path: Path) -> None:
+    write_snapshot(tmp_path / "statusline.json", window(30.0, [[NOW - 60, 30.0]]))
+    write_snapshot(tmp_path / "handily-board.json", window(34.0, [[NOW - 120, 34.0]]))
+    write_snapshot(tmp_path / "old.json", window(90.0, [[NOW - 900, 90.0]]))
+    args = argparse.Namespace(group="pace", action=None)
+    shown = commands.run(args, tmp_path, {snapshot.DIR_ENV: str(tmp_path)}, lambda: NOW)
+    assert "fresh from: handily-board, statusline" in shown
+    assert "five_hour: used 34.0%" in shown
+
+
+def test_a_young_window_projects_only_its_used_percent() -> None:
+    young = plan.pace("five_hour", window(4.0, [[NOW, 4.0]], resets=NOW + 5 * 3600 - 660), NOW)
+    assert young.rate is None
+    assert young.projected == pytest.approx(4.0)
+    assert young.advice == "start"
+    week = window(16.0, [[NOW, 16.0]], resets=NOW + 7 * 24 * 3600 - 8 * 3600)
+    early = plan.pace("seven_day", week, NOW)
+    assert early.rate is None
+    assert early.advice == "start"
 
 
 class FakeLedger:
@@ -268,8 +299,8 @@ def tracker(tmp_path: Path, ledger: FakeLedger) -> object:
 
 
 def test_orch_pace_note_records_the_percent_change_of_an_item(tmp_path: Path) -> None:
-    target = tmp_path / "s.json"
-    env = {snapshot.PATH_ENV: str(target)}
+    target = tmp_path / "statusline.json"
+    env = {snapshot.DIR_ENV: str(tmp_path)}
     ledger = FakeLedger()
     found = tracker(tmp_path, ledger)
     write_snapshot(target, window(30.0, [[NOW, 30.0]]))
@@ -289,9 +320,8 @@ def test_orch_pace_note_records_the_percent_change_of_an_item(tmp_path: Path) ->
 
 
 def test_orch_pace_note_done_without_a_start_is_refused(tmp_path: Path) -> None:
-    target = tmp_path / "s.json"
-    write_snapshot(target, window(30.0, [[NOW, 30.0]]))
+    write_snapshot(tmp_path / "statusline.json", window(30.0, [[NOW, 30.0]]))
     done = argparse.Namespace(group="pace", action="note", record="x-2", moment="done")
-    env = {snapshot.PATH_ENV: str(target)}
+    env = {snapshot.DIR_ENV: str(tmp_path)}
     with pytest.raises(log.RefusedError, match="orch pace note x-2 start"):
         commands.note(done, tmp_path, env, NOW, tracker(tmp_path, FakeLedger()))

@@ -39,48 +39,68 @@ def now_s() -> int:
     return int(time.time())
 
 
-def fresh(
-    environ: dict[str, str], now: int
-) -> tuple[Path, dict[str, object], dict[str, snapshot.Window]]:
-    target = snapshot.path(environ)
-    if not target.is_file():
-        raise RefusedError(f"no usage snapshot at {target}; {SETUP}")
-    document = snapshot.load(target)
+def _state(path: Path, document: object, now: int) -> str:
     if not isinstance(document, dict) or document.get("format") != snapshot.FORMAT:
-        raise RefusedError(f"the usage snapshot at {target} is unreadable or not {snapshot.FORMAT}")
+        return "unreadable or not " + snapshot.FORMAT
     if document.get("version") != snapshot.VERSION:
-        raise RefusedError(
-            f"the usage snapshot at {target} has version {document.get('version')!r}; "
-            f"this orch reads version {snapshot.VERSION}"
-        )
-    windows = snapshot.windows(document)
-    five = windows.get("five_hour")
+        version = document.get("version")
+        return f"version {version!r}; this orch reads version {snapshot.VERSION}"
+    if not snapshot.written_by(document, path.stem):
+        return f"writer field is not {path.stem!r}"
+    five = snapshot.windows(document).get("five_hour")
     if five is None:
-        raise RefusedError(f"the usage snapshot at {target} has no five_hour reading; {SETUP}")
+        return "no five_hour reading"
     age = now - int(five["read_at"])  # type: ignore[call-overload]
     if age > plan.STALE_S:
+        return f"stale: last five_hour reading {plan.span(age)} old"
+    return ""
+
+
+def fresh(environ: dict[str, str], now: int) -> tuple[Path, list[str], dict[str, snapshot.Window]]:
+    where = snapshot.folder(environ)
+    found = snapshot.documents(where)
+    if not found:
+        raise RefusedError(f"no usage snapshot in {where}; {SETUP}")
+    kept: list[tuple[str, dict[str, snapshot.Window]]] = []
+    skipped: list[str] = []
+    for path, document in found:
+        why = _state(path, document, now)
+        if why:
+            skipped.append(f"{path.name}: {why}")
+        else:
+            kept.append((path.stem, snapshot.windows(document)))
+    if not kept:
         raise RefusedError(
-            f"the usage snapshot at {target} is stale: the last five_hour reading is "
-            f"{plan.span(age)} old, over {plan.STALE_S // 60} minutes; a status line refresh "
-            "writes a new one, or set refreshInterval in the statusLine settings"
+            f"no fresh usage snapshot in {where} ({'; '.join(skipped)}); a five_hour reading "
+            f"must be under {plan.STALE_S // 60} minutes old; a status line refresh writes one"
         )
-    return target, document, windows
+    combined: dict[str, snapshot.Window] = {}
+    for name in snapshot.WINDOWS:
+        chosen = snapshot.best([w[name] for _, w in kept if name in w])
+        if chosen is not None:
+            combined[name] = chosen
+    return where, [writer for writer, _ in kept], combined
 
 
 def show(environ: dict[str, str], now: int) -> str:
-    target, document, windows = fresh(environ, now)
+    where, writers, windows = fresh(environ, now)
     paces = [plan.pace(name, windows[name], now) for name in snapshot.WINDOWS if name in windows]
-    lines = [f"usage snapshot {target}, written by {document.get('writer')}"]
+    lines = [f"usage snapshots in {where}, fresh from: {', '.join(writers)}"]
     lines += [plan.line(p, now) for p in paces]
     lines.append(f"advice: {plan.overall(paces)}")
     return "\n".join(lines)
+
+
+def _dead(session: dict[str, object]) -> bool:
+    pid, began = session.get("pid"), session.get("pid_start")
+    return isinstance(pid, int) and isinstance(began, int) and store.alive(pid, began) is False
 
 
 def working(cwd: Path, environ: dict[str, str]) -> str:
     root = store.find(cwd, environ)
     if root is None:
         return ""
-    count = sum(1 for s in store.sessions(root) if s.get("state") == "working")
+    count = sum(1 for s in store.sessions(root) if s.get("state") == "working" and not _dead(s))
     return f" working_sessions={count}"
 
 

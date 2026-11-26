@@ -12,7 +12,7 @@ LENGTH_S = {"five_hour": 5 * HOUR_S, "seven_day": 7 * 24 * HOUR_S}
 STALE_S = 600
 RECENT_S = HOUR_S
 MIN_SPAN_S = 900
-MIN_ELAPSED_S = 600
+MIN_ELAPSED_S = {"five_hour": 30 * 60, "seven_day": 24 * HOUR_S}
 HOLD_AT = 90.0
 CLOSE_AT = 100.0
 USED_CLOSE_AT = 95.0
@@ -53,7 +53,7 @@ def rate(name: str, window: Window, now: int) -> tuple[float | None, str]:
             span = recent[-1][0] - recent[0][0]
             return (recent[-1][1] - recent[0][1]) * HOUR_S / span, RECENT
     elapsed = now - (resets - LENGTH_S[name])
-    if elapsed >= MIN_ELAPSED_S:
+    if elapsed >= MIN_ELAPSED_S[name]:
         return used * HOUR_S / elapsed, AVERAGE
     return None, UNKNOWN
 
@@ -96,9 +96,7 @@ def line(p: Pace, now: int) -> str:
     if p.over:
         reset = when(p.resets_at)
         return f"{p.name}: window reset at {reset}; no reading of the new window yet; start"
-    shown = (
-        f"{p.rate:.1f}%/h ({p.basis})" if p.rate is not None else "unknown (under 10 min of window)"
-    )
+    shown = f"{p.rate:.1f}%/h ({p.basis})" if p.rate is not None else "unknown (window too young)"
     return (
         f"{p.name}: used {p.used:.1f}%, resets {when(p.resets_at)} (in {span(p.resets_at - now)}), "
         f"burn {shown}, at reset {p.projected:.1f}%, read {span(now - p.read_at)} ago; {p.advice}"

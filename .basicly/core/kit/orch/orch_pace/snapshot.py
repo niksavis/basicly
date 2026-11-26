@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Mapping
@@ -11,8 +12,9 @@ from typing import TypeIs
 
 FORMAT = "basicly.usage-snapshot"
 VERSION = 1
-PATH_ENV = "BASICLY_USAGE_SNAPSHOT"
-NAME = "usage-snapshot.json"
+DIR_ENV = "BASICLY_USAGE_SNAPSHOT_DIR"
+FOLDER = "usage-snapshots"
+WRITER_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 WINDOWS = ("five_hour", "seven_day")
 READINGS_MAX = 360
 STEP_S = 60
@@ -21,19 +23,25 @@ CYCLE_APART_S = 600
 Window = dict[str, object]
 
 
-def path(
+def folder(
     environ: Mapping[str, str], platform: str = sys.platform, home: Path | None = None
 ) -> Path:
-    named = environ.get(PATH_ENV, "").strip()
+    named = environ.get(DIR_ENV, "").strip()
     if named:
         return Path(named)
     root = home if home is not None else Path.home()
     if platform == "win32":
         local = environ.get("LOCALAPPDATA", "").strip()
-        return (Path(local) if local else root / "AppData" / "Local") / "basicly" / NAME
+        return (Path(local) if local else root / "AppData" / "Local") / "basicly" / FOLDER
     state = environ.get("XDG_STATE_HOME", "").strip()
     base = Path(state) if state and Path(state).is_absolute() else root / ".local" / "state"
-    return base / "basicly" / NAME
+    return base / "basicly" / FOLDER
+
+
+def own_file(environ: Mapping[str, str], writer: str) -> Path:
+    if WRITER_NAME.match(writer) is None:
+        raise ValueError(f"writer name {writer!r} is not lower-case letters, digits and dashes")
+    return folder(environ) / f"{writer}.json"
 
 
 def _number(value: object) -> TypeIs[int | float]:
@@ -154,9 +162,28 @@ def record(data: bytes, environ: Mapping[str, str], now: int, writer: str) -> bo
     found = incoming(json.loads(data.decode("utf-8")))
     if not found:
         return False
-    target = path(environ)
+    target = own_file(environ, writer)
     merged = merge(load(target), found, now, writer)
     if merged is None:
         return False
     write(target, merged)
     return True
+
+
+def documents(where: Path) -> list[tuple[Path, object]]:
+    try:
+        found = sorted(where.glob("*.json"))
+    except OSError:
+        return []
+    return [(p, load(p)) for p in found if WRITER_NAME.match(p.stem)]
+
+
+def written_by(document: object, name: str) -> bool:
+    return isinstance(document, dict) and document.get("writer") == name
+
+
+def best(candidates: list[Window]) -> Window | None:
+    def key(window: Window) -> tuple[float, float, float]:
+        return tuple(float(window[k]) for k in ("resets_at", "used_percentage", "read_at"))  # type: ignore[return-value, arg-type]
+
+    return max(candidates, key=key, default=None)

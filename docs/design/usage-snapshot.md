@@ -13,18 +13,21 @@ No hook, OpenTelemetry metric or session channel gives these values (Claude Code
 - The status line input carries `rate_limits.five_hour` and `rate_limits.seven_day`. Each has `used_percentage` (0 to 100) and `resets_at` (Unix epoch seconds) (code.claude.com/docs/en/statusline, read 2026-11-26).
 - `rate_limits` is present only for claude.ai Pro, Max and Ultra subscribers, and only after the first API response of the session. Each window can be absent. Claude Code drops a window when its `resets_at` time passes.
 - The status line runs at session start, at each new assistant message, after `/compact`, and on the other events that the documentation names. Claude Code debounces updates at 300 ms and cancels a run that is still in progress when a new update starts.
-- Without `refreshInterval`, an idle session does not run the status line again. An idle session also does not spend usage, so its last value stays correct.
+- Without `refreshInterval`, an idle session does not run the status line again. The percent is for the whole account, so other clients (claude.ai, other machines) can raise it while every local session is idle. The snapshot then goes stale and `orch pace` refuses.
 
-## 3. The file
+## 3. The files
+
+Each writer writes its own file in one folder. The reader reads every file in the folder. A half-written file costs one skipped reading, never a wrong number (Orchestrator decision of 2026-11-26 on `handily-l97t2x`).
 
 | Item | Value |
 | --- | --- |
-| Path | `BASICLY_USAGE_SNAPSHOT` when set; else `$XDG_STATE_HOME/basicly/usage-snapshot.json` (an absolute `XDG_STATE_HOME` only, else `~/.local/state`); on Windows `%LOCALAPPDATA%\\basicly\\usage-snapshot.json` |
-| Owner | basicly. Other writers write the same format and read nothing of basicly |
-| Writers | `orch-statusline-tap` (basicly-orch package), `handily-board` |
+| Folder | `BASICLY_USAGE_SNAPSHOT_DIR` when set; else `$XDG_STATE_HOME/basicly/usage-snapshots/` (an absolute `XDG_STATE_HOME` only, else `~/.local/state`); on Windows `%LOCALAPPDATA%\\basicly\\usage-snapshots\\` |
+| File | `<writer>.json`. The writer name is lower-case letters, digits and dashes, at most 40 characters |
+| Writers | `statusline` (`orch-statusline-tap`, basicly-orch package), `handily-board` |
+| Owner | basicly owns the format. Other writers write the same format and read nothing of basicly |
 | Format | JSON, UTF-8 |
 
-One file holds the readings of all sessions of one user. A writer computes the path itself. It needs no basicly code.
+A writer computes the folder itself. It needs no basicly code.
 
 ### Fields
 
@@ -32,7 +35,7 @@ One file holds the readings of all sessions of one user. A writer computes the p
 | --- | --- |
 | `format` | always `basicly.usage-snapshot` |
 | `version` | integer, `1` |
-| `writer` | name of the program that wrote the file |
+| `writer` | the writer name; it equals the file name without `.json` |
 | `written_at` | Unix epoch seconds of the write |
 | `windows.five_hour`, `windows.seven_day` | one window object each; a window can be absent |
 | window `used_percentage` | number, 0 to 100, from `rate_limits.<window>.used_percentage` |
@@ -42,22 +45,29 @@ One file holds the readings of all sessions of one user. A writer computes the p
 
 ### Write rule
 
-Many sessions write the same file. An idle session can give an older value than a busy session. So each writer merges by these rules, per window:
+Several sessions can use the same writer name, for example one `orch-statusline-tap` per Claude Code session. An idle session can give an older value than a busy session. So each writer merges the new reading into its own file by these rules, per window:
 
 1. Drop the reading when its `resets_at` is at or before now.
 2. Start a new window object when the file has no valid window, when the stored `resets_at` is at or before now, or when `resets_at` moved forward by more than 600 seconds.
 3. Drop the reading when `resets_at` moved back by more than 600 seconds, when the percent is lower than the stored percent, or when its time is earlier than the newest stored reading.
 4. Else append the reading. When the reading before the newest one is less than 60 seconds older than the new reading, the new reading replaces the newest one. Keep the last 360 readings.
 
-A dropped reading does not change `read_at`. A window that the input does not carry keeps its stored object. When no window changed, the writer does not write.
+A dropped reading does not change `read_at`. A window that the input does not carry keeps its stored object. When no window changed, the writer does not write. A file that does not parse counts as empty, so the writer starts new windows.
 
-The writer writes a temporary file in the same folder and renames it over the path. A reader never sees a half-written file. When two writers write at the same time, the last rename wins and one reading can be lost.
+A writer can write the file in place. `orch-statusline-tap` writes a temporary file in the same folder and renames it over its file, because Claude Code can stop a status line run in the middle of a write. When two sessions of one writer write at the same time, the last write wins and one reading can be lost.
 
-A reader ignores a file with another `format` or `version`. `orch pace` refuses it by name.
+### Reading rule and staleness
 
-### Staleness
+The reader lists `*.json` in the folder and skips a file when:
 
-A snapshot is stale when the newest `five_hour` reading (`read_at`) is older than 10 minutes. `orch pace` refuses a missing, unreadable, foreign or stale snapshot and names the setup step.
+- it does not parse, or its `format` is not `basicly.usage-snapshot`;
+- its `version` is not `1`;
+- its `writer` field is not its file name;
+- it has no `five_hour` window, or its `five_hour` `read_at` is older than 10 minutes (stale).
+
+For each window, the reader takes the window object of the kept files with the latest `resets_at`, then the highest `used_percentage`, then the newest `read_at`. The burn rate uses the readings of that object.
+
+`orch pace` refuses by name when the folder has no file, or when it skips every file. The refusal names each file and why it was skipped.
 
 ## 4. The status line tap
 
@@ -66,22 +76,26 @@ A snapshot is stale when the newest `five_hour` reading (`read_at`) is older tha
 - Any error in the snapshot step is ignored. The output of COMMAND is still printed.
 - The module imports only the Python standard library and the orch kit runner.
 - A COMMAND that cannot start gives exit code 127 and a message on standard error.
-- Measured 2026-11-26 on WSL with `~/.claude/statusline.sh` and a sample input built from the documentation (20 runs each): 24 ms direct, 49 ms through the tap. The tap adds about 25 ms, mostly Python start-up.
+- Measured 2026-11-26 on WSL with `~/.claude/statusline.sh` and a sample input built from the documentation (20 runs each): 23 to 24 ms direct, 49 to 52 ms through the tap, also with the settings command below. The tap adds 25 to 29 ms, mostly Python start-up.
 
 Settings example:
 
 ```json
-"statusLine": {"type": "command", "command": "orch-statusline-tap -- bash ~/.claude/statusline.sh"}
+"statusLine": {
+  "type": "command",
+  "command": "if command -v orch-statusline-tap >/dev/null 2>&1; then exec orch-statusline-tap -- bash ~/.claude/statusline.sh; else exec bash ~/.claude/statusline.sh; fi",
+  "padding": 0
+}
 ```
 
-If `orch-statusline-tap` is not on `PATH`, the shell cannot start it and the status line is empty.
+The `command -v` test keeps the plain status line when `orch-statusline-tap` is not on `PATH`.
 
 ## 5. The plan: `orch pace`
 
 `orch pace` prints, for each window, the used percent, the reset time, the burn rate, the projected percent at reset, the age of the reading and an advice word. Its last line is the overall advice.
 
 - Burn rate of `five_hour`: `(last percent - first percent) / hours` over the readings of the last 60 minutes. It needs 2 readings that span at least 15 minutes.
-- Else, and always for `seven_day`: the window average, `used percent / hours since the window start`, where the window start is `resets_at` minus the window length (5 hours or 7 days). It needs 10 minutes of window; else the rate is unknown and counts as 0.
+- Else, and always for `seven_day`: the window average, `used percent / hours since the window start`, where the window start is `resets_at` minus the window length (5 hours or 7 days). It needs 30 minutes of a `five_hour` window and 24 hours of a `seven_day` window; else the rate is unknown and counts as 0. An early average covers only working hours and projects too high.
 - Projected percent at reset: `used + rate x hours to resets_at`.
 - Advice per window: `close idle` when the projection is 100% or more, or the used percent is 95% or more; `hold` when the projection is 90% or more; else `start`.
 - A window whose `resets_at` has passed shows "window reset" and `start`.
@@ -97,7 +111,7 @@ The words mean:
 
 ## 6. Cost per item
 
-`orch pace note RECORD start` writes `[pace start] five_hour=P resets_at=T` on the record. `orch pace note RECORD done` writes `[pace done] five_hour=P resets_at=T change=C type=TYPE`. C is the percent change since the newest start note, or `unknown_crossed_reset` when a reset came between them. When an orchestrator store exists, both notes add `working_sessions=N`.
+`orch pace note RECORD start` writes `[pace start] five_hour=P resets_at=T` on the record. `orch pace note RECORD done` writes `[pace done] five_hour=P resets_at=T change=C type=TYPE`. C is the percent change since the newest start note, or `unknown_crossed_reset` when a reset came between them. When an orchestrator store exists, both notes add `working_sessions=N`, the count of live sessions in the state `working`.
 
 The percent is for the whole account. C includes the usage of every session that worked at the same time. Read it with `working_sessions`.
 
@@ -105,3 +119,4 @@ The percent is for the whole account. C includes the usage of every session that
 
 - The share of cached tokens in plan usage is not documented, so the cost of an item must be measured.
 - A writer clock that is wrong moves `read_at`.
+- Nothing calls `orch pace note` by itself yet, and nothing sums the cost per record type yet.
