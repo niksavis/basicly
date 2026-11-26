@@ -258,3 +258,68 @@ def test_a_tier_with_no_model_for_the_coding_agent_is_refused_before_any_turn(
         )
 
     assert not world.calls.exists()
+
+
+def test_a_copilot_lane_turn_passes_the_lane_rules_and_prints_them(world: SimpleNamespace) -> None:
+    lines = delegate.run(
+        _args(vendor="copilot", record="app-x1", prompt="p"), world.repo, world.base, world.ports
+    )
+
+    lane = adapters.lane_path(world.repo, "delegate-app-x1-copilot")
+    session = _session(lines)
+    rules = [
+        f"--allow-tool=write({lane}/**)",
+        "--allow-tool=shell(git status)",
+        "--allow-tool=shell(git diff)",
+        "--allow-tool=shell(git add)",
+        "--allow-tool=shell(git commit)",
+        "--allow-tool=shell(uv run)",
+        "--allow-tool=shell(pytest)",
+        "--deny-tool=shell(git push)",
+        "--deny-tool=shell(git reset)",
+        "--deny-tool=shell(git checkout)",
+        "--deny-tool=shell(rm)",
+        "--deny-tool=url",
+        "--disallow-temp-dir",
+    ]
+    argv = ["-p", "p", "--silent", *rules, f"--session-id={session}"]
+    assert _calls(world, "copilot")[0]["argv"] == argv
+    assert f"rules: {' '.join(rules)}" in lines
+
+
+@pytest.mark.parametrize("read_only", [False, True])
+@pytest.mark.parametrize("vendor", ["claude", "codex", "copilot"])
+def test_no_coding_agent_gets_an_allow_all_or_bypass_flag(
+    world: SimpleNamespace, vendor: str, read_only: bool
+) -> None:
+    delegate.run(
+        _args(vendor=vendor, record="app-x1", prompt="p", read_only=read_only),
+        world.repo,
+        world.base,
+        world.ports,
+    )
+
+    argv = _calls(world, vendor)[0]["argv"]
+    assert not [part for part in argv if part.split("=", 1)[0] in adapters.FORBIDDEN]
+    if read_only:
+        assert not [part for part in argv if part.startswith("--allow-tool")]
+
+
+def test_a_plugin_that_passes_a_bypass_flag_is_refused_before_the_turn(
+    world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Loose(adapters.Copilot):
+        name = "loose"
+
+        def argv(self, turn: object) -> list[str]:
+            return [*super().argv(turn), "--yolo"]
+
+    point = SimpleNamespace(name="loose", load=lambda: Loose)
+    monkeypatch.setattr(adapters.importlib.metadata, "entry_points", lambda **_: [point])
+
+    with pytest.raises(log.RefusedError, match="never passes --yolo to loose"):
+        delegate.run(
+            _args(vendor="loose", record="app-x1", prompt="p"), world.repo, world.base, world.ports
+        )
+
+    assert not _calls(world, "copilot")

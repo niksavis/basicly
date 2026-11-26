@@ -23,6 +23,21 @@ RESET = re.compile(
 )
 
 
+COPILOT_SHELL = ("git status", "git diff", "git add", "git commit", "uv run", "pytest")
+COPILOT_DENY = ("shell(git push)", "shell(git reset)", "shell(git checkout)", "shell(rm)", "url")
+FORBIDDEN = (
+    "--allow-all",
+    "--allow-all-tools",
+    "--allow-all-paths",
+    "--allow-all-urls",
+    "--yolo",
+    "--autopilot",
+    "--dangerously-skip-permissions",
+    "--dangerously-bypass-approvals-and-sandbox",
+)
+RULE_FLAGS = ("--allow-tool=", "--deny-tool=", "--disallow-temp-dir")
+
+
 class UsageLimitError(RefusedError):
     pass
 
@@ -34,6 +49,7 @@ class Turn:
     resume: bool
     model: str | None = None
     read_only: bool = False
+    lane: str | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +134,28 @@ class Codex:
         return f"codex resume {session}"
 
 
+def _lane_rules(lane: str | None) -> list[str]:
+    if lane is None:
+        return []
+    allow = [f"--allow-tool=write({lane}/**)"]
+    allow += [f"--allow-tool=shell({command})" for command in COPILOT_SHELL]
+    deny = [f"--deny-tool={rule}" for rule in COPILOT_DENY]
+    return [*allow, *deny, "--disallow-temp-dir"]
+
+
+def refuse_bypass(vendor: str, argv: list[str]) -> None:
+    found = [part for part in argv if part.split("=", 1)[0] in FORBIDDEN]
+    if found:
+        raise RefusedError(
+            f"orch delegate never passes {', '.join(found)} to {vendor}; "
+            f"fix the adapter so the agent works inside its lane rules"
+        )
+
+
+def rules(argv: list[str]) -> list[str]:
+    return [part for part in argv if part.startswith(RULE_FLAGS)]
+
+
 class Copilot:
     name = "copilot"
     names_session = True
@@ -125,8 +163,8 @@ class Copilot:
 
     def argv(self, turn: Turn) -> list[str]:
         session = f"--resume={turn.session}" if turn.resume else f"--session-id={turn.session}"
-        deny = ["--deny-tool=write"] if turn.read_only else []
-        return ["copilot", "-p", turn.prompt, "--silent", *deny, *_model(turn, "--model"), session]
+        rules = ["--deny-tool=write"] if turn.read_only else _lane_rules(turn.lane)
+        return ["copilot", "-p", turn.prompt, "--silent", *rules, *_model(turn, "--model"), session]
 
     def reply(self, done: runner.Done, turn: Turn) -> Reply:
         if not done.out.strip():

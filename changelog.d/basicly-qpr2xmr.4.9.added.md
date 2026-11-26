@@ -1,0 +1,1 @@
+- `orch delegate` lets Copilot edit only its lane: a write rule for the lane path, a short shell allow list, deny rules for git push, reset, checkout, rm and URLs, and no temp folder; it prints the rules and refuses any allow-all, yolo, autopilot or bypass flag for every coding agent.
