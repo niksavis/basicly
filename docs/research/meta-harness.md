@@ -10,6 +10,8 @@ Section C lists the deepseek concepts that are placed but not built.
 
 ## Result
 
+- Update 2026-11-26 (basicly-e44r45l): the first running piece is `orch delegate` in basicly-orch. It hands one turn to Claude Code, Codex or Copilot in a lane and writes the answer on the record; see `packages/basicly-orch/README.md`, section "Coding agents". The rest of this note is the state of 2026-11-19.
+
 - The acceptance of the meta harness is requirement R11: daily use over 14 days, counted from run records. Stage basicly-qpr2xmr.4.2 is the first record that lets the owner run a real session through the harness. It is blocked by basicly-qpr2xmr.4.1 and basicly-qpr2xmr.1, and basicly-qpr2xmr.4.1 is blocked by all of basicly-qpr2xmr.3. So every open child of basicly-qpr2xmr.3 stands between the owner and R11.
 - 13 children of basicly-qpr2xmr.3 are in progress at the same time. The holder field shows one name for all of them, because every session writes the same holder. So the field cannot count work in progress per agent, and the Agentic Kanban limit of 2 per agent cannot be checked from the ledger.
 - Three of those records had no change for more than 2 days at the time of measurement: basicly-qpr2xmr.3.4, basicly-qpr2xmr.3.10 and basicly-qpr2xmr.3.13.
