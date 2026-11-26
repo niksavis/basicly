@@ -67,7 +67,13 @@ def gather(
     criteria: Sequence[str],
 ) -> dict[str, object]:
     run = _git
-    full = run(["rev-parse", "--verify", f"{commit}^{{commit}}"], root).strip()
+    try:
+        full = run(["rev-parse", "--verify", f"{commit}^{{commit}}"], root).strip()
+    except LandingEvidenceError:
+        raise LandingEvidenceError(
+            f"{commit!r} names no commit in this repository; pass the merge commit that "
+            "basicly worktree merge printed"
+        ) from None
     if not _verified(artifact, full):
         raise LandingEvidenceError(
             f"the record has no {ARTIFACT} artifact for {full[:12]}: land it with "
