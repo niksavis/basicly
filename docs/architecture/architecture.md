@@ -3922,21 +3922,22 @@ The gates below hang off layer 3 rather than sitting in the stack.
 
 ### 36.2 The verify pipeline
 
-**Three modes, and the check counts differ per mode** [measured 2026-11-01,
+**Three modes, and the check counts differ per mode** [measured 2026-11-26,
 `config.load_verify_config`]. Re-derive from the assembled configuration rather than by
 counting the file, because the drop-in layer contributes: a `basicly.d` fragment's entries are
 appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 39 | pre-commit and a local pre-push |
+| fast | 40 | pre-commit and a local pre-push |
 | full | 48 | the local landing verify; continuous integration runs it with `--ci`, which skips the ten `local_only` checks that read tracker records |
-| staged | 5 | default direct verification of staged contents |
+| staged | 6 | default direct verification of staged contents |
 
-The configuration declares 51 checks in total. They cover lint, format, three
+The configuration declares 52 checks in total. They cover lint, format, three
 platform-specific type-check passes, scoped hidden-tooling checks, a security scan, dead code, a wiring gate, the kit
 boundary, the layering contract, the test suite, all six projection drift checks, the
-documentation claim gates, and the ratchets.
+documentation claim gates, the guidance wording tests that a fragment or projected instruction
+edit selects, and the ratchets.
 
 **The four counts above are a tripwire, not a reading.** `tests/test_docs_drift.py` re-derives
 them from `config.load_verify_config` and fails when this table drifts from the configuration,

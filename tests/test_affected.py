@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 
 from basicly import affected, cli
+from basicly.config import load_verify_config
+from basicly.hook_runtime import load
 
 
 def _git(root: Path, *args: str) -> bytes:
@@ -323,3 +325,31 @@ def test_parallel_checks_keep_their_snapshot_environment(
     _git(consumer, "add", "basicly.toml")
     monkeypatch.chdir(consumer)
     assert cli.main(["verify"]) == 0
+
+
+@pytest.mark.parametrize(
+    ("path", "selected"),
+    [
+        (".basicly/core/fragments/design/code-is-authoritative.fragment.yaml", True),
+        (".basicly-local/fragments/project/overview.fragment.yaml", True),
+        ("AGENTS.md", True),
+        ("docs/architecture/conventions.md", False),
+    ],
+)
+def test_guidance_edit_selects_the_wording_tests_locally(path: str, selected: bool) -> None:
+    root = Path(__file__).parent.parent
+    check = next(
+        check
+        for check in load_verify_config(root).for_mode("staged")
+        if check.name == "guidance-wording"
+    )
+    named = {part for part in check.command if part.startswith("tests/")}
+    assert {
+        "tests/test_approval_scope_guidance.py",
+        "tests/test_baseline_retrieval.py",
+        "tests/test_catalog_emphasis.py",
+        "tests/test_task_authorization_guidance.py",
+        "tests/test_verification_guidance.py",
+    } <= named
+    assert all((root / name).is_file() for name in named)
+    assert bool(load("check_reuse").matcher(check.inputs).match(path)) is selected
