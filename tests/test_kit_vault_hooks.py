@@ -101,6 +101,48 @@ def test_an_end_hook_shares_the_whole_queue(tmp_path: Path, bare: Path, event: s
 
     assert shown["shared"]["shared"] == 5
     assert sorted(_ids(bare)) == sorted(written)
+    assert (shown["queued"], shown["left"]) == (0, [])
+    assert "next" not in shown
+
+
+@pytest.mark.parametrize("event", ["stop", "session-end"])
+def test_an_end_hook_that_cannot_share_names_each_queued_event_and_the_command_that_shares(
+    tmp_path: Path, bare: Path, event: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    written = _write(clone, state, 2, "a")
+    bare.rename(tmp_path / "gone.git")
+
+    shown = _hook(event, clone, state)
+    (tmp_path / "gone.git").rename(bare)
+    command = str(shown["next"]).split()
+    code, _ = _cli([*command, "--state", str(state)], capsys)
+
+    assert shown["queued"] == 2
+    assert sorted(str(entry) for entry in shown["left"]) == sorted(written)
+    assert command == ["sync", "--vault", clone.url]
+    assert (code, _queued(clone)) == (cli.EXIT_OK, 0)
+    assert sorted(_ids(bare)) == sorted(written)
+
+
+def test_an_end_hook_that_defers_to_a_running_share_names_what_it_leaves_queued(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    written = _write(clone, state, 1, "a")
+    clone.folder.mkdir(parents=True, exist_ok=True)
+
+    with vault_hooks.events.LedgerLock(clone.folder / vault_share.SHARE_LOCK):
+        shown = _hook("stop", clone, state)
+
+    assert "deferred" in shown["shared"]
+    assert [str(entry) for entry in shown["left"]] == written
+    assert shown["next"] == f"sync --vault {clone.url}"
+
+
+def test_a_queued_write_names_a_share_command_the_kit_has() -> None:
+    assert "`share --vault`" not in vault_queue.SHARED_BY
+    assert "`sync --vault`" in vault_queue.SHARED_BY
 
 
 def test_status_shows_the_data_age_without_a_network_call(tmp_path: Path, bare: Path) -> None:
