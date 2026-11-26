@@ -291,6 +291,11 @@ def _unassign_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]
     return vault_write.release(target, args.record, take=args.take)
 
 
+def _repository_prefix() -> str:
+    config = vault_config.load(Path.cwd())
+    return "" if config is None else config.prefix
+
+
 def configured(start: Path, asked: str) -> Any:
     config = vault_config.load(Path(start).resolve())
     if config is None and asked:
@@ -387,6 +392,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace, Any], dict[str, object]]] = {
             Path(a.message),
             vault_write.session_of(os.environ, a.session),
             c,
+            prefix=_repository_prefix(),
         )
     ),
 }
