@@ -12,6 +12,7 @@ import pytest
 from basicly import runner, session
 from basicly.checkout import COLOUR_ENV_FORCING, GIT_ENV_KEPT
 from tests import ledger_guard
+from tests.capability_fixtures import DIR_ENV, capability_file
 from tests.committed_ledger import committed_ledger
 
 pytest_plugins = ["tests.pytest_shard"]
@@ -71,6 +72,18 @@ def _no_ambient_home(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]
             os.environ.pop(name, None)
         else:
             os.environ[name] = value
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_capabilities(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(DIR_ENV, str(tmp_path_factory.mktemp("capabilities")))
+
+
+@pytest.fixture
+def drawn() -> Path:
+    return capability_file(Path(os.environ[DIR_ENV]))
 
 
 def _shared_git_config() -> Path | None:

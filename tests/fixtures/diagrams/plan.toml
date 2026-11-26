@@ -1,0 +1,11 @@
+[[children]]
+title = "Refuse a flag with no expiry"
+depends_on = []
+
+[[children]]
+title = "Show the expiry on the board"
+depends_on = ["Refuse a flag with no expiry"]
+
+[[children]]
+title = "Warn before a flag expires"
+depends_on = ["Refuse a flag with no expiry", "Show the expiry on the board"]

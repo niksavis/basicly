@@ -1,0 +1,3 @@
+the landing verify failed in test_board_flags
+test_board_flags read the "real" home folder
+the conftest fixture did not set HOME for that test

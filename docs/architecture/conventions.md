@@ -231,6 +231,8 @@ The [session state](../design/session-state.md) design states how a reporter lab
 herdr panes from vendor hooks, with its probes and known gaps.
 The [usage snapshot](../design/usage-snapshot.md) design states the file that saves the
 5-hour and 7-day Claude usage from the status line, and how `orch pace` plans the window.
+The [capability file](../design/capability-file.md) design states the file a reply view writes
+so that skills draw Mermaid diagrams only where they render.
 
 The [value pilot](../research/harness-value-pilot.md) and its JSON record the measured comparison.
 They leave monetary cost and broader reliability unresolved.

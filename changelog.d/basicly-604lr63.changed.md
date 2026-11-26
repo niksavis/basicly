@@ -1,0 +1,1 @@
+- The council, swarm and hill-climb scripts, and the new `mermaid.py plan` and `mermaid.py chain` for decompose-plan and root-cause, print a Mermaid diagram only when a fresh capability file shows that handily reply-view draws it; without the file they print plain text and no diagram (docs/design/capability-file.md).
