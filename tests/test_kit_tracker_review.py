@@ -280,6 +280,28 @@ def test_parent_progress_uses_only_hierarchy_edges_and_does_not_repeat_events(
     }
 
 
+def test_a_comment_on_an_in_progress_child_leaves_its_reopened_parent_open(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AI_AGENT", "owner")
+    ledger = tmp_path / "ledger"
+    parent = _create(capsys, ledger, "--field", "issue_type=epic", "--field", "labels=refine")
+    child = _create(capsys, ledger, *SHAPED)
+    _run(capsys, "dep", str(ledger), child, parent, "--type", "parent-child")
+    recorded_review(cli, ledger, child)
+    started = _run(capsys, "claim", str(ledger), child, "--to", "sam")
+    assert started.get("started_parents") == [parent], started
+
+    reopened = _run(capsys, "update", str(ledger), parent, "--status", "open")
+    commented = _run(capsys, "comment", str(ledger), child, "Still working on it.")
+    _run(capsys, "update", str(ledger), child, "--field", "notes=checked")
+
+    assert "refused" not in reopened, reopened
+    assert "started_parents" not in commented, commented
+    assert _run(capsys, "show", str(ledger), parent)["status"] == "open"
+    assert _run(capsys, "show", str(ledger), child)["status"] == "in_progress"
+
+
 def test_parent_progress_preserves_a_deliberately_deferred_parent(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

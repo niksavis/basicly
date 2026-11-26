@@ -1,0 +1,1 @@
+- **A comment on a running child no longer restarts its reopened parent.** The tracker starts an open parent only when one of its children starts, not on any write to a child, and the write output names each parent it started under `started_parents` (basicly-sw2kgb4).
