@@ -3168,7 +3168,11 @@ def cmd_consumer_proof(_args: argparse.Namespace) -> int:
         print(f"consumer-proof: {refusal}", file=sys.stderr)
         return 1
     for item in consumer_proof.consumer_results(result):
-        print(f"{'pass' if item.get('passed') else 'FAIL'}: {item.get('name')}")
+        why = "" if item.get("passed") else consumer_proof.failure(item)
+        print(
+            f"{'pass' if item.get('passed') else 'FAIL'}: {item.get('name')}"
+            + (f": {why}" if why else "")
+        )
     print(f"consumer-proof: {'PASS' if result['passed'] else 'FAIL'} for {result['commit']}")
     return 0 if result["passed"] else 1
 

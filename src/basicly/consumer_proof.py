@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import tomllib
 from collections.abc import Callable
@@ -27,9 +28,21 @@ WHEEL = "{wheel}"
 SUBJECT = "chore(basicly): install the kit for a consumer proof ({record})"
 CI_ENV = {"GIT_TERMINAL_PROMPT": "0"}
 IDENTITY = ("user.name", "user.email", "basicly.holder")
+VAULT_CONFIG = ".basicly-tracker.toml"
+KIT_CLI = Path(".basicly") / "core" / "kit" / "tracker" / "cli.py"
+PROBE = "chore(basicly): ask which record this session holds\n"
+NO_SESSION = (
+    "the proof has no tracker session: set BASICLY_TRACKER_SESSION, or run it from an agent "
+    "session, and claim a record in this consumer with `claim RECORD --vault {url}`"
+)
+NOT_HELD = (
+    "this session holds no open record in this consumer; claim one with "
+    "`claim RECORD --vault {url}`, then run basicly consumer-proof again"
+)
 
 Run = Callable[[list[str], Path, dict[str, str]], int]
 Records = Callable[[Path, dict[str, str], str], list[dict[str, object]]]
+Held = Callable[[Path, dict[str, str], str], dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -111,6 +124,48 @@ def list_records(clone: Path, env: dict[str, str], wheel: str) -> list[dict[str,
     return found
 
 
+def vault_setting(clone: Path, key: str) -> str:
+    path = clone / VAULT_CONFIG
+    if not path.is_file():
+        return ""
+    value = tomllib.loads(path.read_text(encoding="utf-8")).get(key)
+    return value if isinstance(value, str) else ""
+
+
+def vault_url(clone: Path) -> str:
+    return vault_setting(clone, "vault")
+
+
+def vault_held(clone: Path, env: dict[str, str], url: str) -> dict[str, object]:
+    kit_cli = clone / KIT_CLI
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".msg", dir=clone.parent, delete=False, encoding="utf-8"
+    ) as probe:
+        probe.write(PROBE)
+    try:
+        argv = [sys.executable, str(kit_cli), "commit-msg", "--vault", url, probe.name]
+        done = worktree.run(argv, cwd=clone, env=env, check=False)
+    finally:
+        Path(probe.name).unlink(missing_ok=True)
+    try:
+        judged = json.loads(done.stdout)
+    except ValueError:
+        judged = {}
+    return judged if isinstance(judged, dict) else {}
+
+
+def vault_record(clone: Path, env: dict[str, str], held: Held) -> tuple[str | None, str]:
+    url = vault_url(clone)
+    found = held(clone, env, url)
+    if not found.get("session"):
+        return None, NO_SESSION.format(url=url)
+    own = f"{vault_setting(clone, 'prefix')}-"
+    listed = found.get("held")
+    named = [found.get("filled"), *(listed if isinstance(listed, list) else [])]
+    mine = [r for r in named if isinstance(r, str) and r.startswith(own)]
+    return (mine[0], "") if mine else (None, NOT_HELD.format(url=url))
+
+
 def held_record(clone: Path, listed: list[dict[str, object]]) -> str | None:
     names = {git(clone, "config", "--default", "", key) for key in ("user.name", "basicly.holder")}
     for item in listed:
@@ -128,6 +183,13 @@ class Tools:
     env: dict[str, str]
 
 
+def chosen_record(clone: Path, wheel: str, tools: Tools) -> tuple[str | None, str]:
+    if vault_url(clone):
+        return vault_record(clone, tools.env, vault_held)
+    record = held_record(clone, tools.records(clone, tools.env, wheel))
+    return record, "" if record else "no in-progress record of the holder"
+
+
 def prove(clone: Path, consumer: Consumer, wheel: str, tools: Tools) -> dict[str, object]:
     run, env = tools.run, tools.env
     steps: list[dict[str, object]] = []
@@ -138,9 +200,9 @@ def prove(clone: Path, consumer: Consumer, wheel: str, tools: Tools) -> dict[str
         return code == 0
 
     passed = step("install", ["uvx", "--from", wheel, "basicly", "install"])
-    record = held_record(clone, tools.records(clone, env, wheel)) if passed else None
+    record, why = chosen_record(clone, wheel, tools) if passed else (None, "")
     if passed and record is None:
-        steps.append({"step": "record", "exit": 1, "error": "no in-progress record of the holder"})
+        steps.append({"step": "record", "exit": 1, "error": why})
         passed = False
     if passed:
         passed = step("stage", ["git", "add", "-A"]) and step(
@@ -158,6 +220,19 @@ def prove(clone: Path, consumer: Consumer, wheel: str, tools: Tools) -> dict[str
             passed = False
             break
     return {"name": consumer.name, "passed": passed, "steps": steps}
+
+
+def failure(item: dict[str, object]) -> str:
+    steps = item.get("steps")
+    failed = (
+        [s for s in steps if isinstance(s, dict) and s.get("exit")]
+        if isinstance(steps, list)
+        else []
+    )
+    if not failed:
+        return ""
+    last = failed[-1]
+    return str(last.get("error") or f"step {last.get('step')} exited {last.get('exit')}")
 
 
 def build_wheel(repo_root: Path, out: Path, run: Run, env: dict[str, str]) -> Path:
