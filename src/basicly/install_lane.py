@@ -39,9 +39,9 @@ def check(repo_root: Path, lane: str, *, dry_run: bool) -> int | None:
         return 1
     if not dry_run:
         print(
-            f"basicly install --lane {lane} writes nothing yet without --dry-run "
-            "(basicly-d9u8roi); run basicly worktree create "
-            f"{lane}, then basicly install inside {lane_path(repo_root, lane)}",
+            f"basicly install --lane {lane} writes nothing without --dry-run; "
+            "to install a release in a lane and commit it, run from the workspace: "
+            "orch install --release X.Y.Z --repo NAME=RECORD",
             file=sys.stderr,
         )
         return 2

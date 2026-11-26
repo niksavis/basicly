@@ -21,9 +21,9 @@ def which(name: str, path: str | None) -> str | None:
     return shutil.which(name, path=path)
 
 
-def capture(argv: list[str], timeout: float) -> Done:
+def capture(argv: list[str], timeout: float, cwd: str | None = None) -> Done:
     done = subprocess.run(  # nosec B603 - list argv from the caller, no shell
-        argv, capture_output=True, text=True, check=False, timeout=timeout
+        argv, capture_output=True, text=True, check=False, timeout=timeout, cwd=cwd
     )
     return Done(done.returncode, done.stdout, done.stderr)
 
