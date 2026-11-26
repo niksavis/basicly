@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release changes how work is delivered. basicly's own lanes and releases now go through a pull request with CI green on the exact head. A task, bug or chore closes in one tracker call from its landing evidence. The Orchestrator gets session pacing and a cheap keep-alive, and a vault race that crashed one of two concurrent sessions is fixed.
+
+- Delivery: `worktree merge --delivery pr` lands a lane through a pull request (basicly-ybun19f), closes the pull requests it replaced (basicly-iqc0k85), counts failed runs by tree (basicly-18mhacz.3), and basicly's own repository uses it (basicly-18mhacz.1); `basicly release --delivery pr` tags GitHub's merge commit only after main is green (basicly-18mhacz.2).
+- Tracker: `close ID --landed COMMIT --tests JSON` closes a task, bug or chore in one call, and a task starts without a review (basicly-18mhacz); concurrent writers of one vault state file no longer crash (basicly-pl4ybu0).
+- Orchestrator: `orch pace` names the sessions that fit until the reset, `orch status` shows each session's time since its last request, and `orch keepalive` pings only needed sessions (basicly-scpjhge); `orch automode` writes the auto mode rules (basicly-qpr2xmr.3.41); `orch delegate` runs read-only on the cheapest tier, saves each failed turn and keeps Copilot in its lane (basicly-qpr2xmr.4.7, basicly-qpr2xmr.4.8, basicly-qpr2xmr.4.9).
+- Skills: the council, swarm and hill-climb scripts draw a Mermaid diagram only where the reply view renders it (basicly-604lr63).
+- Orchestrator tools need a reinstall from the tag, because `uv tool upgrade` ignores a tag pin: `uv tool install --force "basicly-orch @ git+https://github.com/niksavis/basicly@v0.49.6#subdirectory=packages/basicly-orch"`.
+
 ## v0.49.5 - 2026-11-26
 
 Delta: v0.49.4..v0.49.5
