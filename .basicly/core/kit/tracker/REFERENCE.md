@@ -119,7 +119,9 @@ Set fields, the status or labels. `--add-label` and `--remove-label` repeat. Mov
 that nobody holds to `in_progress` also names you as its holder in ledger mode. Vault mode
 requires your canonical claim first. `--if-seq N` refuses the
 update when a field it writes changed after seq `N`, the `max_seq` that `show` gave you, so
-an edit never silently replaces a newer one.
+an edit never silently replaces a newer one. Starting a child also starts each open parent,
+and the output names those parents under `started_parents`. A comment or a field write on a
+child never changes the status of its parent.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py update .basicly/ledger acme-a1b2 --status in_progress --add-label export
