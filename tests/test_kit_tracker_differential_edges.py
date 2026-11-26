@@ -112,3 +112,17 @@ def test_the_committed_ledger_folds_every_stated_relation_to_one_row() -> None:
             inflated.append((record, len(rows), len({edge.target for edge in rows})))
 
     assert inflated == []
+
+
+def test_a_line_that_is_not_an_event_is_refused_by_file_line_and_fsck(
+    tmp_path: Path, work_repo: Path
+) -> None:
+    kit = _one_relation_stated_twice(tmp_path, work_repo)
+    log = next(tmp_path.glob("*.jsonl"))
+    lines = log.read_text(encoding="utf-8").splitlines(keepends=True)
+    log.write_text("".join([lines[0], "<<<<<<< HEAD\n", *lines[1:]]), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="fsck") as refused:
+        kit.read_ledger(tmp_path)
+
+    assert f"{log.name}:2" in str(refused.value)
