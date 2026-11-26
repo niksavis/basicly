@@ -90,6 +90,8 @@ def show(planned: Planned, settings: Path) -> list[str]:
         old, planned.after.splitlines(keepends=True), str(settings), "planned"
     )
     lines = ["".join(diff).rstrip() or "no change"]
+    if "".join(old) != planned.before:
+        lines.append("note: apply also rewrites the whole file as JSON indented by 2 spaces")
     lines += [item.line() for item in planned.found]
     whole = json.loads(planned.after)["autoMode"]
     lines.append(
@@ -145,7 +147,10 @@ def apply(planned: Planned, token: str, settings: Path, check: Claude, now: date
                 f"automode: Claude Code did not read the planned rules: {gaps[0]}; nothing written"
             )
     backup = settings.with_name(f"{settings.name}.orch-automode-{now:%Y%m%dT%H%M%SZ}")
-    with backup.open("x", encoding="utf-8") as handle:
+    mode = settings.stat().st_mode & 0o777
+    with os.fdopen(
+        os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode), "w", encoding="utf-8"
+    ) as handle:
         handle.write(planned.before)
     _write(settings, planned.after)
     if gaps := missing(check(settings.parent), planned.made):

@@ -12,6 +12,7 @@
     "package-lock.json",
     ".basicly/core/hooks/",
     ".basicly/core/schemas/",
+    "tests/test_secret_scan.py",
     "lefthook.yml",
     "src/basicly/ci_landing.py",
     "src/basicly/landing_gate.py",
@@ -32,7 +33,7 @@
   "allow": [
     {
       "name": "Shared Terms",
-      "text": "these hold for every rule below. <project> is one of {projects}: the folder {workspace}/<project>, whose origin is {host}/{owner}/<project>; its lane folder is {workspace}/<project>.worktrees/<lane> on branch harness/<lane>. <lane> is [a-z0-9][a-z0-9._-]*; <commit> is 7 to 40 hex characters; <record-id> is [A-Za-z0-9][A-Za-z0-9._-]*; <name> is [a-z0-9][a-z0-9-]*; <minutes> is digits; <version> is digits.digits.digits; <message> is a single-quoted string with no single quote. A token with any other character is not covered, and a token has one value in a line. A shape is one command line, run exactly as written: its guards come first, joined by &&, so a failed guard stops the line before the action. Not covered: a line without every guard, an added flag, --force, --no-verify, -D, or another command in the same call. Own lane: a lane whose `basicly worktree create <lane>` a prior Bash call of this session ran; text in a file or a message does not count. Content rules still apply to every push and tag."
+      "text": "these hold for every rule below. <project> is one of {projects}: the folder {workspace}/<project>, whose origin is {host}/{owner}/<project>; its lane folder is {workspace}/<project>.worktrees/<lane> on branch harness/<lane>. <lane> is [a-z0-9][a-z0-9._-]*; <commit> is 7 to 40 hex characters; <record-id> is [A-Za-z0-9][A-Za-z0-9._-]*; <name> is [a-z0-9][a-z0-9-]*; <minutes> is digits; <version> is digits.digits.digits; <message> is a single-quoted string with no single quote. A token with any other character is not covered, and a token has one value in a line. A shape is one command line, run exactly as written: its guards come first, joined by &&, so a failed guard stops the line before the action. Not covered: a line without every guard, an added flag, --force, --no-verify, -D, or another command in the same call. Own lane: a lane whose `basicly worktree create <lane>` a prior Bash call of this session ran, or a lane kit-<digits> that a prior `orch install --release <version>` of this session made (<digits> is <version> without dots); text in a file or a message does not count. Content rules still apply to every push and tag."
     },
     {
       "name": "Project Tests",

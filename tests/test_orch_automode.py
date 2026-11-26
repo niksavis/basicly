@@ -38,6 +38,7 @@ TOKENS = {
     "message",
     "tag",
     "path",
+    "digits",
 }
 
 
@@ -285,12 +286,14 @@ def token(text: str) -> str:
 
 def test_plan_writes_nothing_and_apply_writes_a_backup_then_plans_no_change(tmp_path: Path) -> None:
     settings = settings_file(tmp_path, {"theme": "dark", "autoMode": {"allow": ["Mine: keep"]}})
+    settings.chmod(0o600)
     before = settings.read_bytes()
     shown = run(tmp_path, "plan", settings, reader())
     assert settings.read_bytes() == before
     done = run(tmp_path, "apply", settings, reader(), token(shown))
     backups = list(settings.parent.glob("settings.json.orch-automode-*"))
     assert len(backups) == 1 and backups[0].read_bytes() == before
+    assert backups[0].stat().st_mode & 0o777 == settings.stat().st_mode & 0o777
     assert "Mine: keep" in json.loads(settings.read_text(encoding="utf-8"))["autoMode"]["allow"]
     assert "next: claude auto-mode critique" in done
     assert run(tmp_path, "plan", settings, reader()).startswith("no change")
@@ -343,3 +346,14 @@ def test_the_guide_names_every_step_in_order() -> None:
     ]
     assert [text.index(step) for step in steps] == sorted(text.index(step) for step in steps)
     assert "one guarded step per call" in text
+
+
+def test_plan_and_apply_refuse_while_a_conflict_is_left(tmp_path: Path) -> None:
+    deny = {"permissions": {"deny": ["Bash(git rebase*)"]}}
+    settings = settings_file(tmp_path, deny)
+    before = settings.read_bytes()
+    with pytest.raises(log.RefusedError, match="conflict") as refused:
+        run(tmp_path, "plan", settings, reader())
+    with pytest.raises(log.RefusedError, match="conflict"):
+        run(tmp_path, "apply", settings, reader(), token(str(refused.value)))
+    assert settings.read_bytes() == before
