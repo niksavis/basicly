@@ -182,7 +182,7 @@ python3 .basicly/kit/tracker/cli.py close .basicly/ledger acme-a1b2 --reason "Sh
 A task, bug or chore that landed with `basicly worktree merge --mode ci` closes in one call by
 its landing evidence. The record must carry the landing-verification artifact for the commit,
 and `--tests` maps each acceptance criterion to a test file in that commit, or to `null`,
-which opens a follow-up record. `--superseded-by` closes a record that another record or a
+which opens a follow-up record that asks for a test or a recorded run. `--superseded-by` closes a record that another record or a
 release tag replaced, as cancelled.
 
 ```sh

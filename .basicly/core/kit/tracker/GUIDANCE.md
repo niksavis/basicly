@@ -239,8 +239,8 @@ Keep the card and confirmation linked. Record conversations when facts or decisi
    `basicly worktree merge --mode ci` or `--delivery pr` closes in one call with
    `close ID --reason TEXT --landed COMMIT --tests JSON`. The record must carry the
    landing-verification artifact for that commit, and `--tests` maps each criterion to a test
-   file in that commit or to `null`. A `null` opens a follow-up record, and its parent cannot
-   close while that follow-up is open. `close ID --superseded-by RECORD-OR-TAG` closes a
+   file in that commit or to `null`. A `null` opens a follow-up record that asks for a test
+   or a recorded run, and its parent cannot close while that follow-up is open. `close ID --superseded-by RECORD-OR-TAG` closes a
    replaced record as cancelled.
 
 Read `show` first. Its `comment_log` gives each comment's `seq`; its `process` report gives

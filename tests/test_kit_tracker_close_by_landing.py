@@ -164,7 +164,10 @@ def test_an_untested_criterion_opens_a_follow_up_that_holds_the_parent_open(
     held = _run(capsys, "close", str(ledger), epic, "--reason", "done", "--resolution", "cancelled")
 
     assert followups, closed
-    assert _run(capsys, "show", str(ledger), followups[0])["fields"]["followup_of"] == record
+    fields = _run(capsys, "show", str(ledger), followups[0])["fields"]
+    assert fields["followup_of"] == record
+    assert fields["title"] == f"Prove a criterion of {record} by a test or a recorded run"
+    assert fields["acceptance_criteria"] == "A test or a recorded run checks: it is reviewed"
     assert "open follow-up" in held["refused"], held
 
 

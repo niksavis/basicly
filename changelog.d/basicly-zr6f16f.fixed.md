@@ -1,0 +1,1 @@
+- `close --landed` now titles the follow-up for a `null` criterion "Prove a criterion of X by a test or a recorded run", and its criterion accepts a test or a recorded run, because some criteria, such as a timing or a deleted remote branch, cannot be shown by a test.
