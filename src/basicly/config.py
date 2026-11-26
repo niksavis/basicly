@@ -349,6 +349,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
     ),
     "catalog": Table(keys=frozenset({"technologies", "rank1_floor", "rank1_floor_high_water"})),
     "landing": Table(keys=frozenset({"workflows"})),
+    "delivery": Table(keys=frozenset({"adapter"})),
     "worktree": Table(
         keys=frozenset({"base_branch", "concurrency", "append_only_paths"}),
         tables={"regenerate_commands": _OPEN_TABLE},
@@ -739,6 +740,19 @@ def load_landing_workflows(repo_root: Path) -> tuple[str, ...]:
             f'.github/workflows, for example workflows = ["quality-gates.yml"]; got {raw!r}'
         )
     return tuple(dict.fromkeys(names))
+
+
+DELIVERY_ADAPTERS = ("lander", "pr")
+
+
+def load_delivery_adapter(repo_root: Path) -> str:
+    raw = _harness_section(repo_root, "delivery").get("adapter", DELIVERY_ADAPTERS[0])
+    if raw not in DELIVERY_ADAPTERS:
+        raise ValueError(
+            f"[delivery] adapter in {CONFIG_FILE} must be one of {', '.join(DELIVERY_ADAPTERS)}; "
+            f'got {raw!r}; for example adapter = "pr"'
+        )
+    return raw
 
 
 CHANGELOG_FRAGMENT_DIR = "changelog.d"

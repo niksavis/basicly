@@ -236,7 +236,7 @@ Keep the card and confirmation linked. Record conversations when facts or decisi
    Close as completed only after every criterion is confirmed, with the delivered outcome
    in `--reason`. A comment alone does not satisfy completion confirmation.
 4. **Close by landing:** a `task`, `bug` or `chore` that landed with
-   `basicly worktree merge --mode ci` closes in one call with
+   `basicly worktree merge --mode ci` or `--delivery pr` closes in one call with
    `close ID --reason TEXT --landed COMMIT --tests JSON`. The record must carry the
    landing-verification artifact for that commit, and `--tests` maps each criterion to a test
    file in that commit or to `null`. A `null` opens a follow-up record, and its parent cannot

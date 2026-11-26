@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import argparse
+import contextlib
 from pathlib import Path
 
 import pytest
 
-from basicly import ci_landing, merge, verify
+from basicly import ci_landing, delivery_pr, merge, verify
+from basicly import cli as basicly_cli
 from tests.test_merge import _HAS_WORK, _FakeGit, _patch_git, _Proc, _session
 
 
@@ -81,3 +84,70 @@ def test_failing_local_only_checks_stop_a_ci_landing_before_any_push(
 
     assert result.status == "verify-failed"
     assert "local-only checks failed" in result.detail
+
+
+def test_a_pr_delivery_lands_through_the_adapter_and_never_dispatches_a_land_ref(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, lane: list[str]
+) -> None:
+    delivered: list[tuple[ci_landing.Candidate, str]] = []
+
+    def deliver(_root: Path, candidate: ci_landing.Candidate, base: str) -> delivery_pr.Landed:
+        delivered.append((candidate, base))
+        return delivery_pr.Landed("f" * 40, "https://example.invalid/pull/5", ("run",), ())
+
+    monkeypatch.setattr(delivery_pr, "deliver", deliver)
+    monkeypatch.setattr(ci_landing, "prove", lambda *_a: pytest.fail("dispatched a land ref"))
+
+    result = merge.merge_worktree(
+        tmp_path, "feat", bead="basicly-onb.5", verify_mode="ci", delivery="pr"
+    )
+
+    assert result.merged
+    assert result.landed_head == "f" * 40
+    assert lane == []
+    assert delivered == [
+        (ci_landing.Candidate("feat", "basicly-onb.5", "abc123", "def456"), "main")
+    ]
+
+
+@pytest.mark.usefixtures("lane")
+def test_a_refused_pr_delivery_lands_nothing_and_names_the_cause(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def refuse(*_a: object) -> delivery_pr.Landed:
+        raise delivery_pr.PrDeliveryError("quality-gates.yml run R ended failure")
+
+    monkeypatch.setattr(delivery_pr, "deliver", refuse)
+
+    result = merge.merge_worktree(
+        tmp_path, "feat", bead="basicly-onb.5", verify_mode="ci", delivery="pr"
+    )
+
+    assert result.status == "verify-failed"
+    assert "ended failure" in result.detail
+
+
+def test_the_pr_command_never_pushes_the_base_and_cleans_up_the_lane(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[dict[str, object]] = []
+    landed = merge.MergeResult("feat", "merged", "pull/5 merged", landed_head="f" * 40)
+
+    def merge_worktree(*_a: object, **kw: object) -> merge.MergeResult:
+        calls.append(kw)
+        return landed
+
+    monkeypatch.setattr(basicly_cli, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        basicly_cli.landing_lock, "hold", lambda *_a, **_k: contextlib.nullcontext()
+    )
+    monkeypatch.setattr(basicly_cli.merge, "merge_worktree", merge_worktree)
+    monkeypatch.setattr(ci_landing, "finish", lambda *_a: pytest.fail("pushed the base"))
+    monkeypatch.setattr(ci_landing, "drop_refs", lambda *_a: pytest.fail("dropped land refs"))
+    monkeypatch.setattr(
+        basicly_cli, "_clean_landed_lane", lambda _root, name: calls.append({name: 1}) or []
+    )
+    args = argparse.Namespace(name="feat", bead="basicly-x1", mode="full", wait=0, delivery="pr")
+
+    assert basicly_cli._cmd_worktree_merge(args) == 0
+    assert calls == [{"bead": "basicly-x1", "verify_mode": "ci", "delivery": "pr"}, {"feat": 1}]
