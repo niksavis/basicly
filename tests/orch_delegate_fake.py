@@ -8,7 +8,8 @@ argv = sys.argv[1:]
 name = Path(sys.argv[0]).name
 cwd = Path.cwd()
 with Path(os.environ["FAKE_LOG"]).open("a", encoding="utf-8") as out:
-    out.write(json.dumps({"tool": name, "argv": argv, "cwd": str(cwd)}) + "\n")
+    profile = os.environ.get("CLAUDE_CONFIG_DIR", "")
+    out.write(json.dumps({"tool": name, "argv": argv, "cwd": str(cwd), "profile": profile}) + "\n")
 if os.environ.get("FAKE_FAIL") == name:
     sys.stderr.write("ERROR: the model refused the request\n")
     sys.exit(2)
@@ -22,6 +23,8 @@ if name == "basicly":
 elif name == "claude":
     session = argv[argv.index("--resume" if "--resume" in argv else "--session-id") + 1]
     shown = {"result": "claude says: " + argv[1], "session_id": session, "is_error": False}
+    if "FAKE_COST" in os.environ:
+        shown["total_cost_usd"] = float(os.environ["FAKE_COST"])
     sys.stdout.write(json.dumps(shown) + "\n")
 elif name == "codex":
     thread = argv[-2] if "resume" in argv else "thread-0001"

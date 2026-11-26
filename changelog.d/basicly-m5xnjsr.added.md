@@ -1,0 +1,1 @@
+- `orch delegate --billing console` runs Claude Code on an Anthropic Console budget from `console.json` in the orch store: models, effort and a bare or profile mode per tier, a per-run cap and a month budget. Each run's `total_cost_usd` goes to the spend ledger `spend.jsonl`, and a run that could pass the month budget is refused by name.

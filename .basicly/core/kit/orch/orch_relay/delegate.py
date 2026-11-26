@@ -13,7 +13,7 @@ import runner
 from orch_lessons.log import RefusedError
 from orch_state import store
 
-from orch_relay import adapters, failures, install, record, tiers
+from orch_relay import adapters, console, failures, install, record, tiers
 
 FOLDER = "delegations"
 TIMEOUT = 1800
@@ -23,15 +23,16 @@ KEYS = ("vendor", "record", "repo", "lane", "session")
 READ_ONLY = "read-only"
 USAGE = (
     "orch delegate --vendor claude|codex|copilot --record RECORD --prompt TEXT "
-    "[--read-only] [--model M | --tier T], or orch delegate --resume SESSION --prompt TEXT"
+    "[--read-only] [--model M | --tier T] [--billing subscription|console], "
+    "or orch delegate --resume SESSION --prompt TEXT"
 )
 
-Exec = Callable[[list[str], Path], runner.Done]
+Exec = Callable[[list[str], Path, dict[str, str] | None], runner.Done]
 Scan = Callable[[str], str | None]
 
 
-def run_step(argv: list[str], cwd: Path) -> runner.Done:
-    return runner.attempt(argv, TIMEOUT, str(cwd))
+def run_step(argv: list[str], cwd: Path, env: dict[str, str] | None = None) -> runner.Done:
+    return runner.attempt(argv, TIMEOUT, str(cwd), env)
 
 
 def add_parser(groups: argparse._SubParsersAction) -> None:
@@ -44,6 +45,7 @@ def add_parser(groups: argparse._SubParsersAction) -> None:
     given.add_argument("--model")
     given.add_argument("--tier")
     given.add_argument("--read-only", action="store_true")
+    given.add_argument("--billing", choices=console.BILLINGS)
     given.add_argument("--prompt", required=True)
 
 
@@ -55,6 +57,8 @@ class Delegation:
     lane: str
     session: str
     read_only: bool = False
+    billing: str = "subscription"
+    tier: str = ""
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,7 @@ def _save(base: Path, found: Delegation) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     value = {key: str(getattr(found, key)) for key in KEYS}
     value["mode"] = READ_ONLY if found.read_only else "lane"
+    value["billing"], value["tier"] = found.billing, found.tier
     handle, name = tempfile.mkstemp(dir=path.parent, prefix=".", suffix=".tmp")
     with os.fdopen(handle, "w", encoding="utf-8") as out:
         json.dump(value, out, sort_keys=True)
@@ -87,7 +92,9 @@ def _load(base: Path, session: str) -> Delegation:
             f"in {base / FOLDER}; start one with: {USAGE.split(', or ', maxsplit=1)[0]}"
         )
     vendor, record_id, repo, lane, found = (str(value[key]) for key in KEYS)
-    return Delegation(vendor, record_id, Path(repo), lane, found, value.get("mode") == READ_ONLY)
+    billing, tier = str(value.get("billing", "subscription")), str(value.get("tier", ""))
+    read_only = value.get("mode") == READ_ONLY
+    return Delegation(vendor, record_id, Path(repo), lane, found, read_only, billing, tier)
 
 
 def lane_name(record_id: str, vendor: str) -> str:
@@ -100,16 +107,21 @@ def _new(args: argparse.Namespace, repo: Path) -> Delegation:
     vendor = adapters.adapter(args.vendor)
     if not install.RECORD.fullmatch(args.record):
         raise RefusedError(f"--record {args.record!r} is not a record id; run: {USAGE}")
+    billing = args.billing or "subscription"
+    if billing == "console" and args.vendor != "claude":
+        raise RefusedError(
+            f"orch delegate --billing console runs only claude, not {args.vendor!r}; run: {USAGE}"
+        )
     session = str(uuid.uuid4()) if vendor.names_session else ""
     lane = "" if args.read_only else lane_name(args.record, args.vendor)
-    return Delegation(args.vendor, args.record, repo, lane, session, args.read_only)
+    return Delegation(args.vendor, args.record, repo, lane, session, args.read_only, billing)
 
 
 def _lane(found: Delegation, execute: Exec) -> Path:
     path = adapters.lane_path(found.repo, found.lane)
     if path.exists():
         return path
-    done = execute(["basicly", "worktree", "create", found.lane], found.repo)
+    done = execute(["basicly", "worktree", "create", found.lane], found.repo, None)
     if done.code != 0 or not path.exists():
         raise RefusedError(
             f"orch delegate: basicly worktree create {found.lane} failed (exit {done.code}) in "
@@ -129,7 +141,7 @@ def _comment(found: Delegation, answer: str, scan: Scan, resume: bool) -> str:
 
 
 def _turn(args: argparse.Namespace, base: Path, repo: Path) -> tuple[Delegation, bool]:
-    if args.resume and (args.vendor or args.record or args.read_only):
+    if args.resume and (args.vendor or args.record or args.read_only or args.billing):
         raise RefusedError(
             f"orch delegate --resume takes the coding agent, record and mode it recorded; "
             f"run: {USAGE}"
@@ -143,6 +155,15 @@ def _turn(args: argparse.Namespace, base: Path, repo: Path) -> tuple[Delegation,
 
 def _model(args: argparse.Namespace, base: Path, vendor: str) -> str | None:
     return tiers.model(base, args.tier, vendor) if args.tier else args.model
+
+
+def _plan(args: argparse.Namespace, base: Path, found: Delegation) -> console.Plan | None:
+    if found.billing != "console":
+        return None
+    tier = found.tier or args.tier
+    chosen = console.plan(base, tier, None if tier else args.model, found.read_only)
+    console.refuse_budget(base, chosen)
+    return chosen
 
 
 def _refuse_read_only_resume(found: Delegation, vendor: adapters.Adapter) -> None:
@@ -164,9 +185,13 @@ def run(args: argparse.Namespace, repo: Path, base: Path, ports: Ports) -> list[
     vendor = adapters.adapter(found.vendor)
     if resume:
         _refuse_read_only_resume(found, vendor)
-    model = _model(args, base, found.vendor)
+    plan = _plan(args, base, found)
+    model = plan.model if plan else _model(args, base, found.vendor)
+    found = replace(found, tier=plan.tier) if plan else found
     tracker, scan = ports.tracker(found.repo), ports.scan(found.repo)
     lane = found.repo if found.read_only else _lane(found, ports.execute)
+    if plan:
+        console.refuse_place(plan, lane)
     turn = adapters.Turn(
         args.prompt,
         found.session or None,
@@ -175,9 +200,11 @@ def run(args: argparse.Namespace, repo: Path, base: Path, ports: Ports) -> list[
         found.read_only,
         None if found.read_only else str(lane),
     )
-    argv = vendor.argv(turn)
+    argv = console.argv(plan, vendor.argv(turn)) if plan else vendor.argv(turn)
     adapters.refuse_bypass(found.vendor, argv)
-    done = ports.execute(argv, lane)
+    held = console.reserve(base, plan, found.record, found.session) if plan else None
+    done = ports.execute(argv, lane, console.env(plan) if plan else None)
+    spend = console.settle(base, held, done) if held else None
     limited = adapters.usage_limit(found.vendor, done)
     saved = failures.save(base, found.vendor, argv, args.prompt, done) if done.code else None
     if limited:
@@ -202,4 +229,5 @@ def run(args: argparse.Namespace, repo: Path, base: Path, ports: Ports) -> list[
         _next(found, vendor),
         f"agent resume: cd {lane} && {vendor.resume_command(found.session)}",
         f"rules: {' '.join(adapters.rules(argv)) or 'none'}",
+        *([spend] if spend else []),
     ]
