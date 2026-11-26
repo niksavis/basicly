@@ -99,7 +99,7 @@ Without `gh`, or while GitHub is down, land with `--mode full`, the default.
 
 ## Land through a pull request
 
-`basicly worktree merge NAME --bead RECORD-ID --delivery pr` lets GitHub merge the lane. `[delivery] adapter = "pr"` in `basicly.toml` makes it the default; without the key the lander above stays the default.
+`basicly worktree merge NAME --bead RECORD-ID --delivery pr` lets GitHub merge the lane. `[delivery] adapter = "pr"` in `basicly.toml` makes it the default; without the key the lander above stays the default. basicly's own repository sets it, so its lanes land through pull requests, and `--delivery lander` is the fallback when GitHub is down.
 It runs every check of `--mode ci` up to the proof: the record binding, the rebase, the regenerated files, the engine guard and the `local_only` checks.
 It refuses a lane head that does not contain `origin/BASE`, because the pull request would then prove a tree that the base never gets. Run `git pull --ff-only` in the base checkout and merge again.
 It pushes the head to a new branch `pr/NAME/HEAD12`, never a force-push, and opens a pull request or reuses the open one on the same head.
