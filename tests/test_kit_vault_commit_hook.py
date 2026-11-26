@@ -158,6 +158,55 @@ def test_another_sessions_claim_is_not_filled_in(tmp_path: Path, bare: Path) -> 
     assert shown["held"] == []
 
 
+def test_a_held_claim_of_another_project_in_the_vault_is_not_filled_in(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    _claim(clone, state, "other-e5f6")
+    message = _message(tmp_path, MESSAGES["nothing"])
+
+    shown = _check(clone, state, message, prefix="acme")
+
+    assert (shown["exit"], shown["held"]) == (hook.REFUSED, [])
+    assert message.read_text(encoding="utf-8") == MESSAGES["nothing"]
+
+
+def test_only_the_repository_prefix_is_filled_or_listed_from_a_shared_vault(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    _claim(clone, state, ID)
+    _claim(clone, state, "other-e5f6")
+
+    filled = _check(clone, state, _message(tmp_path, MESSAGES["nothing"]), prefix="acme")
+    _claim(clone, state, "acme-c3d4")
+    listed = _check(clone, state, _message(tmp_path, MESSAGES["nothing"]), prefix="acme")
+
+    assert (filled["exit"], filled["filled"]) == (hook.ACCEPTED, ID)
+    assert (listed["exit"], listed["held"]) == (hook.REFUSED, [ID, "acme-c3d4"])
+
+
+def test_commit_msg_through_the_cli_fills_only_the_prefix_its_config_names(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    _claim(clone, state, "other-e5f6")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / ".git").mkdir()
+    (repository / ".basicly-tracker.toml").write_text(
+        f'vault = "{bare.as_posix()}"\nprefix = "acme"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(repository)
+    message = _message(tmp_path, MESSAGES["nothing"])
+    argv = ["commit-msg", "--vault", str(bare), "--state", str(state), str(message)]
+
+    code = cli.main([*argv, "--session", "s1"])
+
+    assert code == hook.REFUSED
+    assert message.read_text(encoding="utf-8") == MESSAGES["nothing"]
+
+
 def test_a_held_record_is_accepted_without_a_warning(tmp_path: Path, bare: Path) -> None:
     clone, state = _machine(tmp_path, bare, "m")
     _claim(clone, state, ID)

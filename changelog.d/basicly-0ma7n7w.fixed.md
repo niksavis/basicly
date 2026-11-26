@@ -1,0 +1,1 @@
+- The vault commit-msg hook adds or lists only records with the prefix that `.basicly-tracker.toml` names, so a commit in one project of a shared vault is never stamped with a record of another project.

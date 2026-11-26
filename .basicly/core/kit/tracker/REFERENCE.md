@@ -471,7 +471,9 @@ With `--vault`, `commit-msg` checks the message file against the vault claims of
 (`--session`, else `BASICLY_TRACKER_SESSION`, else `ORCH_SESSION_ID` or `CLAUDE_CODE_SESSION_ID`). It exits 1 when the message names no record id
 and has no `Record: none` line, and prints the claim command and `Record: none`. A record id
 is the `(id)` that ends the subject, or a `Record: <id>` line. When the session holds exactly
-one claim, the hook adds the id in parentheses to the subject instead. Git-generated
+one open claim with the prefix that `.basicly-tracker.toml` names, the hook adds the id in
+parentheses to the subject instead. Claims of other projects that share the vault are never
+added or listed. Git-generated
 `Merge`, `Revert "`, `fixup!` and `squash!` messages pass, and a revert or fixup takes the id
 in the subject it repeats. A named record that another session holds is refused: the hook names
 the holder and prints the `unassign RECORD --take` and `claim` commands. A named record with no
