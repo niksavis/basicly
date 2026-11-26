@@ -272,6 +272,7 @@ def test_documented_markdown_inputs_pass_real_commit_and_refuse_bad_consumer_mar
 
     assert git("init", "-q", "-b", "main").returncode == 0
     assert git("config", "user.name", "Fixture Operator").returncode == 0
+    assert git("config", "basicly.holder", "fixture-operator").returncode == 0
     assert git("config", "user.email", "fixture@example.invalid").returncode == 0
     (consumer / "README.md").write_text("# Scratch repo\n", encoding="utf-8")
     assert git("add", "README.md").returncode == 0

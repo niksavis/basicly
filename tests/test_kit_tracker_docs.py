@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import shlex
 import shutil
@@ -85,6 +86,11 @@ def _consumer(tmp_path: Path, *, vault: bool = False) -> Path:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # nosec B603 B607
     subprocess.run(  # nosec B603 B607
         ["git", "-C", str(tmp_path), "config", "user.name", "Docs Reader"], check=True
+    )
+    subprocess.run(  # nosec B603 B607
+        ["git", "-C", str(tmp_path), "config", "basicly.holder", "docs-reader"],
+        check=True,
+        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
     )
     if vault:
         shutil.copytree(KIT_DIR, tmp_path / ".basicly/kit/tracker")

@@ -218,7 +218,7 @@ def test_integrated_capture_ready_and_claim_use_shared_intent_rules(
     install_kit(tmp_path)
     tracker.ledger_dir(tmp_path).mkdir(parents=True)
     tracker.set_ledger_prefix(tmp_path, "demo")
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "agent")
+    monkeypatch.setenv("BASICLY_HOLDER", "agent")
     record = owned_write.create(
         tmp_path,
         [

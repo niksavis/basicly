@@ -335,6 +335,7 @@ def test_a_stale_brief_is_discarded_and_the_landing_runs_in_the_same_invocation(
 def test_a_same_holder_resume_refuses_a_review_staled_by_changed_criteria(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("BASICLY_HOLDER", "fixture-holder")
     flipped_tracker.flipped_repo(tmp_path)
     flipped_tracker.seed(
         tmp_path,

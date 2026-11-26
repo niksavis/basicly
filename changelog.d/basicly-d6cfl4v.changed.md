@@ -1,0 +1,1 @@
+- **Breaking: a claim needs a pseudonymous holder.** `claim`, `assign`, `update --status in_progress` and the engine loop no longer record your git `user.name`. With no `--to`, `BASICLY_HOLDER` or `basicly.holder`, they refuse. Remedy: run `git config basicly.holder PSEUDONYM` once (basicly-d6cfl4v).

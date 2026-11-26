@@ -571,7 +571,11 @@ def require_record(repo_root: Path, issue_id: str) -> dict:
 
 
 def holder_name(repo_root: Path) -> str:
-    return str(kit(repo_root, HOLDERS_KIT_MODULE).default_holder(repo_root, os.environ))
+    return str(kit(repo_root, HOLDERS_KIT_MODULE).chosen_holder(repo_root, os.environ))
+
+
+def no_holder_refusal(repo_root: Path) -> str:
+    return str(kit(repo_root, HOLDERS_KIT_MODULE).NO_PSEUDONYM)
 
 
 def held_by_another(repo_root: Path, record: Mapping[str, object]) -> str:

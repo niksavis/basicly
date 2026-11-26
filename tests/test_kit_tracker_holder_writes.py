@@ -69,7 +69,7 @@ def test_claim_names_the_holder_and_starts_the_record(story: tuple[Path, str]) -
 def test_a_claim_without_a_holder_name_is_refused_by_name(story: tuple[Path, str]) -> None:
     ledger, record = story
 
-    with pytest.raises(commands.TrackerCommandError, match="no holder name"):
+    with pytest.raises(commands.TrackerCommandError, match=r"git config basicly\.holder PSEUDONYM"):
         holder_writes.claim(ledger, record, "")
 
 

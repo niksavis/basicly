@@ -85,6 +85,7 @@ def test_a_write_through_the_seam_carries_the_agent_onto_the_ledger(
     seed(repo, RECORD)
 
     recorded_review(owned_store.kit(repo, "commands"), owned_store.ledger_dir(repo), RECORD)
+    owned_write.append(repo, ["update", RECORD, "--assignee", "fixture-holder"])
     before = len(events_of(repo, RECORD))
 
     owned_write.append(repo, ["update", RECORD, "--status", "in_progress"])

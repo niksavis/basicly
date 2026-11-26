@@ -193,7 +193,7 @@ python3 .basicly/kit/tracker/cli.py close .basicly/ledger acme-a1b2 --reason "Re
 ### assign
 
 Reserve a record for a person without changing its status, so that others see it is taken.
-The holder is `--to`, or else the name you choose with `BASICLY_HOLDER` or `git config basicly.holder`, or else `git config user.name`. The ledger records that name, so choose a pseudonym when your git name must not be committed. A record that someone else holds is
+The holder is `--to`, or else the pseudonym you choose with `BASICLY_HOLDER` or `git config basicly.holder`. The ledger records that name. With no pseudonym, the claim is refused and names `git config basicly.holder PSEUDONYM`, because the ledger must not record a real name. A record that someone else holds is
 refused with the holder's name; `--take` takes it on purpose, and the ledger records that.
 
 ```sh
@@ -237,7 +237,7 @@ python3 .basicly/kit/tracker/cli.py resolve .basicly/ledger acme-a1b2
 ### unassign
 
 Give a reserved record back. Only its holder can do this: `--by` names who gives it back
-(default: `git config user.name`). Anyone else is refused with the holder's name. To release
+(default: your pseudonym from `BASICLY_HOLDER` or `git config basicly.holder`). Anyone else is refused with the holder's name. To release
 another holder's record on purpose, pass `--take`, which the ledger records.
 
 ```sh

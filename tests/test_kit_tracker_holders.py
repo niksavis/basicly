@@ -141,9 +141,9 @@ def test_unassign_frees_the_story_and_ready_names_holders(
 
     _, ready = _run(capsys, "ready", str(ledger))
     assert ready["records"][0]["holder"]["name"] == "alex"
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "alex")
+    monkeypatch.setenv("BASICLY_HOLDER", "alex")
     assert _run(capsys, "ready", str(ledger), "--mine")[1]["count"] == 1
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+    monkeypatch.setenv("BASICLY_HOLDER", "sam")
     assert _run(capsys, "ready", str(ledger), "--mine")[1]["count"] == 0
 
     _run(capsys, "unassign", str(ledger), record, "--by", "alex")
@@ -207,8 +207,13 @@ def test_a_holder_name_comes_from_the_git_config_and_its_absence_is_refused(
     assert "--to" in refused["refused"]
 
     (home / ".gitconfig").write_text("[user]\n\tname = Alex Doe\n", encoding="utf-8")
+    code, refused = _run(capsys, "assign", str(ledger), record)
+    assert code == cli.EXIT_REFUSED
+    assert "git config basicly.holder PSEUDONYM" in refused["refused"]
+
+    (home / ".gitconfig").write_text("[basicly]\n\tholder = alex-doe\n", encoding="utf-8")
     assert _run(capsys, "assign", str(ledger), record)[0] == cli.EXIT_OK
-    assert _run(capsys, "show", str(ledger), record)[1]["holder"]["name"] == "Alex Doe"
+    assert _run(capsys, "show", str(ledger), record)[1]["holder"]["name"] == "alex-doe"
 
 
 def _hold_event(record: str, seq: int, holder: str, ts: str) -> Any:
@@ -292,12 +297,12 @@ def test_the_engine_route_refuses_to_reassign_a_held_story(
 def test_the_engine_ranking_skips_a_story_someone_else_holds(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+    monkeypatch.setenv("BASICLY_HOLDER", "sam")
     assert "th-1" not in {
         row["issue"]["id"] for row in tracker.owned_ranking(repo)["recommendations"]
     }
 
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "alex")
+    monkeypatch.setenv("BASICLY_HOLDER", "alex")
     assert "th-1" in {row["issue"]["id"] for row in tracker.owned_ranking(repo)["recommendations"]}
 
 
@@ -320,7 +325,7 @@ def _ctx(repo: Path, record: str) -> Any:
 def test_the_loop_stops_on_a_story_someone_else_holds(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+    monkeypatch.setenv("BASICLY_HOLDER", "sam")
 
     held = loop._hold_for_this_session(_ctx(repo, "th-1"))
 
@@ -342,7 +347,7 @@ def test_the_loop_records_the_person_who_runs_it_as_the_holder(
         issue_type="task",
     )
     recorded_review(owned_store.kit(repo, "commands"), owned_store.ledger_dir(repo), "th-2")
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+    monkeypatch.setenv("BASICLY_HOLDER", "sam")
 
     assert loop._hold_for_this_session(_ctx(repo, "th-2")) is None
     assert (tracker.read_record(repo, "th-2") or {})["assignee"] == "sam"
@@ -380,7 +385,7 @@ def test_moving_a_story_nobody_holds_to_in_progress_names_the_claimant(
     story: tuple[Path, str], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ledger, record = story
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+    monkeypatch.setenv("BASICLY_HOLDER", "sam")
 
     assert _run(capsys, "update", str(ledger), record, "--status", "in_progress")[0] == cli.EXIT_OK
 
@@ -393,7 +398,7 @@ def test_moving_a_held_story_to_in_progress_keeps_its_holder(
 ) -> None:
     ledger, record = story
     _run(capsys, "assign", str(ledger), record, "--to", "alex")
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+    monkeypatch.setenv("BASICLY_HOLDER", "sam")
 
     assert _run(capsys, "update", str(ledger), record, "--status", "in_progress")[0] == cli.EXIT_OK
 

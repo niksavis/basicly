@@ -16,6 +16,7 @@ def _ready(root: Path) -> None:
         "fx-1",
         title="complete the fixture",
         status="in_progress",
+        assignee="fixture-holder",
         description=(
             "## Trigger\n\nWhen the fixture completes, I want admission checked, "
             "so I can preserve data before closing.\n"

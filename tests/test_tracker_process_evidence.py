@@ -270,6 +270,7 @@ def test_integrated_write_uses_the_same_review_and_confirmation_boundary(
         '[tracker]\nmode = "owned"\nprefix = "demo"\n', encoding="utf-8"
     )
     monkeypatch.chdir(repo)
+    monkeypatch.setenv("BASICLY_HOLDER", "fixture-holder")
     record = _card(tracker.ledger_dir(repo), capsys)
     with pytest.raises(tracker.TrackerDivergenceError, match="cannot complete"):
         tracker.write(repo, ["close", record, "--reason", "Saved tasks are readable."])

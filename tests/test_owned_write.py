@@ -335,7 +335,7 @@ def test_an_engine_claim_names_the_person_who_claimed(
 ) -> None:
     repo = owned_repo(tmp_path)
     seed_ready(repo, PARENT)
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+    monkeypatch.setenv("BASICLY_HOLDER", "sam")
 
     owned_write.append(repo, ["update", PARENT, "--status", "in_progress"])
 

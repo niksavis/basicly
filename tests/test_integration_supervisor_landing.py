@@ -100,6 +100,7 @@ def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo.mkdir()
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.name", "Harness Test")
+    _git(repo, "config", "basicly.holder", "Harness Test")
     _git(repo, "config", "user.email", "harness@example.invalid")
     _git(repo, "config", "commit.gpgsign", "false")
     (repo / "basicly.toml").write_text(_BASE_CONFIG, encoding="utf-8")

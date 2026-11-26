@@ -142,6 +142,8 @@ branches; the two agree who keeps it, then run `resolve` to keep the current hol
 These directory forms describe ledger mode.
 For vault claims and comments, use the native forms under Agent tools.
 Create, update, review, confirm and close keep the `.basicly/ledger` argument in either mode.
+Before your first claim, choose a pseudonym once with `git config basicly.holder PSEUDONYM`.
+A claim without a pseudonym is refused, because the ledger must not record a real name.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix <p> --title "<what>" \
