@@ -156,6 +156,39 @@ def _finished(gh: ci_landing.Gh, flow: str, run: dict, clock: ci_landing.Clock) 
         clock.sleep(ci_landing.POLL_S)
 
 
+def _earlier_heads(root: Path, gh: ci_landing.Gh, candidate: ci_landing.Candidate) -> list[str]:
+    argv = ["pr", "list", "--state", "all", "--limit", "200", "--json", "headRefName,headRefOid"]
+    listed = _read(gh, argv, f"list the pull requests of {candidate.lane}")
+    prefix = f"{BRANCH_PREFIX}/{candidate.lane}/"
+    rows = listed if isinstance(listed, list) else []
+    heads = {
+        str(found.get("headRefOid"))
+        for found in rows
+        if isinstance(found, dict) and str(found.get("headRefName", "")).startswith(prefix)
+    }
+    heads.discard(candidate.head)
+    return sorted(h for h in heads if _git(root, "cat-file", "-e", f"{h}^{{commit}}")[0] == 0)
+
+
+def _require_untried(
+    gh: ci_landing.Gh, candidate: ci_landing.Candidate, flow: str, base: str
+) -> None:
+    argv = ["run", "list", "--workflow", flow, "--commit", candidate.head, "--event", EVENT]
+    listed = _read(gh, [*argv, "--json", "url,status,conclusion,attempt"], f"list {flow} runs")
+    for run in listed if isinstance(listed, list) else []:
+        if not isinstance(run, dict) or run.get("status") != "completed":
+            continue
+        if run.get("conclusion") == "success" and run.get("attempt") == 1:
+            continue
+        raise PrDeliveryError(
+            f"{flow} run {run.get('url')} already ended {run.get('conclusion')} on attempt "
+            f"{run.get('attempt')} for {candidate.head[:12]}, and a pull request runs again "
+            f"only on a new head, so nothing is pushed; commit a fix in the lane, or retry "
+            f"the same tree once with git commit --allow-empty or a rebase on {base}, then "
+            f"run basicly worktree merge {candidate.lane} --bead {candidate.record} {RETRY}"
+        )
+
+
 def prove(
     root: Path,
     candidate: ci_landing.Candidate,
@@ -165,10 +198,12 @@ def prove(
 ) -> tuple[str, str, str, tuple[str, ...]]:
     flows = workflows(root)
     _require_current(root, base, candidate.head, "nothing is pushed")
+    earlier = _earlier_heads(root, gh, candidate)
     for flow in flows:
-        failed = ci_landing.failed_runs(root, candidate, flow, gh, [])
+        _require_untried(gh, candidate, flow, base)
+        failed = ci_landing.failed_runs(root, candidate, flow, gh, earlier)
         if refused := ci_landing.spent(failed, candidate, flow, RETRY):
-            raise PrDeliveryError(refused)
+            raise PrDeliveryError(f"{refused}; nothing is pushed")
     branch = branch_name(candidate.lane, candidate.head)
     _push(root, candidate.head, branch)
     number, url = _open(gh, candidate, base, branch)

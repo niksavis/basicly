@@ -80,6 +80,7 @@ class Gh:
         self.calls: list[list[str]] = []
         self.prs: list[dict] = []
         self.merged = ""
+        self.history: dict[str, list[dict]] = {}
         self.view: Callable[[list[str]], str] = lambda _argv: json.dumps(self.run)
         self.run = {
             "databaseId": 7,
@@ -99,7 +100,7 @@ class Gh:
             ("pr", "list"): self._list,
             ("pr", "close"): self._close,
             ("pr", "create"): self._create,
-            ("run", "list"): lambda argv: json.dumps([self.run] if "--event" in argv else []),
+            ("run", "list"): self._runs,
             ("run", "view"): self.view,
             ("pr", "merge"): self._merge,
             ("pr", "view"): lambda _argv: json.dumps({
@@ -111,10 +112,21 @@ class Gh:
         return handler(argv) if handler else None
 
     def _list(self, argv: list[str]) -> str:
+        if "--head" not in argv:
+            return json.dumps([
+                {"headRefName": pr["branch"], "headRefOid": pr["headRefOid"]} for pr in self.prs
+            ])
         branch = self._value(argv, "--head")
         return json.dumps([
             pr for pr in self.prs if pr["branch"] == branch and pr["state"] == "OPEN"
         ])
+
+    def _runs(self, argv: list[str]) -> str:
+        commit = self._value(argv, "--commit")
+        if commit in self.history:
+            return json.dumps(self.history[commit])
+        opened = any(pr["headRefOid"] == commit for pr in self.prs)
+        return json.dumps([self.run] if "--event" in argv and opened else [])
 
     def _close(self, argv: list[str]) -> str:
         found = next(pr for pr in self.prs if str(pr["number"]) == argv[2])
@@ -343,3 +355,80 @@ def test_cleanup_of_a_removed_lane_sweeps_its_pr_branches(
         ("cleanup", {"force": False, "repo_root": tmp_path, "missing_ok": True}),
         ("sweep", ("gone", "main")),
     ]
+
+
+FAILED_RUN = {
+    "databaseId": 3,
+    "url": "https://example.invalid/runs/3",
+    "status": "completed",
+    "conclusion": "failure",
+    "attempt": 1,
+}
+
+
+def _same_tree(repo: Path, candidate: ci_landing.Candidate, gh: Gh, failures: int) -> str:
+    tree = _git(repo, "rev-parse", f"{candidate.head}^{{tree}}")
+    earlier = _git(repo, "commit-tree", tree, "-p", candidate.base, "-m", "chore: earlier try")
+    branch = delivery_pr.branch_name("lane-a", earlier)
+    gh.prs.append({
+        "number": 2,
+        "url": "https://example.invalid/pull/2",
+        "headRefOid": earlier,
+        "branch": branch,
+        "state": "CLOSED",
+    })
+    gh.history[earlier] = [FAILED_RUN] * failures
+    return earlier
+
+
+def test_a_head_that_already_failed_is_refused_before_any_push_with_the_retry_commands(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    candidate = _lane(repo)
+    gh = Gh(repo)
+    gh.history[candidate.head] = [FAILED_RUN]
+
+    with pytest.raises(delivery_pr.PrDeliveryError, match="git commit --allow-empty") as refused:
+        delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
+
+    assert "runs/3 already ended failure on attempt 1" in str(refused.value)
+    assert not _git(repo, "ls-remote", "origin", "refs/heads/pr/*")
+    assert not [call for call in gh.calls if call[:2] == ["pr", "create"]]
+
+
+def test_a_tree_that_failed_twice_on_earlier_heads_is_refused_before_any_push(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    candidate = _lane(repo)
+    gh = Gh(repo)
+    _same_tree(repo, candidate, gh, failures=2)
+
+    with pytest.raises(delivery_pr.PrDeliveryError, match="already failed 2 times on this tree"):
+        delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
+
+    assert not _git(repo, "ls-remote", "origin", "refs/heads/pr/*")
+
+
+def test_a_tree_that_failed_once_gets_one_more_run_on_a_new_head(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    candidate = _lane(repo)
+    gh = Gh(repo)
+    _same_tree(repo, candidate, gh, failures=1)
+
+    landed = delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
+
+    assert _git(repo, "ls-remote", "origin", "refs/heads/main").split()[0] == landed.commit
+
+
+def test_a_pass_only_on_a_rerun_of_the_pull_request_head_is_refused(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    candidate = _lane(repo)
+    gh = Gh(repo)
+    gh.run = {**gh.run, "attempt": 2}
+
+    with pytest.raises(delivery_pr.PrDeliveryError, match="succeeded only on attempt 2"):
+        delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
+
+    assert not [call for call in gh.calls if call[:2] == ["pr", "merge"]]

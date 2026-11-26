@@ -1,0 +1,1 @@
+- **A pr delivery counts failed runs by tree and refuses a retry of a failed head.** An empty commit can no longer avoid the rerun limit; a head that already failed is refused before any push, with the commands that give a new head (basicly-18mhacz.3).
