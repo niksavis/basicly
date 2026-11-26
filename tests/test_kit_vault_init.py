@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -73,6 +74,39 @@ def test_init_prints_the_name_permissions_and_files_and_pushes_nothing_without_y
     assert shown["will_push"] == ["FORMAT.md", "README.md", "reader.py", "vault.toml"]
     assert shown["pushed"] is False
     assert _git("ls-remote", str(bare), cwd=tmp_path) == ""
+
+
+def test_init_preview_names_a_next_command_that_keeps_the_prefix_and_attaches(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare = _empty(tmp_path)
+    repo = _code_repo(tmp_path)
+    monkeypatch.chdir(repo)
+
+    code, shown = _run(["vault-init", "--vault", str(bare), "--prefix", "acme"], capsys)
+
+    assert code == 0 and shown["pushed"] is False
+    code, attached = _run(shlex.split(shown["next"]), capsys)
+    assert code == 0, attached
+    assert attached["pushed"] is True
+    assert 'prefix = "acme"' in (repo / ".basicly-tracker.toml").read_text(encoding="utf-8")
+
+
+def test_init_with_yes_and_no_prefix_in_a_new_checkout_refuses_before_it_pushes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare = _empty(tmp_path)
+    repo = _code_repo(tmp_path)
+    monkeypatch.chdir(repo)
+
+    code, shown = _run(["vault-init", "--vault", str(bare), "--yes"], capsys)
+
+    assert code == 1, shown
+    assert "--prefix PREFIX --yes" in shown["fix"]
+    assert _git("ls-remote", str(bare), cwd=tmp_path) == ""
+    assert not (repo / ".basicly-tracker.toml").exists()
+    code, preview = _run(["vault-init", "--vault", str(bare)], capsys)
+    assert code == 0 and "--prefix PREFIX" in preview["next"]
 
 
 def test_init_with_yes_pushes_a_genesis_the_shape_check_accepts_and_writes_the_config(

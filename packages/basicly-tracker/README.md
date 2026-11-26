@@ -42,6 +42,7 @@ basicly-tracker vault-init --vault VAULT-ADDRESS --prefix PROJECT-PREFIX --yes
 
 The first command previews publication.
 The confirmed command publishes genesis and attaches only after its safeguards pass.
+In a checkout with no tracker, `--yes` without `--prefix` refuses before it pushes, because it would attach nothing.
 Existing history requires the migration procedure instead.
 A vault attachment uses `.basicly-tracker.toml` and a frozen `.basicly/ledger` guard.
 Keep that guard and `.basicly/ledger-archive/` intact.

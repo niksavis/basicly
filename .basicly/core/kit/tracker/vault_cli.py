@@ -220,8 +220,13 @@ def _init_vault(args: argparse.Namespace, _clock: Clock) -> dict[str, object]:
             "fix": "name the empty repository: vault-init --vault GIT-ADDRESS",
             "suggested_name": vault_init.SUGGESTED_NAME,
         }
+    guards = (ledger_freeze.LEDGER, vault_config.CONFIG_PATH)
+    root = _repository_root(Path.cwd())
+    named, refused = vault_init.prefix_for(url, args.prefix, args.yes, root, guards)
+    if refused:
+        return refused
     ledger = _attach_source(args, url)
-    shown = vault_init.init(url, confirmed=args.yes)
+    shown = vault_init.init(url, confirmed=args.yes, prefix=named)
     if shown.get("pushed") and ledger is not None:
         try:
             ledger_freeze.freeze(ledger, url, args.prefix, {})
