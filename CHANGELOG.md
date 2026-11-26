@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.49.6 - 2026-11-26
+
+Delta: v0.49.5..v0.49.6
+
 This release changes how work is delivered. basicly's own lanes and releases now go through a pull request with CI green on the exact head. A task, bug or chore closes in one tracker call from its landing evidence. A commit that names a record another session holds is now refused. The Orchestrator gets session pacing and a cheap keep-alive.
 
 - Delivery: `worktree merge --delivery pr` lands a lane through a pull request (basicly-ybun19f), closes the pull requests it replaced (basicly-iqc0k85), counts failed runs by tree (basicly-18mhacz.3), deletes a rebased branch whose patches are all on the base (basicly-18mhacz.5), and basicly's own repository uses it (basicly-18mhacz.1); `basicly release --delivery pr` tags GitHub's merge commit only after main is green (basicly-18mhacz.2).
@@ -17,6 +21,50 @@ This release changes how work is delivered. basicly's own lanes and releases now
 - Orchestrator: `orch pace` names the sessions that fit until the reset, `orch status` shows each session's time since its last request, and `orch keepalive` pings only needed sessions (basicly-scpjhge); `orch automode` writes the auto mode rules (basicly-qpr2xmr.3.41); `orch delegate` runs read-only on the cheapest tier, saves each failed turn, keeps Copilot in its lane (basicly-qpr2xmr.4.7, basicly-qpr2xmr.4.8, basicly-qpr2xmr.4.9) and can bill Claude Code to a Console budget with a spend ledger (basicly-m5xnjsr).
 - Skills: the council, swarm and hill-climb scripts draw a Mermaid diagram only where the reply view renders it (basicly-604lr63).
 - Orchestrator tools need a reinstall from the tag, because `uv tool upgrade` ignores a tag pin: `uv tool install --force "basicly-orch @ git+https://github.com/niksavis/basicly@v0.49.6#subdirectory=packages/basicly-orch"`.
+
+### Added
+
+- **`basicly release --delivery pr` delivers a release through a pull request.** It commits the release, lets GitHub merge it when every landing workflow is green on the exact head, tags the merge commit only once it is on `origin/main` and its push run there is green, and pushes only the tag; the lander behaviour is unchanged (basicly-18mhacz.2).
+
+- **A pr delivery closes the pull requests it replaced.** After a merge, and in `basicly worktree cleanup NAME`, every other open `pr/NAME/` pull request is closed with a comment that names the merged one, and its branch is deleted when its head is on the base or the base holds every path it changed (basicly-iqc0k85).
+
+- `orch delegate --billing console` runs Claude Code on an Anthropic Console budget from `console.json` in the orch store: models, effort and a bare or profile mode per tier, a per-run cap and a month budget. Each run's `total_cost_usd` goes to the spend ledger `spend.jsonl`, and a run that could pass the month budget is refused by name. (basicly-m5xnjsr)
+
+- `orch automode plan` and `orch automode apply` write the Claude Code auto mode rules that an orchestrated workspace needs (lane git work, guarded landing, guarded cleanup, release tags) from one compact source. They name each permission rule that would block a generated command. They also check that Claude Code reads every planned entry, and keep a backup. (basicly-qpr2xmr.3.41)
+
+- `orch delegate --read-only` runs Claude Code, Codex or Copilot read-only in the repository root with no lane, and `--tier cheap` picks the cheapest model of each coding agent from the tier map `tiers.json` in the orch store. (basicly-qpr2xmr.4.7)
+
+- `orch delegate` saves each non-zero exit of a coding agent as a JSON file under `delegations/failures/` in the orch store, with the prompt hidden, and names the file in its refusal; a redacted copy can become a replay fixture for the usage-limit patterns. (basicly-qpr2xmr.4.8)
+
+- `orch delegate` lets Copilot edit only its lane: a write rule for the lane path, a short shell allow list, deny rules for git push, reset, checkout, rm and URLs, and no temp folder; it prints the rules and refuses any allow-all, yolo, autopilot or bypass flag for every coding agent. (basicly-qpr2xmr.4.9)
+
+- **`orch pace` names how many working sessions fit until the 5-hour reset, `orch status` shows each session's time since its last request, and `orch keepalive` pings only the sessions marked needed after the reset, before 55 minutes, with one fixed text.** herdr is an optional adapter; without it the command names the sessions to ping (basicly-scpjhge).
+
+- **`basicly worktree merge --delivery pr` lands a lane through a pull request.** It keeps every check of `--mode ci`, waits for every landing workflow on the exact head, lets GitHub merge it with `--match-head-commit` and writes the landing evidence, so `close --landed` works. The lander stays the default; `[delivery] adapter = "pr"` selects it (basicly-ybun19f).
+
+### Changed
+
+- **basicly's own repository lands its lanes through pull requests.** Its `basicly.toml` sets `[delivery] adapter = "pr"`; the engine default stays the lander, so other repositories do not change, and `--delivery lander` is the fallback (basicly-18mhacz.1).
+
+- **Staged verification type-checks the importers of a changed module.** When a commit changes a Python module, the staged pyright run also checks the modules that import it, so a signature change that breaks a caller fails before the landing (basicly-18mhacz.4).
+
+- **A task, bug or chore starts without a review and closes by its landing evidence in one call.** `close ID --landed COMMIT --tests JSON` needs the landing-verification artifact of that commit and a test file or `null` per criterion; a `null` opens a follow-up that holds the parent open. `close --superseded-by` closes a replaced record. Epics and releases keep the full review (basicly-18mhacz).
+
+- The council, swarm and hill-climb scripts, and the new `mermaid.py plan` and `mermaid.py chain` for decompose-plan and root-cause, print a Mermaid diagram only when a fresh capability file shows that handily reply-view draws it; without the file they print plain text and no diagram (docs/design/capability-file.md). (basicly-604lr63)
+
+### Fixed
+
+- **A pr delivery counts failed runs by tree and refuses a retry of a failed head.** An empty commit can no longer avoid the rerun limit; a head that already failed is refused before any push, with the commands that give a new head (basicly-18mhacz.3).
+
+- **Cleanup deletes a rebased branch whose patches are all on the base.** `basicly worktree cleanup` and the pr sweep now count a branch as landed when `git cherry` finds an equivalent patch on `origin/BASE` for every commit of it, even after the base changed those files again (basicly-18mhacz.5).
+
+- Local staged verification now runs the guidance wording tests when a fragment, target, template, skill or projected instruction file changes, so a wording conflict shows before the landing. (basicly-gtb19bg.12)
+
+- **Two tracker sessions that write the same vault state file at once no longer crash one of them.** Each write now uses its own temporary file, so a session can no longer lose its rename to another one and exit with FileNotFoundError (basicly-pl4ybu0).
+
+- Vault tracker: the commit-msg hook refuses a commit on a record that another session holds, and names the holder and the take and claim commands. A record with no holder, an unsettled claim or an unreachable vault still passes, now with a `notice:` line (basicly-qpr2xmr.3.29).
+
+- **`basicly consumer-proof` names only a record that this session holds in a vault consumer, of that consumer's prefix.** It asks the consumer's own commit-msg rule, and refuses by name with the claim command when the session holds none or has no session identity; a failed consumer prints its cause (basicly-wwns2vd).
 
 ## v0.49.5 - 2026-11-26
 

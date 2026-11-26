@@ -1,1 +1,0 @@
-- `orch delegate --read-only` runs Claude Code, Codex or Copilot read-only in the repository root with no lane, and `--tier cheap` picks the cheapest model of each coding agent from the tier map `tiers.json` in the orch store.

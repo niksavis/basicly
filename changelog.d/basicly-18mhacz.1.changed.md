@@ -1,1 +1,0 @@
-- **basicly's own repository lands its lanes through pull requests.** Its `basicly.toml` sets `[delivery] adapter = "pr"`; the engine default stays the lander, so other repositories do not change, and `--delivery lander` is the fallback (basicly-18mhacz.1).
