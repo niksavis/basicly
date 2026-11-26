@@ -100,6 +100,7 @@ The `command -v` test keeps the plain status line when `orch-statusline-tap` is 
 - Advice per window: `close idle` when the projection is 100% or more, or the used percent is 95% or more; `hold` when the projection is 90% or more; else `start`.
 - A window whose `resets_at` has passed shows "window reset" and `start`.
 - The overall advice is the most careful advice of the windows: `close idle`, then `hold`, then `start`.
+- The `fit:` line names how many working sessions fit until the `five_hour` reset (record `basicly-scpjhge`). It takes the burn of the readings of the last 30 minutes, which must span at least 10 minutes, and divides it by the count of live sessions in the state `working`. The count is `(100 - used) / hours to reset / burn per session`, rounded down. With no such readings, no working session or no measured use, it prints `fit: unknown` and the reason.
 
 The words mean:
 

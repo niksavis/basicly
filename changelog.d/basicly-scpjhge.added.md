@@ -1,0 +1,1 @@
+- **`orch pace` names how many working sessions fit until the 5-hour reset, `orch status` shows each session's time since its last request, and `orch keepalive` pings only the sessions marked needed after the reset, before 55 minutes, with one fixed text.** herdr is an optional adapter; without it the command names the sessions to ping (basicly-scpjhge).

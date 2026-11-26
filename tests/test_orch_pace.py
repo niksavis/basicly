@@ -235,3 +235,31 @@ def test_orch_pace_note_done_without_a_start_is_refused(tmp_path: Path) -> None:
     env = {snapshot.DIR_ENV: str(tmp_path)}
     with pytest.raises(log.RefusedError, match="orch pace note x-2 start"):
         commands.note(done, tmp_path, env, NOW, tracker(tmp_path, FakeLedger()))
+
+
+def test_under_a_hold_two_readings_ten_minutes_apart_name_the_sessions_that_fit() -> None:
+    held = window(80.0, [[NOW - 600, 79.5], [NOW, 80.0]])
+
+    count, basis = plan.fit(held, NOW, 1)
+
+    assert count == 3
+    assert "burn 3.0%/h over the last 10 min with 1 working" in basis
+    assert plan.fit_line(held, NOW, 1).startswith("fit: 3 working sessions fit until the reset")
+
+
+@pytest.mark.parametrize(
+    ("readings", "working", "why"),
+    [
+        ([[NOW - 300, 79.0], [NOW, 80.0]], 1, "span under 10 min"),
+        ([[NOW - 3000, 70.0], [NOW - 2400, 75.0]], 1, "span under 10 min"),
+        ([[NOW - 600, 79.0], [NOW, 80.0]], 0, "no session is working"),
+        ([[NOW - 600, 80.0], [NOW, 80.0]], 1, "no use measured"),
+    ],
+)
+def test_the_fit_is_unknown_without_a_recent_rate_or_a_working_session(
+    readings: list[list[float]], working: int, why: str
+) -> None:
+    line = plan.fit_line(window(80.0, readings), NOW, working)
+
+    assert line.startswith("fit: unknown (")
+    assert why in line
