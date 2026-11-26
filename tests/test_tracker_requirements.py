@@ -10,7 +10,17 @@ from pathlib import Path
 
 import pytest
 
-from basicly import board_bodies, decisions, merge, policy, tracker, verify
+from basicly import (
+    board_bodies,
+    board_snapshot,
+    decisions,
+    decompose,
+    lens_review,
+    merge,
+    policy,
+    tracker,
+    verify,
+)
 from tests import flipped_tracker
 from tests.committed_ledger import committed_ledger
 from tests.plan_fixtures import install_kit
@@ -254,6 +264,9 @@ def _release_standings(repo: Path) -> object:
         pytest.param(decisions.closed_ids, id="gate"),
         pytest.param(_release_standings, id="release-script"),
         pytest.param(board_bodies.bodies, id="board"),
+        pytest.param(lambda repo: lens_review.latest_per_lens(repo, "b-1"), id="review-gate"),
+        pytest.param(lambda repo: decompose.frozen_estimates(repo, "b-1"), id="frozen-forecast"),
+        pytest.param(board_snapshot.build_document, id="board-snapshot"),
     ],
 )
 def test_r7_every_reader_class_refuses_an_unreadable_ledger_by_name(

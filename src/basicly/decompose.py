@@ -508,7 +508,7 @@ def _parse_sizing_marker(text: str) -> tuple[str, CostEstimate] | None:
 def frozen_estimates(repo_root: Path, feature_id: str) -> dict[str, CostEstimate]:
 
     frozen: dict[str, CostEstimate] = {}
-    for row in tracker.try_read_comments(repo_root, feature_id):
+    for row in tracker.read_comments(repo_root, feature_id):
         text = str(row.get(tracker.COMMENT_TEXT_KEY, ""))
         parsed = _parse_sizing_marker(text)
         if parsed is not None:

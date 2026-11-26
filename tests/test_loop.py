@@ -1917,7 +1917,7 @@ def _brief_after_rework(
     monkeypatch.setattr(loop, "lane_rework_spent", lambda *_a, **_k: 1)
     monkeypatch.setattr(
         loop.lens_review.tracker,
-        "try_read_comments",
+        "read_comments",
         lambda *_a: [
             {"text": f"{loop.lens_review.MARKER} lens={lens}\n{text}"} for lens, text in reviews
         ],

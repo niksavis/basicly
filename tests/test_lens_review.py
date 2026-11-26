@@ -57,7 +57,7 @@ def test_a_second_review_of_one_lens_is_kept_beside_the_first(
 @pytest.fixture
 def recorded(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
     rows: list[dict] = []
-    monkeypatch.setattr(lens_review.tracker, "try_read_comments", lambda _r, _i: list(rows))
+    monkeypatch.setattr(lens_review.tracker, "read_comments", lambda _r, _i: list(rows))
     return rows
 
 
@@ -123,7 +123,7 @@ def test_a_store_that_cannot_answer_costs_the_findings_and_never_a_verdict(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
-    monkeypatch.setattr(lens_review.tracker, "try_read_comments", lambda _r, _i: [])
+    monkeypatch.setattr(lens_review.tracker, "read_comments", lambda _r, _i: [])
 
     read = lens_review.latest_per_lens(tmp_path, "i")
 

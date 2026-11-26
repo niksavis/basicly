@@ -422,7 +422,12 @@ def try_add_comment(repo_root: Path, issue_id: str, body: str) -> bool:
 
 def read_comments(repo_root: Path, issue_id: str) -> list[dict]:
 
-    return _owned_comment_rows(repo_root).get(issue_id, [])
+    try:
+        if tracker_absent(repo_root):
+            return []
+        return _owned_comment_rows(repo_root).get(issue_id, [])
+    except READ_FAILURES as exc:
+        raise read_refused(exc) from exc
 
 
 def try_read_comments(repo_root: Path, issue_id: str) -> list[dict]:
@@ -762,22 +767,33 @@ def all_views(repo_root: Path) -> dict[str, Any]:
     return {record: view for record, view in views.items() if not view.tombstoned}
 
 
+READ_FAILURES = (TrackerDivergenceError, OSError, ValueError)
+
+
+def tracker_absent(repo_root: Path) -> bool:
+    return not ledger_dir(repo_root).is_dir() and owned_store.vault_context(repo_root) is None
+
+
+def read_refused(exc: BaseException) -> TrackerReadError:
+    return TrackerReadError(
+        f"the tracker records could not be read: {exc}; run "
+        "`python3 .basicly/core/kit/tracker/cli.py fsck --vault URL` in a vault consumer, or "
+        f"`python3 .basicly/core/kit/tracker/cli.py fsck {owned_store.LEDGER_DIR.as_posix()}` "
+        "for a local ledger, to name the broken line"
+    )
+
+
 def all_records(repo_root: Path) -> list[dict]:
 
     try:
-        if not ledger_dir(repo_root).is_dir() and owned_store.vault_context(repo_root) is None:
+        if tracker_absent(repo_root):
             return []
         kit_module = kit(repo_root)
         found = kit_module.read_ledger(present_ledger(repo_root))
         ledger_fold = kit_module.events.fold(found)
         views = kit_module.views_from_events(found)
-    except (TrackerDivergenceError, OSError, ValueError) as exc:
-        raise TrackerReadError(
-            f"the tracker records could not be read: {exc}; run "
-            "`python3 .basicly/core/kit/tracker/cli.py fsck --vault URL` in a vault consumer, or "
-            f"`python3 .basicly/core/kit/tracker/cli.py fsck {owned_store.LEDGER_DIR.as_posix()}` "
-            "for a local ledger, to name the broken line"
-        ) from exc
+    except READ_FAILURES as exc:
+        raise read_refused(exc) from exc
     return [
         _rendered(kit_module, issue_id, ledger_fold.records[issue_id], views, ledger_fold.records)
         for issue_id in sorted(ledger_fold.records)

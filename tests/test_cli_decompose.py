@@ -40,6 +40,7 @@ def _plan(tmp_path: Path, *, shared: bool) -> Path:
 def _no_tracker(monkeypatch: pytest.MonkeyPatch) -> None:
 
     fake_tracker.install(monkeypatch, lambda *_a, **_k: None)
+    monkeypatch.setattr(fake_tracker.tracker, "read_comments", lambda *_a: [])
 
 
 @pytest.mark.usefixtures("_no_tracker")
