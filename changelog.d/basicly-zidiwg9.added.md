@@ -1,0 +1,1 @@
+- `orch pace` prints a `sessions:` line that names how many sessions to start, to hold or to let finish, from the needed rate `(100 - used) / hours to reset` against the measured burn per working session.
