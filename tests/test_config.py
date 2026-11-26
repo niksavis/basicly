@@ -99,6 +99,10 @@ def test_the_delivery_adapter_defaults_to_the_lander(
     assert config.load_delivery_adapter(tmp_path) == adapter
 
 
+def test_basicly_itself_lands_through_pull_requests() -> None:
+    assert config.load_delivery_adapter(Path(basicly.__file__).resolve().parents[2]) == "pr"
+
+
 def test_an_unknown_delivery_adapter_is_refused_with_the_valid_names(tmp_path: Path) -> None:
     (tmp_path / CONFIG_FILE).write_text('[delivery]\nadapter = "queue"\n', encoding="utf-8")
     with pytest.raises(ValueError, match="must be one of lander, pr; got 'queue'"):

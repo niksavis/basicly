@@ -203,7 +203,7 @@ basicly worktree cleanup <name>
 - Run one guarded step per tool call. The classifier judges a call as a whole, so a call that bundles a safe step with a risky one is refused whole.
 - Run the merge with `uv run basicly`. The globally installed `basicly` does not put the project's `.venv` on the path of a check, so a check that runs a bare `pytest` fails.
 - When the lane changes the landing engine, the merge refuses with `NOT-READY` and names the command to run from the lane's engine. Run that command.
-- To land through a pull request, add `--delivery pr`, or set `[delivery] adapter = "pr"` in `basicly.toml`. GitHub merges the pull request when every landing workflow is green on its exact head, and the merge never pushes the base itself.
+- To land through a pull request, add `--delivery pr`, or set `[delivery] adapter = "pr"` in `basicly.toml`. basicly's own repository sets it, so its lanes land through pull requests; `--delivery lander` is the fallback when GitHub is down. GitHub merges the pull request when every landing workflow is green on its exact head, and the merge never pushes the base itself.
 
 ## Watching a lane
 
