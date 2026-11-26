@@ -13,6 +13,7 @@ from . import (
     base_lock,
     ci_landing,
     decompose,
+    delivery_pr,
     landing_guard,
     lefthook_artifacts,
     orch_note,
@@ -179,14 +180,39 @@ def _verify_for_landing(
     )
 
 
+def _local_only_gate(session: Session, clock: _Landing) -> MergeResult | None:
+    report = ci_landing.local_checks(session.path)
+    clock.note_checks(report)
+    if report.passed:
+        return None
+    detail = _verify_reasons(report) or ", ".join(report.failures)
+    return MergeResult(session.name, "verify-failed", f"local-only checks failed: {detail}")
+
+
+def _deliver_pr(
+    session: Session, subject: landing_guard.LandingSubject, clock: _Landing
+) -> MergeResult:
+    if refused := _local_only_gate(session, clock):
+        return refused
+    candidate = ci_landing.Candidate(
+        session.name, clock.bead, subject.destination, subject.candidate
+    )
+    try:
+        landed = delivery_pr.deliver(clock.repo_root, candidate, session.base)
+    except delivery_pr.PrDeliveryError as error:
+        orch_note.note(clock.repo_root, item=clock.bead, last=f"pr: {error}", ok=False)
+        return MergeResult(session.name, "verify-failed", str(error))
+    clock.mark("merge")
+    orch_note.note(clock.repo_root, item=clock.bead, last=f"merged {landed.pull_request}")
+    detail = "; ".join((f"{landed.pull_request} merged as {landed.commit[:12]}", *landed.notes))
+    return MergeResult(session.name, "merged", detail, landed_head=landed.commit)
+
+
 def _prove_on_ci(
     session: Session, subject: landing_guard.LandingSubject, clock: _Landing
 ) -> MergeResult | None:
-    report = ci_landing.local_checks(session.path)
-    clock.note_checks(report)
-    if not report.passed:
-        detail = _verify_reasons(report) or ", ".join(report.failures)
-        return MergeResult(session.name, "verify-failed", f"local-only checks failed: {detail}")
+    if refused := _local_only_gate(session, clock):
+        return refused
     candidate = ci_landing.Candidate(
         session.name, clock.bead, subject.destination, subject.candidate
     )
@@ -635,6 +661,7 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     verify_mode: str = "full",
     expected_head: str | None = None,
     override_gate: bool = False,
+    delivery: str = "lander",
 ) -> MergeResult:
 
     if not bead:
@@ -689,7 +716,11 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
 
     try:
         landed = _replay_verify_merge(
-            session, verify_mode=verify_mode, override_gate=override_gate, clock=clock
+            session,
+            verify_mode=verify_mode,
+            override_gate=override_gate,
+            clock=clock,
+            delivery=delivery,
         )
     except landing_guard.SubjectUnavailableError as error:
         return clock.close(MergeResult(name, "not-ready", str(error)))
@@ -725,7 +756,12 @@ def _engine_preflight(
 
 
 def _replay_verify_merge(
-    session: Session, *, verify_mode: str, override_gate: bool, clock: _Landing
+    session: Session,
+    *,
+    verify_mode: str,
+    override_gate: bool,
+    clock: _Landing,
+    delivery: str = "lander",
 ) -> MergeResult:
 
     repo_root, bead = clock.repo_root, clock.bead
@@ -742,6 +778,8 @@ def _replay_verify_merge(
 
     subject = landing_guard.capture(repo_root, session, verify_mode, record=bead)
     gate = _engine_preflight(session, subject, clock, verify_mode)
+    if gate is None and delivery == delivery_pr.ADAPTER:
+        return _deliver_pr(session, subject, clock)
     if gate is None and not override_gate and verify_mode == ci_landing.MODE:
         gate = _prove_on_ci(session, subject, clock)
         clock.mark("verify")

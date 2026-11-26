@@ -206,7 +206,9 @@ def _wait(flow: str, run: dict, gh: Gh, clock: Clock) -> dict:
         clock.sleep(POLL_S)
 
 
-def verdict(state: dict, candidate: Candidate, flow: str = WORKFLOWS[0]) -> str:
+def verdict(
+    state: dict, candidate: Candidate, flow: str = WORKFLOWS[0], retry: str = f"--mode {MODE}"
+) -> str:
     url = state.get("url")
     conclusion = state.get("conclusion")
     attempt = state.get("attempt")
@@ -223,11 +225,11 @@ def verdict(state: dict, candidate: Candidate, flow: str = WORKFLOWS[0]) -> str:
     return (
         f"{flow} run {url} ended {conclusion} in {', '.join(failed) or 'no named job'}; "
         f"{candidate.lane} is not landed; fix the lane and run basicly worktree merge "
-        f"{candidate.lane} --bead {candidate.record} --mode ci again"
+        f"{candidate.lane} --bead {candidate.record} {retry} again"
     )
 
 
-def _failed_runs(
+def failed_runs(
     root: Path, candidate: Candidate, flow: str, gh: Gh, tried: list[str]
 ) -> list[dict]:
     heads = [candidate.head]
@@ -250,14 +252,19 @@ def _failed_runs(
     return failed
 
 
-def _spent(failed: list[dict], candidate: Candidate, flow: str = WORKFLOWS[0]) -> str:
+def spent(
+    failed: list[dict],
+    candidate: Candidate,
+    flow: str = WORKFLOWS[0],
+    retry: str = f"--mode {MODE}",
+) -> str:
     if len(failed) <= RERUNS:
         return ""
     urls = ", ".join(str(run.get("url")) for run in failed)
     return (
         f"{flow} already failed {len(failed)} times on this tree ({urls}); a landing takes "
         f"a first attempt and {RERUNS} rerun; change the lane, then run basicly worktree merge "
-        f"{candidate.lane} --bead {candidate.record} --mode ci again"
+        f"{candidate.lane} --bead {candidate.record} {retry} again"
     )
 
 
@@ -282,8 +289,8 @@ def prove(
     tried = earlier.get("dispatched", "").split()
     failed_before = 0
     for flow in flows:
-        failed = _failed_runs(root, candidate, flow.name, gh, tried)
-        if refused := _spent(failed, candidate, flow.name):
+        failed = failed_runs(root, candidate, flow.name, gh, tried)
+        if refused := spent(failed, candidate, flow.name):
             raise CiLandingError(refused)
         failed_before += len(failed)
     attempt = int(earlier.get("attempt", "0")) + 1

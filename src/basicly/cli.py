@@ -41,6 +41,7 @@ from . import (
     contention,
     decisions,
     decompose,
+    delivery_pr,
     dispatch_brief,
     fleet,
     health,
@@ -96,6 +97,7 @@ from .config import (
     CHECKPOINTS,
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
+    DELIVERY_ADAPTERS,
     LEGACY_PREFIX_KEY,
     LOCAL_CONFIG_FILE,
     MODEL_TIERS,
@@ -105,6 +107,7 @@ from .config import (
     SizingConfig,
     installed_kit_version,
     legacy_tracker_prefix,
+    load_delivery_adapter,
     load_enabled_features,
     load_policy_config,
     load_project_paths,
@@ -4791,17 +4794,26 @@ def cmd_worktree(args: argparse.Namespace) -> int:
 def _cmd_worktree_merge(args: argparse.Namespace) -> int:
     root = _repo_root()
     try:
+        delivery = getattr(args, "delivery", None) or load_delivery_adapter(root)
+    except ValueError as error:
+        ui.fail(str(error))
+        return 1
+    pr = delivery == delivery_pr.ADAPTER
+    mode = ci_landing.MODE if pr else args.mode
+    try:
         with landing_lock.hold(root, lane=args.name, record=args.bead, wait_s=args.wait * 60):
-            result = merge.merge_worktree(root, args.name, bead=args.bead, verify_mode=args.mode)
+            result = merge.merge_worktree(
+                root, args.name, bead=args.bead, verify_mode=mode, delivery=delivery
+            )
     except landing_lock.LandingLockedError as error:
         ui.fail(str(error))
         return 1
     print(f"  {result.name}: {result.status.upper()} — {result.detail}")
-    ci = args.mode == ci_landing.MODE
-    if ci and result.merged:
+    ci = mode == ci_landing.MODE
+    if ci and result.merged and not pr:
         notes = ci_landing.finish(root, args.name, args.bead)
     else:
-        notes = ci_landing.drop_refs(root, args.name) if ci else []
+        notes = ci_landing.drop_refs(root, args.name) if ci and not pr else []
     if ci and result.merged and not notes:
         notes = _clean_landed_lane(root, args.name)
     for note in notes:
@@ -5161,6 +5173,14 @@ def _add_worktree_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=(*VERIFY_MODES, ci_landing.MODE),
         default="full",
         help="Verify mode to re-run before merge; ci proves the lane on GitHub runners",
+    )
+    wt_merge.add_argument(
+        "--delivery",
+        choices=DELIVERY_ADAPTERS,
+        default=None,
+        help="lander merges here and pushes the base; pr opens a pull request, waits for "
+        "every landing workflow on its exact head and lets GitHub merge it (implies --mode ci); "
+        "default: [delivery] adapter in basicly.toml, else lander",
     )
     wt_merge.add_argument(
         "--wait",

@@ -1,0 +1,1 @@
+- **`basicly worktree merge --delivery pr` lands a lane through a pull request.** It keeps every check of `--mode ci`, waits for every landing workflow on the exact head, lets GitHub merge it with `--match-head-commit` and writes the landing evidence, so `close --landed` works. The lander stays the default; `[delivery] adapter = "pr"` selects it (basicly-ybun19f).

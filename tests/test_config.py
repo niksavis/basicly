@@ -89,6 +89,22 @@ def test_unknown_verify_reuse_recipe_is_refused(tmp_path: Path, recipe: str) -> 
         load_verify_config(tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("text", "adapter"), [("", "lander"), ('[delivery]\nadapter = "pr"\n', "pr")]
+)
+def test_the_delivery_adapter_defaults_to_the_lander(
+    tmp_path: Path, text: str, adapter: str
+) -> None:
+    (tmp_path / CONFIG_FILE).write_text(text, encoding="utf-8")
+    assert config.load_delivery_adapter(tmp_path) == adapter
+
+
+def test_an_unknown_delivery_adapter_is_refused_with_the_valid_names(tmp_path: Path) -> None:
+    (tmp_path / CONFIG_FILE).write_text('[delivery]\nadapter = "queue"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="must be one of lander, pr; got 'queue'"):
+        config.load_delivery_adapter(tmp_path)
+
+
 def test_default_config_toml_matches_builtin_defaults(tmp_path: Path) -> None:
 
     defaults = load_project_paths(tmp_path)
