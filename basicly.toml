@@ -74,6 +74,9 @@ mode = "owned"
 # run `basicly tracker fold` outside Git hooks when needed.
 fold_on_merge = true
 
+[delivery]
+adapter = "pr"
+
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.
