@@ -1,1 +1,0 @@
-- The nightly `consumer-proof.yml` job prepares the pinned Lefthook files, runs `npm ci` in each consumer, uploads its logs on failure, and with `--throwaway-vault` proves install plus each consumer's CI, without a vault commit. `basicly consumer-proof` names the real build log and prints the end of each failed consumer log (basicly-ns7ab3r).

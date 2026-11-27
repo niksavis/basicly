@@ -1,1 +1,0 @@
-- **A ledger line that is not an event is refused by name, not dropped.** Before, a merge-conflict marker or a hand edit in a ledger file made every read skip that line, so a record showed a wrong state and only fsck noticed. Reads now name each file and line and the fsck command (basicly-1jlh5si).

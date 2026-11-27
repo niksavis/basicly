@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.50.0 - 2026-11-27
+
+Delta: v0.49.6..v0.50.0
+
 This release makes the tracker refuse instead of guess. A tracker read that fails, a ledger line that is not an event, and fsck on a frozen ledger now stop with a named cause and the command that fixes it, where before they showed an empty or wrong tracker. **Breaking:** a claim no longer records your git `user.name`. Choose a pseudonym once with `git config basicly.holder PSEUDONYM`, or the claim refuses. `orch pace` now says how many sessions to start or hold. A release no longer needs a local full run: a nightly job proves main in the public consumers on GitHub, a cut refuses while its failure issue is open, and `basicly release-checks` replaces the local landing verify.
 
 - Release: the local consumer proof before a cut is gone. The nightly `consumer-proof.yml` job installs a wheel of main in handily and terminal and runs their own CI, and `basicly release` refuses while its `consumer-proof` issue is open; it does not prove a tracker commit through a consumer's hooks with its vault (basicly-5afceaa). `basicly release-checks` runs the record checks alone, and the live-ledger tests only when their inputs changed since the last tag (basicly-e67wwwe, basicly-ns7ab3r).
@@ -15,6 +19,49 @@ This release makes the tracker refuse instead of guess. A tracker read that fail
 - Orchestrator: `orch pace` prints a `sessions:` line (basicly-zidiwg9).
 - CI: the Lefthook download retries (basicly-fv2vn39), and a CI landing rerun reports its own run (basicly-7pclh13).
 - Orchestrator tools need a reinstall from the tag, because `uv tool upgrade` ignores a tag pin: `uv tool install --force "basicly-orch @ git+https://github.com/niksavis/basicly@v0.50.0#subdirectory=packages/basicly-orch"`.
+
+### Added
+
+- `orch pace` prints a `sessions:` line that names how many sessions to start, to hold or to let finish, from the needed rate `(100 - used) / hours to reset` against the measured burn per working session. With no working session or no measured burn, as right after a reset, it uses `session_rate_pct_per_hour` from `pace.json` in the orch store (default 5%/h) and says so. (basicly-zidiwg9)
+
+### Changed
+
+- **A record lookup, the comment texts and session start refuse a failed tracker read by name.** read_record and require_record no longer report a record as missing, all_comment_texts no longer reads as empty, session start names the cause in place of the bootstrap advice, and the tuning report says the tracker was not read (basicly-309ouz7).
+
+- **Breaking: a claim needs a pseudonymous holder.** `claim`, `assign`, `update --status in_progress` and the engine loop no longer record your git `user.name`. With no `--to`, `BASICLY_HOLDER` or `basicly.holder`, they refuse. Remedy: run `git config basicly.holder PSEUDONYM` once (basicly-d6cfl4v).
+
+- `basicly release` no longer needs a local consumer proof. A nightly `consumer-proof.yml` workflow proves main in the public consumers with `consumer-proof --only NAME --throwaway-vault`; a release refuses while its failure issue is open. `basicly release-checks` runs the record checks, and the live-ledger tests only when their inputs changed since the last tag (basicly-e67wwwe).
+
+### Fixed
+
+- The vault commit-msg hook adds or lists only records with the prefix that `.basicly-tracker.toml` names, so a commit in one project of a shared vault is never stamped with a record of another project. (basicly-0ma7n7w)
+
+- **A ledger line that is not an event is refused by name, not dropped.** Before, a merge-conflict marker or a hand edit in a ledger file made every read skip that line, so a record showed a wrong state and only fsck noticed. Reads now name each file and line and the fsck command (basicly-1jlh5si).
+
+- **The review gate, the frozen forecast and the board refuse a failed tracker read by name.** Before, a read failure gave the review lenses no findings, dropped the frozen forecasts and drew an empty board. They now raise the same named read error as the other tracker readers; a checkout with no tracker still reads as empty (basicly-309ouz7).
+
+- A git hook that fails on an unexpected error now prints the error message and the hook file and line, with machine paths removed, not only the error type (basicly-5f4hb6g).
+- basicly's own git reads, such as the board's `git status`, no longer rewrite the index, so a commit hook that runs the board tests no longer fails (basicly-5f4hb6g).
+
+- **A CI landing rerun reports its own run.** `basicly worktree merge --mode ci` now finds the run of the `land/` ref it just dispatched, not the earlier failed run on the same commit (basicly-7pclh13).
+
+- Tracker: `vault-init` keeps `--prefix` in its preview next command, and in a checkout with no tracker it refuses `--yes` without `--prefix` before it pushes, so a new repository is never left with a published vault it cannot attach to (basicly-bi81emt.1).
+
+- `lefthook_artifacts.py --download` now tries a timed-out or failed Lefthook artifact download up to 3 times, after 5 s and 15 s waits, with the 60 s read timeout unchanged and no new try after 240 s for all downloads; a final failure names the host, the attempts and the limits. (basicly-fv2vn39)
+
+- **fsck on the frozen ledger file of a vault consumer names the vault command.** `fsck .basicly/ledger` printed a Python traceback; it now exits 2 with one line that names `fsck --vault URL` (basicly-jw1kmii).
+
+- A vault `claim` after `unassign --take` now lands even when the take was not shared yet, because the claim shares the queued release first. If the release still cannot be shared, the claim exits 4 and names `sync --vault URL`. A held record now names `unassign R --take`, not the refused `claim --take` (basicly-n0wy4ny).
+
+- The nightly `consumer-proof.yml` job prepares the pinned Lefthook files, runs `npm ci` in each consumer, uploads its logs on failure, and with `--throwaway-vault` proves install plus each consumer's CI, without a vault commit. `basicly consumer-proof` names the real build log and prints the end of each failed consumer log (basicly-ns7ab3r).
+
+- **Two branches never write to the same tracker shard file.** Before, `feat/a` and `feat-a`, names sharing their first 64 characters, and detached worktrees shared one `pending-*.jsonl` file. A name that is not a plain file name, or ends like a hashed name, now gets a short hash (basicly-qlf1ed3).
+
+- The vault `stop` and `session-end` hooks name each event they leave queued and print the `sync --vault` command that shares it, and a queued write now names `sync --vault`, the command the kit has, instead of `share --vault`. (basicly-vrqrkxy)
+
+- **A tracker read that fails is now refused by name, not read as an empty tracker.** Before, a broken or unreadable ledger made every reader see no records, so checks such as the release-note and waiver gates passed against nothing. The error names the cause and the `fsck` command; a repository with no tracker still reads as empty (basicly-wutgzws).
+
+- `close --landed` now titles the follow-up for a `null` criterion "Prove a criterion of X by a test or a recorded run", and its criterion accepts a test or a recorded run, because some criteria, such as a timing or a deleted remote branch, cannot be shown by a test. (basicly-zr6f16f)
 
 ## v0.49.6 - 2026-11-26
 
