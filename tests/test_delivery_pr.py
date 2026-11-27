@@ -287,3 +287,30 @@ def test_a_pass_only_on_a_rerun_of_the_pull_request_head_is_refused(tmp_path: Pa
         delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
 
     assert not [call for call in gh.calls if call[:2] == ["pr", "merge"]]
+
+
+def test_a_red_compatibility_run_on_the_head_merges_nothing_and_leaves_no_evidence(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    flow = repo / ".github" / "workflows" / "compatibility.yml"
+    flow.write_text("name: c\non:\n  pull_request:\n    branches: [main]\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "chore: compatibility")
+    _git(repo, "push", "-q", "origin", "main")
+    candidate = _lane(repo)
+    gh = Gh(repo)
+    gh.flows["compatibility.yml"] = {
+        "databaseId": 9,
+        "url": "https://example.invalid/runs/9",
+        "status": "completed",
+        "conclusion": "failure",
+        "attempt": 1,
+        "jobs": [{"name": "Consumer hooks", "conclusion": "failure"}],
+    }
+
+    with pytest.raises(delivery_pr.PrDeliveryError, match=r"compatibility\.yml"):
+        delivery_pr.deliver(repo, candidate, "main", gh, CLOCK)
+
+    assert not any(call[:2] == ["pr", "merge"] for call in gh.calls)
+    assert _artifact(repo) == {}

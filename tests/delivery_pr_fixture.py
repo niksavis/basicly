@@ -73,6 +73,7 @@ class Gh:
         self.prs: list[dict] = []
         self.merged = ""
         self.history: dict[str, list[dict]] = {}
+        self.flows: dict[str, dict] = {}
         self.view: Callable[[list[str]], str] = self._view
         self.run = {
             "databaseId": 7,
@@ -115,11 +116,15 @@ class Gh:
 
     def _view(self, argv: list[str]) -> str:
         known = [run for runs in self.history.values() for run in runs]
+        known += list(self.flows.values())
         found = next((run for run in known if str(run.get("databaseId")) == argv[2]), self.run)
         return json.dumps(found)
 
     def _runs(self, argv: list[str]) -> str:
         commit = self._value(argv, "--commit")
+        flow = self._value(argv, "--workflow") if "--workflow" in argv else ""
+        if flow in self.flows and "--event" in argv:
+            return json.dumps([self.flows[flow]])
         if commit in self.history:
             return json.dumps(self.history[commit])
         opened = commit == self.merged or any(pr["headRefOid"] == commit for pr in self.prs)
