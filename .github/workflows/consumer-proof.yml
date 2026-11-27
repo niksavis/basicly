@@ -42,8 +42,10 @@ jobs:
             git -C "$target" config user.name "basicly consumer proof"
             git -C "$target" config user.email "consumer-proof@users.noreply.github.com"
             git -C "$target" config basicly.holder "consumer-proof"
+            if [ -f "$target/package-lock.json" ]; then
+              (cd "$target" && npm ci)
+            fi
           done
-          (cd "$BASICLY_CONSUMERS_ROOT/handily" && npm ci)
       - name: Prepare pinned Lefthook runtime
         shell: bash
         run: python3 src/basicly/lefthook_artifacts.py --download

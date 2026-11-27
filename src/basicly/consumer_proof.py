@@ -43,10 +43,7 @@ NOT_HELD = (
 NIGHTLY = Path(".github") / "workflows" / "consumer-proof.yml"
 ISSUE_LABEL = "consumer-proof"
 ISSUE_SEARCH = "author:app/github-actions"
-ISSUE_REMEDY = (
-    "fix the cause on main, run gh workflow run consumer-proof.yml, "
-    "and cut after it passes and closes the issue"
-)
+ISSUE_REMEDY = "fix main, then run gh workflow run consumer-proof.yml until it passes"
 
 THROWAWAY_SESSION = "basicly-consumer-proof"
 SESSION_ENV = "BASICLY_TRACKER_SESSION"
@@ -54,11 +51,11 @@ VAULT_LINE = re.compile(r"(?m)^vault\s*=.*$")
 LEDGER = ".basicly/ledger"
 PROOF_RECORD = (
     "--title",
-    "Prove a basicly wheel in this consumer",
+    "Nightly consumer proof",
     "--field",
     "issue_type=task",
     "--field",
-    "description=## Context\n\nA throwaway record of a nightly consumer proof.",
+    "description=## Context\n\nA nightly consumer proof.",
     "--field",
     "acceptance_criteria=WHEN the proof commits, THE KIT SHALL accept this record.",
 )
@@ -236,7 +233,11 @@ def _kit(clone: Path, env: dict[str, str], *args: str) -> dict[str, object]:
     except ValueError:
         shown = None
     if done.returncode != 0 or not isinstance(shown, dict):
-        said = " | ".join((done.stderr or "").strip().splitlines()[-10:])
+        given = shown if isinstance(shown, dict) else {}
+        said = " | ".join(
+            [str(given[k]) for k in ("refused", "fix") if given.get(k)]
+            + (done.stderr or "").strip().splitlines()[-10:]
+        )
         raise ProofError(
             f"the throwaway vault step {args[0]} exited {done.returncode}"
             + (f": {said}" if said else "")
