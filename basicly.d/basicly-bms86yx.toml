@@ -3,48 +3,7 @@ name = "pytest-live-ledger"
 command = ["pytest", "-q", "-n", "{workers}", "-m", "live_ledger"]
 modes = ["fast", "full"]
 local_only = true
-inputs = [
-  ".basicly/ledger",
-  "uv.lock",
-  ".basicly/core/kit/tracker/**",
-  "src/basicly/tracker.py",
-  ".scripts/waivers.py",
-  ".scripts/check_*.py",
-  ".scripts/docs_claims.py",
-  ".scripts/ledger_bodies.py",
-  "tests/conftest.py",
-  "tests/ledger_guard.py",
-  "tests/test_board_cli.py",
-  "tests/test_board_operator_questions.py",
-  "tests/test_board_record_page.py",
-  "tests/test_board_snapshot.py",
-  "tests/test_check_declared_dependencies.py",
-  "tests/test_check_marker_families.py",
-  "tests/test_check_release_notes.py",
-  "tests/test_check_spend_accuracy.py",
-  "tests/test_check_waivers.py",
-  "tests/test_cli_loop.py",
-  "tests/test_config.py",
-  "tests/test_decompose.py",
-  "tests/test_docs_claim_status.py",
-  "tests/test_docs_claims.py",
-  "tests/test_docs_claims_consumer.py",
-  "tests/test_entry.py",
-  "tests/test_git_hooks/test_tracker_commit_msg.py",
-  "tests/test_improvement_controller.py",
-  "tests/test_kit_tracker_differential.py",
-  "tests/test_kit_tracker_differential_edges.py",
-  "tests/test_kit_tracker_events.py",
-  "tests/test_kit_tracker_migrate.py",
-  "tests/test_kit_tracker_record_types.py",
-  "tests/test_kit_tracker_review.py",
-  "tests/test_lefthook_artifacts.py",
-  "tests/test_runner.py",
-  "tests/test_supervise.py",
-  "tests/test_supervise_board.py",
-  "tests/test_tracker_read_safety.py",
-  "tests/test_tracker_requirements.py",
-]
+inputs = [".basicly/ledger/**", "basicly.d/*.toml", "pyproject.toml"]
 
 [[verify.checks]]
 name = "pytest-fresh-runtime"

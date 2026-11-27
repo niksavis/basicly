@@ -13,6 +13,7 @@ name = "declared-dependencies"
 command = ["uv", "run", "python", ".scripts/check_declared_dependencies.py"]
 modes = ["fast", "full"]
 local_only = true
+inputs = [".basicly/ledger/**", "basicly.d/*.toml", "basicly.toml", "pyproject.toml"]
 
 # One `# noqa: E402` for this gate (basicly-9yyj6i). The script is run as
 # `uv run python .scripts/check_declared_dependencies.py`, not as a module on an installed

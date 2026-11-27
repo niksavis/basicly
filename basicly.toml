@@ -188,7 +188,7 @@ staged_suffix = ".py"
 [[verify.checks]]
 name = "pyright"
 command = ["uv", "run", "python", ".scripts/check_changed_types.py"]
-modes = ["fast", "staged"]
+modes = ["full"]
 inputs = [
   "src/**/*.py",
   "tests/**/*.py",
@@ -284,7 +284,7 @@ command = [
   ".basicly/core/skills",
   "packages",
 ]
-modes = ["fast", "full"]
+modes = ["full"]
 inputs = [
   ".scripts/**/*.py",
   ".basicly/core/**/*.py",
@@ -316,7 +316,7 @@ inputs = [".basicly/core/hooks/**/*.py"]
 [[verify.checks]]
 name = "vulture"
 command = ["vulture", "--min-confidence", "60", "src", ".scripts"]
-modes = ["fast", "full"]
+modes = ["full"]
 inputs = ["src/**/*.py", ".scripts/**/*.py", "pyproject.toml", "uv.lock"]
 
 # Wired-or-deleted (basicly-uexy): nothing merges with references only inside its own
@@ -338,7 +338,7 @@ inputs = ["src/**/*.py", ".scripts/**/*.py", "pyproject.toml", "uv.lock"]
 [[verify.checks]]
 name = "wired-or-deleted"
 command = ["uv", "run", "python", ".scripts/wired_or_deleted.py"]
-modes = ["fast", "full"]
+modes = ["full"]
 inputs = [
   "src/**/*.py",
   "tests/**/*.py",
@@ -414,7 +414,7 @@ name = "lint-imports"
 # package: every lane adding a new module failed with `module basicly.<new> does not exist`,
 # a finding no amount of bounded rework could act on.
 command = ["uv", "run", "lint-imports"]
-modes = ["fast", "full"]
+modes = ["full"]
 inputs = ["src/**/*.py", ".importlinter", "uv.lock"]
 
 
@@ -452,31 +452,31 @@ inputs = ["src/**/*.py", ".importlinter", "uv.lock"]
 name = "projection-check"
 command = ["uv", "run", "basicly", "check"]
 inputs = [".basicly/core/**", ".basicly-local/**", ".basicly/fragments/**", ".basicly/generated-manifest.json", "AGENTS.md", ".claude/CLAUDE.md", ".claude/rules/**", ".github/copilot-instructions.md", ".ruff.toml", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
-modes = ["fast", "full"]
+modes = ["full"]
 
 [[verify.checks]]
 name = "projection-skills"
 command = ["uv", "run", "basicly", "skills-check"]
 inputs = [".basicly/core/**", ".basicly-local/**", ".claude/skills/**", ".agents/skills/**", ".github/skills/**", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
-modes = ["fast", "full"]
+modes = ["full"]
 
 [[verify.checks]]
 name = "projection-agents"
 command = ["uv", "run", "basicly", "agents-check"]
 inputs = [".basicly/core/**", ".basicly-local/**", ".claude/agents/**", ".github/agents/**", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
-modes = ["fast", "full"]
+modes = ["full"]
 
 [[verify.checks]]
 name = "projection-hooks"
 command = ["uv", "run", "basicly", "hooks-check"]
 inputs = [".basicly/core/**", ".basicly-local/**", ".claude/settings.json", ".codex/hooks.json", ".github/hooks/**", "lefthook.*", ".lefthook.*", ".config/lefthook.*", ".basicly/lefthook.yml", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
-modes = ["fast", "full"]
+modes = ["full"]
 
 [[verify.checks]]
 name = "projection-permissions"
 command = ["uv", "run", "basicly", "permissions-check"]
 inputs = [".basicly/core/**", ".basicly-local/**", ".claude/settings.json", ".codex/config.toml", ".codex/rules/**", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
-modes = ["fast", "full"]
+modes = ["full"]
 
 # Derivable documentation claims (basicly-tcmy.31). A document that restates a fact
 # the tree already answers — the measured always-on character counts, the set of
@@ -509,13 +509,13 @@ modes = ["fast", "full"]
 name = "board-schema"
 command = ["uv", "run", "basicly", "board", "validate", "tests/fixtures/board/minimal-v1.json"]
 inputs = ["tests/fixtures/board/minimal-v1.json", ".basicly/core/schemas/**", "src/basicly/**", "pyproject.toml", "uv.lock"]
-modes = ["fast", "full"]
+modes = ["full"]
 
 [[verify.checks]]
 name = "docs-claims"
 command = ["uv", "run", "python", ".scripts/docs_claims.py", "--check"]
 fix_command = ["uv", "run", "python", ".scripts/docs_claims.py", "--fix"]
-modes = ["fast", "full"]
+modes = ["full"]
 
 # Module size, as a token ratchet (basicly-u2hl.5). No ruff rule measures module length, so
 # nothing in this stack noticed `cli.py` reaching 53,095 tokens — the owner's stated pain,
@@ -536,7 +536,7 @@ local_only = true
 [[verify.checks]]
 name = "module-size"
 command = ["uv", "run", "python", ".scripts/check_module_size.py"]
-modes = ["fast", "full"]
+modes = ["full"]
 inputs = [
   "src/**/*.py",
   "tests/**/*.py",
@@ -567,7 +567,7 @@ inputs = [
 [[verify.checks]]
 name = "except-form"
 command = ["uv", "run", "python", ".scripts/check_except_form.py"]
-modes = ["fast", "full"]
+modes = ["full"]
 inputs = ["src/**/*.py", "tests/**/*.py", ".scripts/**/*.py", ".basicly/core/**/*.py", "uv.lock"]
 
 # Suppression debt, as a per-code ratchet (basicly-u2hl.12). ruff cannot police its own
@@ -584,7 +584,7 @@ inputs = ["src/**/*.py", "tests/**/*.py", ".scripts/**/*.py", ".basicly/core/**/
 [[verify.checks]]
 name = "noqa-debt"
 command = ["uv", "run", "python", ".scripts/check_noqa_debt.py"]
-modes = ["fast", "full"]
+modes = ["full"]
 inputs = [
   "src/**/*.py",
   "tests/**/*.py",
@@ -609,7 +609,7 @@ inputs = [
 [[verify.checks]]
 name = "waivers"
 command = ["uv", "run", "python", ".scripts/check_waivers.py"]
-modes = ["fast", "full"]
+modes = ["full"]
 
 # Release-note debt, as a per-record ratchet (basicly-7phc). `changelog.d` refuses a
 # fragment that is empty or misnamed, so every check it had bound on a fragment that
@@ -637,7 +637,7 @@ local_only = true
 [[verify.checks]]
 name = "release-notes"
 command = ["uv", "run", "python", ".scripts/check_release_notes.py"]
-modes = ["fast", "full"]
+modes = ["full"]
 local_only = true
 
 # A lane's recorded spend forecast against its actual, per bead, over the committed markers
@@ -709,7 +709,7 @@ inputs = ["src/basicly/**/*.py", "tests/**/*.py", "uv.lock"]
 [[verify.checks]]
 name = "corpus-drift"
 command = ["uv", "run", "python", ".scripts/check_corpus_drift.py"]
-modes = ["fast", "full"]
+modes = ["full"]
 local_only = true
 
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.

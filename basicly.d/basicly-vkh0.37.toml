@@ -20,8 +20,9 @@ name = "marker-families"
 command = ["uv", "run", "python", ".scripts/check_marker_families.py"]
 modes = ["fast", "full"]
 local_only = true
+inputs = [".basicly/ledger/**", "basicly.d/*.toml", "basicly.toml", "pyproject.toml"]
 
 [[verify.checks]]
 name = "marker-families-source"
 command = ["uv", "run", "python", ".scripts/check_marker_families.py", "--source-only"]
-modes = ["fast", "full"]
+modes = ["full"]
