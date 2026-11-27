@@ -18,7 +18,7 @@
 name = "code-citations"
 command = ["uv", "run", "python", ".scripts/check_code_citations.py"]
 inputs = ["src/**/*.py", "tests/**/*.py", ".scripts/**/*.py", ".basicly/core/**/*.py", "**/*.md", "pyproject.toml", "uv.lock"]
-modes = ["fast", "full"]
+modes = ["full"]
 
 # One suppression, the one `basicly-e2mz.37`, `basicly-a4q3.4` and `basicly-5p49` already
 # document: `.scripts` is not a package, so `ratchet` is reachable only after `sys.path` names

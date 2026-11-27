@@ -3929,9 +3929,9 @@ appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 41 | pre-commit and a local pre-push; the live-ledger tests run only when a staged path matches their inputs |
-| full | 48 | continuous integration runs it with `--ci`, which skips the ten `local_only` checks that read tracker records; `basicly release-checks` runs those checks before a cut |
-| staged | 6 | default direct verification of staged contents |
+| fast | 13 | pre-commit and a local pre-push: format, lint and scans of the changed files, plus the record checks, which run only when a ledger, waiver or `basicly.d` file is staged (basicly-1513mc2) |
+| full | 51 | continuous integration runs it with `--ci`, which skips the ten `local_only` checks that read tracker records; `basicly release-checks` runs those checks before a cut |
+| staged | 3 | default direct verification of staged contents |
 
 The configuration declares 52 checks in total. They cover lint, format, three
 platform-specific type-check passes, scoped hidden-tooling checks, a security scan, dead code, a wiring gate, the kit
