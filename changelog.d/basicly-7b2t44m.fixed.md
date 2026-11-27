@@ -1,0 +1,1 @@
+- The tracker's commit-msg claim block escapes the ledger path and kit paths, so a path with shell syntax is never run; an installed hook keeps the old block until the next install (basicly-7b2t44m).
