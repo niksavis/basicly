@@ -361,6 +361,21 @@ def test_the_claude_fence_may_not_shadow_a_rendered_key(tmp_path: Path) -> None:
         discover_skills(tmp_path)
 
 
+def test_the_claude_fence_refuses_an_unknown_effort_level(tmp_path: Path) -> None:
+    _write_skill(tmp_path, "slow", "slow", "Do a thing.")
+    path = tmp_path / SKILLS_SOURCE_DIR / "slow" / "skill.yaml"
+    path.write_text(
+        "schema_version: 1\nname: slow\ninvocation: model\n"
+        "description: Do a thing.\n"
+        "claude:\n  effort: extreme\n"
+        "instructions: |\n  # x\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="effort must be one of: low, medium"):
+        discover_skills(tmp_path)
+
+
 def test_no_root_flag_resolves_every_default_root(tmp_path: Path) -> None:
 
     assert resolve_skill_roots(tmp_path, roots=None) == [

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from .schema import ValidationError, validate_requires, validate_technologies
+from .schema import ValidationError, validate_effort, validate_requires, validate_technologies
 
 SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
 SKILL_SOURCE_FILE = "skill.yaml"
@@ -73,6 +73,7 @@ def _load_claude_passthrough(value: object, path: Path) -> tuple[tuple[str, obje
             f"claude passthrough may not shadow the rendered key(s) {', '.join(shadowed)}",
             path,
         )
+    validate_effort(value, path)
     return tuple(value.items())
 
 

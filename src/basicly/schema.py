@@ -63,6 +63,14 @@ def technology_selected(
 FEATURES = frozenset({"orchestration"})
 
 
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def validate_effort(passthrough: dict[str, object], path: Path) -> None:
+    if "effort" in passthrough and passthrough["effort"] not in EFFORT_LEVELS:
+        raise ValidationError(f"claude.effort must be one of: {', '.join(EFFORT_LEVELS)}", path)
+
+
 def validate_requires(requires: object, path: Path) -> list[str]:
     if not isinstance(requires, list) or not set(requires) <= FEATURES:
         raise ValidationError(

@@ -319,6 +319,16 @@ def test_claude_passthrough_may_not_shadow_rendered_keys(tmp_path: Path) -> None
         discover_agents(_roots(tmp_path))
 
 
+def test_claude_passthrough_refuses_an_unknown_effort_level(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path / "core",
+        "code-reviewer",
+        _agent_yaml("code-reviewer", extra="claude:\n  effort: extreme\n"),
+    )
+    with pytest.raises(ValidationError, match="effort must be one of: low, medium"):
+        discover_agents(_roots(tmp_path))
+
+
 def _repo_with_agent(tmp_path: Path) -> Path:
     _write_block(tmp_path / ".basicly/core/agents", "honesty", body="Say so if clean.")
     kept = (name for name in SLOT_ORDER if name != "constraints")
