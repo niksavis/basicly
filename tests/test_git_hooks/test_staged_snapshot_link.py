@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -85,3 +87,76 @@ def test_symlink_denied_uses_a_real_junction_and_cleanup_preserves_user_data(
     assert (snapshot / ".venv/late.txt").read_text(encoding="utf-8") == "keep"
     shutil.rmtree(snapshot)
     assert (source / "late.txt").read_text(encoding="utf-8") == "keep"
+
+
+def _git(root: Path, *arguments: str, env: dict[str, str] | None = None) -> str:
+    return subprocess.run(  # nosec B603 B607
+        ["git", *arguments], cwd=root, env=env, check=True, capture_output=True, text=True
+    ).stdout
+
+
+def _staged_repository(tmp_path: Path) -> Path:
+    root = tmp_path / "checkout"
+    (root / "b").mkdir(parents=True)
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "hook@example.invalid")
+    _git(root, "config", "user.name", "hook")
+    (root / "b" / "keep.md").write_text("k\n", encoding="utf-8")
+    (root / "b" / "gone.md").write_text("g\n", encoding="utf-8")
+    (root / "pin").write_text("1\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "init")
+    (root / "pin").write_text("2\n", encoding="utf-8")
+    _git(root, "add", "pin")
+    return root
+
+
+def _snapshot(tmp_path: Path):
+    module = _load_staged_snapshot()
+    root = _staged_repository(tmp_path)
+    directory = tmp_path / "hook"
+    directory.mkdir()
+    state = module.prepare(root, directory)
+    return module, root, state, {**os.environ, **module.job_env(state, "pre-commit")}
+
+
+def test_a_deletion_a_job_stages_reaches_the_index_and_the_checkout(tmp_path: Path) -> None:
+    module, root, state, env = _snapshot(tmp_path)
+    (state.tree / "b" / "gone.md").unlink()
+    (state.tree / "b" / "keep.md").write_text("k2\n", encoding="utf-8")
+    _git(state.tree, "add", "-A", "--", "b", env=env)
+
+    module.publish(state)
+
+    staged = _git(root, "diff", "--cached", "--name-status").split("\n")
+    assert {"D\tb/gone.md", "M\tb/keep.md", "M\tpin"} <= set(staged)
+    assert not (root / "b" / "gone.md").exists()
+    assert (root / "b" / "keep.md").read_text(encoding="utf-8") == "k2\n"
+
+
+def test_a_rename_a_job_stages_leaves_no_old_copy_in_the_checkout(tmp_path: Path) -> None:
+    module, root, state, env = _snapshot(tmp_path)
+    (state.tree / "b" / "moved").mkdir()
+    _git(state.tree, "mv", "b/gone.md", "b/moved/gone.md", env=env)
+
+    module.publish(state)
+
+    assert not (root / "b" / "gone.md").exists()
+    assert (root / "b" / "moved" / "gone.md").read_text(encoding="utf-8") == "g\n"
+    assert "D\tb/gone.md" in _git(root, "diff", "--cached", "--name-status", "--no-renames")
+
+
+def test_a_staged_path_missing_from_the_snapshot_is_refused_by_name(tmp_path: Path) -> None:
+    module, root, state, env = _snapshot(tmp_path)
+    index = module.index_path(root)
+    before = index.read_bytes()
+    (state.tree / "b" / "keep.md").write_text("k2\n", encoding="utf-8")
+    _git(state.tree, "add", "b/keep.md", env=env)
+    (state.tree / "b" / "keep.md").unlink()
+
+    with pytest.raises(ValueError, match=r"b/keep\.md"):
+        module.publish(state)
+
+    assert index.read_bytes() == before
+    assert (root / "b" / "keep.md").read_text(encoding="utf-8") == "k\n"
+    assert not index.with_name(index.name + ".lock").exists()

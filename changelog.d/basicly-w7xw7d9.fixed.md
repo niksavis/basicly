@@ -1,0 +1,1 @@
+- A pre-commit job that deletes or renames a tracked file and stages it no longer fails the commit with a trace: the staged snapshot now removes the old path from the checkout, and a changed path missing from the snapshot is refused by name (basicly-w7xw7d9).
