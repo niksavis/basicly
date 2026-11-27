@@ -1,1 +1,0 @@
-- The `designer` agent now applies sourced terminal UI rules: a key for every action and a keyboard path for every mouse action, focus marked without colour alone, a press that never scrolls the view, number keys 6 to 9 for recommended buttons, `NO_COLOR` and theme-safe contrast, a key footer with `?` help, and a terminal checklist in its output (basicly-vec4m5f).

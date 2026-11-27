@@ -1,1 +1,0 @@
-- `basicly worktree cleanup` now also deletes a lane's retry branches (`harness/<lane>-N`) and PR branches (`pr/<lane>/<head>`) on origin when their head is an ancestor of, or patch-equivalent to, the default branch, one guarded push each. It keeps every other one and prints why, with the exact command to run (basicly-dtpch5y).

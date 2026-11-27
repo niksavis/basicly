@@ -6,6 +6,60 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.51.0 - 2026-11-27
+
+Delta: v0.50.0..v0.51.0
+
+This release makes local hooks fast and the tracker cheaper to read. Local hooks now run only seconds-long checks of staged files, and CI runs the rest. A warm read of a vault-backed tracker costs about 0.25 CPU s in place of 2. The always-on instructions are 16 percent shorter. Seven verification skills and seven more agents pin a Claude Code effort level. `orch delegate --list` shows what each coding-agent adapter can do.
+
+- Hooks: local hooks run only seconds-long staged checks, and 24 checks move to mode `full` in CI (basicly-1513mc2). The local-test-guard hook allows a redirection such as `2>&1` after one test file (basicly-kdrlpaz). A pre-commit job that deletes or renames a file no longer fails the commit (basicly-w7xw7d9). The tracker claim block escapes its paths (basicly-7b2t44m).
+- Tracker: a warm `basicly tracker items` on a vault-backed ledger checks its cache first and caches the template, so it costs about 0.25 CPU s and 48 MB (basicly-d1jt69u, basicly-upl5dtl).
+- Worktree: `basicly worktree merge --delivery pr` waits for every pull_request workflow before it merges (basicly-2gtixnl), and `basicly worktree cleanup` deletes a landed lane's retry and PR branches on origin (basicly-dtpch5y).
+- Guidance: CLAUDE.md goes from 11891 to 9998 characters and catalog lint refuses every emphasis marker (basicly-43ys5ak, basicly-a1gy5du). The `harness-loop` and `swarm` skills follow the current Anthropic prompting guidance (basicly-qag8oms, basicly-na5at2u). The Tired Engineer style repeats each command and fact in full (basicly-5n3vn14). The `designer` agent applies terminal UI rules (basicly-vec4m5f).
+- Effort: seven verification skills pin effort `high` (basicly-29aakqv), seven more agents pin an effort level, and catalog loading refuses an unknown effort value (basicly-h3muqik).
+- Orchestrator: each coding-agent adapter declares its capabilities, and a turn that needs an undeclared one is refused before any process starts (basicly-qpr2xmr.4.10).
+- Orchestrator tools need a reinstall from the tag, because `uv tool upgrade` ignores a tag pin: `uv tool install --force "basicly-orch @ git+https://github.com/niksavis/basicly@v0.51.0#subdirectory=packages/basicly-orch"`.
+
+### Added
+
+- Seven more catalog agents pin a Claude Code effort level: `auditor`, `researcher` and `designer` run at high, `decider`, `curator` and `validator` at medium, and `tester` at low. Catalog loading now refuses a `claude.effort` value outside low, medium, high, xhigh and max on an agent or a skill (basicly-h3muqik).
+
+- **`orch delegate --list` shows each coding-agent adapter, its origin and its capabilities.** Each adapter declares `names_session`, `resumes_read_only`, `read_only` and `lane_edits`. A turn that needs an undeclared capability is refused before any process starts. A broken plugin in `basicly_orch.adapters` is refused by name, and the built-in agents still run (basicly-qpr2xmr.4.10).
+
+### Changed
+
+- **Local hooks run only seconds-long checks of staged files; CI runs the rest.** Upgrade note: 24 checks move to mode `full`; markdownlint lints only staged files in your configured globs, and basicly-gates.yml has no full-scope lint step; docs/how-to/wire-up-the-verify-gate.md names each (basicly-1513mc2).
+
+- Seven verification skills (`root-cause`, `falsify-first`, `repair-in-place`, `validate-as-consumer`, `interface-facts`, `decompose-plan`, `best-practices-audit`) pin Claude Code effort `high` for the turn they load in. A live probe on Claude Code 2.1.332 showed that a skill's effort applies when the model loads it (basicly-29aakqv).
+
+- **The always-on instructions are 16 percent shorter, and catalog lint refuses every emphasis marker.** Skill pointers and procedure detail move into the skills they name, duplicates go, and the emphasis budget drops to 0. With the Kanban rewrite of basicly-a1gy5du, CLAUDE.md goes from 11891 to 9998 characters (basicly-43ys5ak).
+
+- The Tired Engineer output style now tells the agent to repeat in full each command and fact a message needs, so a reader never has to look back at an earlier message. (basicly-5n3vn14)
+
+- **The Agentic Kanban rules use fewer words.** The same 11 rules and every limit stay; the fragment goes from 2886 to 2608 characters (basicly-a1gy5du).
+
+- The best-practices-audit checklist asks for at most one short reason per skill rule, and a test keeps the harness-loop and swarm safety rules and the high effort pins of the seven verification skills. (basicly-na5at2u)
+
+- The `harness-loop` and `swarm` skills follow the current Anthropic prompting guidance: each rule gives one short reason, absolute wording stays only for destructive or hook-blocked actions, delegation is limited to parallel work and blind review, and harness-loop is about 9% shorter (basicly-qag8oms).
+
+- The `designer` agent now applies sourced terminal UI rules: a key for every action and a keyboard path for every mouse action, focus marked without colour alone, a press that never scrolls the view, number keys 6 to 9 for recommended buttons, `NO_COLOR` and theme-safe contrast, a key footer with `?` help, and a terminal checklist in its output (basicly-vec4m5f).
+
+### Fixed
+
+- `basicly worktree merge --delivery pr` now waits for every pull_request workflow that runs on the head, honouring its branch and path filters, before it merges; compatibility is no longer left running at the merge (basicly-2gtixnl).
+
+- The tracker's commit-msg claim block escapes the ledger path and kit paths, so a path with shell syntax is never run; an installed hook keeps the old block until the next install (basicly-7b2t44m).
+
+- `basicly tracker items` on a vault-backed ledger checks its cache before it folds the vault, so a warm call costs about 0.5 CPU s instead of 2 (basicly-d1jt69u).
+
+- `basicly worktree cleanup` now also deletes a lane's retry branches (`harness/<lane>-N`) and PR branches (`pr/<lane>/<head>`) on origin when their head is an ancestor of, or patch-equivalent to, the default branch, one guarded push each. It keeps every other one and prints why, with the exact command to run (basicly-dtpch5y).
+
+- The local-test-guard hook no longer reads a shell redirection such as `2>&1` or `> out.txt` as a test path, so a pytest run over one test file with a redirection is allowed; runs over a folder or several unchanged files stay refused (basicly-kdrlpaz).
+
+- A warm read of a vault-backed tracker no longer parses the vault's event file to find the template; the template is cached on the file's bytes, so a warm `basicly tracker items` costs about 0.25 CPU s and 48 MB (basicly-upl5dtl).
+
+- A pre-commit job that deletes or renames a tracked file and stages it no longer fails the commit with a trace: the staged snapshot now removes the old path from the checkout, and a changed path missing from the snapshot is refused by name (basicly-w7xw7d9).
+
 ## v0.50.0 - 2026-11-27
 
 Delta: v0.49.6..v0.50.0

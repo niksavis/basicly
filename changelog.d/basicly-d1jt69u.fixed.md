@@ -1,1 +1,0 @@
-- `basicly tracker items` on a vault-backed ledger checks its cache before it folds the vault, so a warm call costs about 0.5 CPU s instead of 2 (basicly-d1jt69u).
