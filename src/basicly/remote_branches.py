@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from .checkout import git
 
 REMOTE = "origin"
+PR_PREFIX = "pr"
 
 Unlanded = Callable[[Path, str, str], tuple[str, ...] | None]
 
@@ -98,3 +100,102 @@ def reclaim(main: Path, branch: str, record: Any, unlanded: Unlanded) -> str:
         print(f"  {note}")
         return ""
     return note
+
+
+def _default_base(main: Path) -> str | None:
+    listed = git(["ls-remote", "--symref", REMOTE, "HEAD"], cwd=main, check=False)
+    for line in listed.stdout.splitlines():
+        if line.startswith("ref: refs/heads/"):
+            return line.removeprefix("ref: refs/heads/").split("\t")[0]
+    return None
+
+
+def lane_extras(main: Path, lane: str) -> list[tuple[str, str]] | None:
+    patterns = [f"refs/heads/harness/{lane}-*", f"refs/heads/{PR_PREFIX}/{lane}/*"]
+    listed = git(["ls-remote", "--heads", REMOTE, *patterns], cwd=main, check=False)
+    if listed.returncode != 0:
+        return None
+    name = re.escape(lane)
+    wanted = re.compile(rf"refs/heads/(harness/{name}-[0-9]+|{PR_PREFIX}/{name}/[0-9a-f]{{12}})")
+    found = []
+    for line in listed.stdout.splitlines():
+        head, _, ref = line.partition("\t")
+        if match := wanted.fullmatch(ref.strip()):
+            found.append((match.group(1), head))
+    return found
+
+
+def _proof(main: Path, head: str, landed: str) -> str:
+    if git(["merge-base", "--is-ancestor", head, landed], cwd=main, check=False).returncode == 0:
+        return "ancestor"
+    cherry = git(["cherry", landed, head], cwd=main, check=False)
+    rows = [row for row in cherry.stdout.splitlines() if row.strip()]
+    if cherry.returncode == 0 and rows and all(row.startswith("- ") for row in rows):
+        return "patch-equivalent"
+    return ""
+
+
+def _by_hand(branch: str, head: str) -> str:
+    ref = f"refs/heads/{branch}"
+    return f"git push --force-with-lease={ref}:{head} {REMOTE} :{ref}"
+
+
+def _extra_note(main: Path, branch: str, head: str, base: str, landed: str) -> str:
+    if not _local(main, head):
+        return (
+            f"kept {REMOTE}/{branch}: head {head[:12]} is not fetched here; "
+            f"run git fetch {REMOTE} and clean up again"
+        )
+    proof = _proof(main, head, landed)
+    if not proof:
+        return (
+            f"kept {REMOTE}/{branch}: head {head[:12]} is not on {REMOTE}/{base}; land it, "
+            f"or delete it by hand with: {_by_hand(branch, head)}"
+        )
+    ref = f"refs/heads/{branch}"
+    gone = git(
+        ["push", f"--force-with-lease={ref}:{head}", REMOTE, f":{ref}"], cwd=main, check=False
+    )
+    if gone.returncode != 0:
+        return (
+            f"kept {REMOTE}/{branch}: git push refused the delete: {(gone.stderr or '').strip()}; "
+            f"check git ls-remote {REMOTE} {ref}, "
+            f"then delete it by hand with: {_by_hand(branch, head)}"
+        )
+    return f"deleted {REMOTE}/{branch}: head {head[:12]} is on {REMOTE}/{base} ({proof})"
+
+
+def delete_lane_extras(
+    main: Path, lane: str, base: str | None, owners: Mapping[str, str]
+) -> list[str]:
+    if git(["remote", "get-url", REMOTE], cwd=main, check=False).returncode != 0:
+        return []
+    found = lane_extras(main, lane)
+    retry = f"run git fetch {REMOTE}, then basicly worktree cleanup {lane} again"
+    kept = f"kept the retry and pr branches of {lane}"
+    if found is None:
+        return [f"{kept}: git ls-remote {REMOTE} failed; {retry}"]
+    if not found:
+        return []
+    base = base or _default_base(main)
+    landed, absent = _base_head(main, base)
+    if absent or base is None:
+        return [f"{kept}: {absent or 'origin has no default branch'}; {retry}"]
+    if not _local(main, landed):
+        return [f"{kept}: {REMOTE}/{base} is not fetched here; {retry}"]
+    notes = []
+    for branch, head in found:
+        if branch in owners:
+            notes.append(
+                f"kept {REMOTE}/{branch}: it is the branch of lane {owners[branch]}; "
+                f"clean up that lane with basicly worktree cleanup {owners[branch]}"
+            )
+            continue
+        notes.append(_extra_note(main, branch, head, base, landed))
+    return notes
+
+
+def report_extras(main: Path, lane: str, record: Any, sessions: list[Any]) -> None:
+    owners = {other.branch: other.name for other in sessions if other.name != lane}
+    for note in delete_lane_extras(main, lane, record.base if record else None, owners):
+        print(f"  {note}")

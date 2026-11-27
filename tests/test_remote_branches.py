@@ -56,6 +56,42 @@ def test_a_rebased_branch_whose_patch_is_on_the_base_is_deleted_after_the_base_c
     assert not _on_origin(main, "pr/lane/rebased")
 
 
+def test_cleanup_deletes_a_landed_retry_branch_and_keeps_the_others_with_a_command(
+    main: Path,
+) -> None:
+    _lane(main, "harness/feat-2", "r2.txt")
+    _git(main, "merge", "-q", "--no-ff", "-m", "land", "harness/feat-2")
+    _git(main, "push", "-q", "origin", "main")
+    open_head = _lane(main, "harness/feat-3", "r3.txt")
+    _lane(main, "harness/feat-4", "r4.txt")
+    _lane(main, "harness/feature-2", "other.txt")
+
+    notes = remote_branches.delete_lane_extras(main, "feat", "main", {"harness/feat-4": "feat-4"})
+
+    assert notes[0].startswith("deleted origin/harness/feat-2: head ")
+    assert notes[0].endswith("is on origin/main (ancestor)")
+    assert notes[1].startswith(
+        f"kept origin/harness/feat-3: head {open_head[:12]} is not on origin/main"
+    )
+    assert notes[1].endswith(
+        f"git push --force-with-lease=refs/heads/harness/feat-3:{open_head} "
+        "origin :refs/heads/harness/feat-3"
+    )
+    assert notes[2] == (
+        "kept origin/harness/feat-4: it is the branch of lane feat-4; "
+        "clean up that lane with basicly worktree cleanup feat-4"
+    )
+    assert len(notes) == 3
+    assert [
+        _on_origin(main, f"harness/{b}") for b in ("feat-2", "feat-3", "feat-4", "feature-2")
+    ] == [
+        False,
+        True,
+        True,
+        True,
+    ]
+
+
 def test_a_branch_with_no_remote_copy_is_left_alone(main: Path) -> None:
     assert (
         remote_branches.delete_landed(main, "harness/none", "main", worktree.unlanded_paths) == ""
