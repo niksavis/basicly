@@ -318,9 +318,19 @@ def failure(item: dict[str, object]) -> str:
     return str(last.get("error") or f"step {last.get('step')} exited {last.get('exit')}")
 
 
+def _tail(path: Path, count: int = 20) -> str:
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return ""
+    return "\n".join(lines[-count:])
+
+
 def build_wheel(repo_root: Path, out: Path, run: Run, env: dict[str, str]) -> Path:
     if run(["uv", "build", "--wheel", "-o", str(out)], repo_root, env) != 0:
-        raise ProofError(f"uv build --wheel failed; see {out.parent / (repo_root.name + '.log')}")
+        log = repo_root.parent / f"{repo_root.name}.log"
+        tail = _tail(log)
+        raise ProofError(f"uv build --wheel failed; see {log}" + (f":\n{tail}" if tail else ""))
     wheels = sorted(out.glob("*.whl"))
     if len(wheels) != 1:
         raise ProofError(f"expected one wheel in {out}, found {len(wheels)}")
