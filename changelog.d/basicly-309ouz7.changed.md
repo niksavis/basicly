@@ -1,1 +1,0 @@
-- **A record lookup, the comment texts and session start refuse a failed tracker read by name.** read_record and require_record no longer report a record as missing, all_comment_texts no longer reads as empty, session start names the cause in place of the bootstrap advice, and the tuning report says the tracker was not read (basicly-309ouz7).

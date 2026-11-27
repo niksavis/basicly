@@ -1,1 +1,0 @@
-- **The review gate, the frozen forecast and the board refuse a failed tracker read by name.** Before, a read failure gave the review lenses no findings, dropped the frozen forecasts and drew an empty board. They now raise the same named read error as the other tracker readers; a checkout with no tracker still reads as empty (basicly-309ouz7).

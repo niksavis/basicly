@@ -1,1 +1,0 @@
-- **A CI landing rerun reports its own run.** `basicly worktree merge --mode ci` now finds the run of the `land/` ref it just dispatched, not the earlier failed run on the same commit (basicly-7pclh13).

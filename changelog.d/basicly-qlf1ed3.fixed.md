@@ -1,1 +1,0 @@
-- **Two branches never write to the same tracker shard file.** Before, `feat/a` and `feat-a`, names sharing their first 64 characters, and detached worktrees shared one `pending-*.jsonl` file. A name that is not a plain file name, or ends like a hashed name, now gets a short hash (basicly-qlf1ed3).
