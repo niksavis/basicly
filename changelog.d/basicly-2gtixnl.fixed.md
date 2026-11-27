@@ -1,0 +1,1 @@
+- `basicly worktree merge --delivery pr` now waits for every pull_request workflow that runs on the head, honouring its branch and path filters, before it merges; compatibility is no longer left running at the merge (basicly-2gtixnl).

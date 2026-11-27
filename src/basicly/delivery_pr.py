@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import glob
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,15 +42,53 @@ def merge_message(record: str, number: str, branch: str, base: str) -> tuple[str
     return subject, body
 
 
-def _runs_on_pull_requests(path: Path) -> bool:
+def _pull_request_trigger(path: Path) -> dict | None:
     try:
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
     except OSError, yaml.YAMLError:
-        return False
+        return None
     triggers = loaded.get("on", loaded.get(True)) if isinstance(loaded, dict) else None
-    if isinstance(triggers, str):
-        return triggers == EVENT
-    return isinstance(triggers, (list, dict)) and EVENT in triggers
+    if triggers == EVENT or (isinstance(triggers, list) and EVENT in triggers):
+        return {}
+    if not isinstance(triggers, dict) or EVENT not in triggers:
+        return None
+    found = triggers[EVENT]
+    return found if isinstance(found, dict) else {}
+
+
+def _runs_on_pull_requests(path: Path) -> bool:
+    return _pull_request_trigger(path) is not None
+
+
+def _globs(value: object) -> re.Pattern[str] | None:
+    names = [value] if isinstance(value, str) else value if isinstance(value, list) else []
+    patterns = [glob.translate(str(n), recursive=True, include_hidden=True) for n in names]
+    return re.compile("|".join(f"(?:{p})" for p in patterns)) if patterns else None
+
+
+def _applies(trigger: dict, base: str, changed: list[str]) -> bool:
+    branches = _globs(trigger.get("branches"))
+    if branches is not None and not branches.match(base):
+        return False
+    paths = _globs(trigger.get("paths"))
+    if paths is not None and not any(paths.match(p) for p in changed):
+        return False
+    ignored = _globs(trigger.get("paths-ignore"))
+    return ignored is None or not changed or not all(ignored.match(p) for p in changed)
+
+
+def required(root: Path, base: str, candidate: ci_landing.Candidate) -> tuple[str, ...]:
+    names = list(workflows(root))
+    code, listed = _git(root, "diff", "--name-only", candidate.base, candidate.head)
+    changed = [p for p in listed.splitlines() if p] if code == 0 else []
+    folder = root / ci_landing.WORKFLOW_DIR
+    for path in sorted([*folder.glob("*.yml"), *folder.glob("*.yaml")]):
+        trigger = _pull_request_trigger(path)
+        if path.name in names or trigger is None:
+            continue
+        if code != 0 or _applies(trigger, base, changed):
+            names.append(path.name)
+    return tuple(names)
 
 
 def workflows(root: Path) -> tuple[str, ...]:
@@ -212,7 +252,7 @@ def prove(
     gh: ci_landing.Gh,
     clock: ci_landing.Clock,
 ) -> tuple[str, str, str, tuple[str, ...]]:
-    flows = workflows(root)
+    flows = required(root, base, candidate)
     _require_current(root, base, candidate.head, "nothing is pushed")
     earlier = _earlier_heads(root, gh, candidate)
     for flow in flows:
