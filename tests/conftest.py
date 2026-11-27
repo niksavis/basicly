@@ -228,21 +228,29 @@ LIVE_TRACKER_PATHS = frozenset({".basicly-tracker.toml"})
 LIVE_TRACKER_DIRS = frozenset({(".basicly", "ledger"), (".basicly", "ledger-archive")})
 
 
+def copy_tracked(work: Path, tracked: tuple[Path, ...], *, live: bool) -> None:
+    for relative in tracked:
+        source = REPO_ROOT / relative
+        if relative.parts[0] in WORK_REPO_LEFT_OUT or not source.is_file():
+            continue
+        if not live and (
+            relative.as_posix() in LIVE_TRACKER_PATHS or relative.parts[:2] in LIVE_TRACKER_DIRS
+        ):
+            continue
+        destination = work / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
 @pytest.fixture
 def work_repo(
     tmp_path: Path, _tracked_repo_files: tuple[Path, ...], request: pytest.FixtureRequest
 ) -> Path:
 
     work = tmp_path / "repo"
-    for relative in _tracked_repo_files:
-        if relative.parts[0] in WORK_REPO_LEFT_OUT or (
-            (relative.as_posix() in LIVE_TRACKER_PATHS or relative.parts[:2] in LIVE_TRACKER_DIRS)
-            and not request.node.get_closest_marker("live_ledger")
-        ):
-            continue
-        destination = work / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(REPO_ROOT / relative, destination)
+    copy_tracked(
+        work, _tracked_repo_files, live=bool(request.node.get_closest_marker("live_ledger"))
+    )
     if not request.node.get_closest_marker("live_ledger"):
         shutil.copytree(REPO_ROOT / "tests/fixtures/work_repo/ledger", work / ".basicly/ledger")
     elif (REPO_ROOT / ".basicly/ledger").is_file():
