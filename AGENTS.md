@@ -57,7 +57,16 @@ uv run basicly verify --mode staged --affected
 
 Full verification runs in CI only. Do not run the full suite locally on routine edits or integration.
 
-After editing catalog sources, run the projection checks that `catalog-authoring` lists, each with `uv run`.
+After editing catalog sources, run:
+
+```sh
+uv run basicly check
+uv run basicly skills-check
+uv run basicly styles-check
+uv run basicly agents-check
+uv run basicly hooks-check
+uv run basicly permissions-check
+```
 
 ## Always do
 
