@@ -452,6 +452,7 @@ def cleanup(
 
     if not kept and branch:
         kept = remote_branches.reclaim(main, branch, record, unlanded_paths)
+    remote_branches.report_extras(main, name, record, list_sessions(main))
     if not kept:
         session_file(name, main).unlink(missing_ok=True)
         print(f"Cleaned up worktree {name!r} (worktree + branch + metadata).")

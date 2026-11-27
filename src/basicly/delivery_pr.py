@@ -14,7 +14,7 @@ from .worktree import unlanded_paths
 
 ADAPTER = "pr"
 EVENT = "pull_request"
-BRANCH_PREFIX = "pr"
+BRANCH_PREFIX = remote_branches.PR_PREFIX
 REMOTE = "origin"
 RETRY = f"--delivery {ADAPTER}"
 UNREAD_POLLS = 3
