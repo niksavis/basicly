@@ -21,7 +21,13 @@ HIGH_EFFORT = (
     "decompose-plan",
     "best-practices-audit",
 )
-IMPERATIVE_NEVER = re.compile(r"\bNever\b[^.\n]*|\b(?:must|should|shall) never\b[^.\n]*")
+DESCRIPTIVE_NEVER = (
+    "loop never exits and reports a finished job as still running",
+    "It never blocks",
+    "cites a finding but never links it to another",
+)
+SENTENCE = re.compile(r"(?<=[.!?])\s+|\n")
+NEVER = re.compile(r"\bnever\b", re.IGNORECASE)
 
 
 def _source(slug: str) -> dict[str, object]:
@@ -63,9 +69,15 @@ def test_operations_points_delegation_to_the_always_on_rule() -> None:
 
 
 @pytest.mark.parametrize("slug", ["harness-loop", "swarm"])
-def test_every_imperative_never_is_on_the_destructive_list(slug: str) -> None:
-    found = IMPERATIVE_NEVER.findall(_text(slug))
-    stray = [rule for rule in found if not rule.startswith(DESTRUCTIVE)]
+def test_every_never_is_destructive_or_descriptive(slug: str) -> None:
+    sentences = [part.strip().removeprefix("- ") for part in SENTENCE.split(_text(slug))]
+    stray = [
+        sentence
+        for sentence in sentences
+        if NEVER.search(sentence)
+        and not sentence.startswith(DESTRUCTIVE)
+        and not any(known in sentence for known in DESCRIPTIVE_NEVER)
+    ]
     assert not stray, f"{slug} has a never rule off the destructive list: {stray}"
 
 
