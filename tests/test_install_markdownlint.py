@@ -132,6 +132,33 @@ def test_enabled_install_and_real_linter_accept_clean_and_refuse_invalid_markdow
     assert "MD009" in invalid.stdout + invalid.stderr
 
 
+def test_a_staged_file_outside_the_configured_globs_is_not_linted(tmp_path: Path) -> None:
+    copy_locked_markdownlint_runtime(tmp_path)
+    (tmp_path / ".markdownlint-cli2.jsonc").write_text(
+        '{"globs": ["README.md"]}\n', encoding="utf-8"
+    )
+    (tmp_path / "README.md").write_text("# Consumer\n\nClean Markdown.\n", encoding="utf-8")
+    (tmp_path / "NOTES.md").write_text("# Notes\n\nBad trailing spaces.   \n", encoding="utf-8")
+    hook = REPO_ROOT / ".basicly/core/hooks/markdownlint.py"
+
+    def lint(*paths: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(hook), *paths],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    outside = lint("NOTES.md")
+    inside = lint("README.md", "NOTES.md")
+
+    assert outside.returncode == 0, outside.stdout + outside.stderr
+    assert "Linting: 0 file(s)" in outside.stdout
+    assert inside.returncode == 0, inside.stdout + inside.stderr
+    assert "Linting: 1 file(s)" in inside.stdout
+
+
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_install_refuses_an_unusable_node_without_writes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dry_run: bool
@@ -294,7 +321,7 @@ def test_documented_markdown_inputs_pass_real_commit_and_refuse_bad_consumer_mar
     initial_output = committed.stdout + committed.stderr
 
     assert committed.returncode == 0, initial_output
-    assert "Linting: 1 file(s)" in initial_output
+    assert "Linting: 0 file(s)" in initial_output
     assert "Summary: 0 error(s)" in initial_output
     assert "catalog lint: OK" in initial_output
     assert configuration.read_bytes() == owner_bytes
@@ -305,7 +332,7 @@ def test_documented_markdown_inputs_pass_real_commit_and_refuse_bad_consumer_mar
     refused = git("commit", "-m", f"docs: add notes ({issue})")
 
     assert refused.returncode != 0
-    assert "Linting: 2 file(s)" in refused.stdout + refused.stderr
+    assert "Linting: 1 file(s)" in refused.stdout + refused.stderr
     assert "MD009" in refused.stdout + refused.stderr
     assert git("rev-parse", "HEAD").stdout == before
     assert configuration.read_bytes() == owner_bytes
