@@ -1,0 +1,1 @@
+- A git hook that fails on an unexpected error now prints the error message and the hook file and line, with machine paths removed, not only the error type (basicly-5f4hb6g).

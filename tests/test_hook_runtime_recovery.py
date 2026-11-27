@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -58,6 +59,24 @@ def test_missing_runtime_names_repair_without_exposing_machine_paths(
     assert "Lefthook runtime is missing" in result.stderr
     assert "hooks-build --runtime-only" in result.stderr
     assert "hooks-check" in result.stderr
+    assert str(repo) not in result.stderr
+
+
+def test_an_unexpected_dispatch_error_names_its_message_and_place_without_machine_paths(
+    repo: Path,
+) -> None:
+    result = subprocess.run(
+        [sys.executable, str(repo / ".basicly/core/hooks/lefthook-runtime.py"), "dispatch"],
+        cwd=repo,
+        env={**os.environ, "BASICLY_HOOK_SPECS": "not json"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stderr.startswith("basicly hook failed: JSONDecodeError: Expecting value")
+    assert " at lefthook-runtime.py:" in result.stderr
     assert str(repo) not in result.stderr
 
 
