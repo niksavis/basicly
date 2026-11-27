@@ -153,7 +153,9 @@ open record either way.
 **Many people share one ledger.** `assign` reserves a story for a person without changing
 its status, `claim` also sets it to `in_progress`, and `unassign` gives it back. A story
 that someone else holds is refused by name on both write routes, unless `--take` is given,
-which the ledger records. `ready`, `show` and the board name each holder, mark a
+which the ledger records. In a vault, `claim` after `unassign --take` shares the queued
+release first and then lands; when that share cannot finish, it exits 4 and names
+`sync --vault URL`. `ready`, `show` and the board name each holder, mark a
 reservation `stale` after `stale_days` with no event, and mark a story `contested` when two
 people reserved it on different branches. The engine loop records the person who runs it
 as the holder, and the supervisor skips stories that another person holds.

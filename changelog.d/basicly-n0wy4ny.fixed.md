@@ -1,0 +1,1 @@
+- A vault `claim` after `unassign --take` now lands even when the take was not shared yet, because the claim shares the queued release first. If the release still cannot be shared, the claim exits 4 and names `sync --vault URL`. A held record now names `unassign R --take`, not the refused `claim --take` (basicly-n0wy4ny).
