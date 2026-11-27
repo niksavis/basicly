@@ -1,0 +1,1 @@
+- basicly's own git reads, such as the board's `git status`, no longer rewrite the repository's index. A commit hook that ran the board tests no longer fails with "Git index changed during hook validation" (basicly-5f4hb6g).

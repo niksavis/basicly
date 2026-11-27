@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -308,3 +309,41 @@ def test_a_modifying_hook_keeps_each_reported_file() -> None:
     assert "no failing check" in summary
     assert "formatter" in summary
     assert all(path in summary for path in paths)
+
+
+def _stale_index(repo: Path) -> bytes:
+    later = (repo / "README.md").stat().st_mtime + 100
+    os.utime(repo / "README.md", (later, later))
+    return (repo / ".git" / "index").read_bytes()
+
+
+def test_a_status_read_through_checkout_leaves_a_stale_index_unwritten(git_repo: Path) -> None:
+    control = git_repo.parent / "control"
+    clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    subprocess.run(["git", "clone", "-q", str(git_repo), str(control)], check=True, env=clean)
+    before = _stale_index(control)
+    _git(control, "status", "--porcelain")
+    assert (control / ".git" / "index").read_bytes() != before
+
+    before = _stale_index(git_repo)
+    checkout.git(["status", "--porcelain"], cwd=git_repo)
+
+    assert (git_repo / ".git" / "index").read_bytes() == before
+
+
+def test_every_direct_git_status_call_passes_no_optional_locks() -> None:
+    root = Path(__file__).resolve().parents[1]
+    sources = [
+        *(root / "src" / "basicly").rglob("*.py"),
+        *(root / ".basicly" / "core" / "hooks").rglob("*.py"),
+        *(root / ".basicly" / "core" / "kit").rglob("*.py"),
+    ]
+    direct = re.compile(r'(\["git",|\bgit\(root,)[^\]\n]*"status"')
+    found = [
+        f"{path.relative_to(root)}:{number}"
+        for path in sources
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if direct.search(line) and "--no-optional-locks" not in line
+    ]
+
+    assert found == []

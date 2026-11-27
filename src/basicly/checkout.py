@@ -47,7 +47,7 @@ def run(
     proc = subprocess.run(  # noqa: S603 — argv list built by this module, no shell
         args,
         cwd=cwd,
-        env=sanitised_git_env(os.environ if env is None else env),
+        env={**sanitised_git_env(os.environ if env is None else env), "GIT_OPTIONAL_LOCKS": "0"},
         check=False,
         text=True,
         encoding="utf-8",
