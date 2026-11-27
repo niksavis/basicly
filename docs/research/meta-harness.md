@@ -11,6 +11,7 @@ Section C lists the deepseek concepts that are placed but not built.
 ## Result
 
 - Update 2026-11-26 (basicly-e44r45l): the first running piece is `orch delegate` in basicly-orch. It hands one turn to Claude Code, Codex or Copilot in a lane and writes the answer on the record; see `packages/basicly-orch/README.md`, section "Coding agents". The rest of this note is the state of 2026-11-19.
+- Update 2026-11-27 (basicly-qpr2xmr.4): no separate meta harness repository is planned now. basicly-qpr2xmr.4.2 no longer waits on basicly-qpr2xmr.4.1, which stays open as an owner question. "Everything is a plugin" applies to the coding-agent adapters in the entry point group `basicly_orch.adapters` and to the catalog profiles of basicly-gtb19bg.29 only; decision D-43 refuses a plugin runtime.
 
 - The acceptance of the meta harness is requirement R11: daily use over 14 days, counted from run records. Stage basicly-qpr2xmr.4.2 is the first record that lets the owner run a real session through the harness. It is blocked by basicly-qpr2xmr.4.1 and basicly-qpr2xmr.1, and basicly-qpr2xmr.4.1 is blocked by all of basicly-qpr2xmr.3. So every open child of basicly-qpr2xmr.3 stands between the owner and R11.
 - 13 children of basicly-qpr2xmr.3 are in progress at the same time. The holder field shows one name for all of them, because every session writes the same holder. So the field cannot count work in progress per agent, and the Agentic Kanban limit of 2 per agent cannot be checked from the ledger.
@@ -36,7 +37,7 @@ Measured with `basicly tracker show <id> --view current`, counting parent-child 
 - basicly-qpr2xmr.3.4, basicly-qpr2xmr.3.10 and basicly-qpr2xmr.3.13 were last changed on 2026-11-17 between 20:02Z and 20:22Z.
 - basicly-qpr2xmr.1 (unpaid probes) and basicly-qpr2xmr.2 (written vendor permission) have not changed since 2026-11-04. The owner approved the unpaid probes on 2026-11-04, so basicly-qpr2xmr.1 can start.
 - Dependencies, from `basicly tracker show`: basicly-qpr2xmr.4.1 is blocked by basicly-qpr2xmr.3, and basicly-qpr2xmr.4.2 is blocked by basicly-qpr2xmr.4.1 and basicly-qpr2xmr.1.
-- Stages basicly-qpr2xmr.4.2 to basicly-qpr2xmr.4.6 move to the tracker of the new meta harness project when basicly-qpr2xmr.4.1 creates it (comment on the epic, 2026-11-04).
+- Stages basicly-qpr2xmr.4.2 to basicly-qpr2xmr.4.6 stay in this tracker. The meta harness lives in the basicly-orch kit, and basicly-qpr2xmr.4.1 is an open owner question about a separate repository (decided by the orchestrator on basicly-qpr2xmr.4, 2026-11-27). The plan of 2026-11-04 moved them to a new repository.
 
 ### Owner decisions that set the order
 
