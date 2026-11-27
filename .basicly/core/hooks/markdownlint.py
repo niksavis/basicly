@@ -116,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
         node = prerequisites(Path.cwd())
         if node is None or args == ["--check-prerequisites"]:
             return 0
+        if any(not arg.startswith("-") for arg in args):
+            args = ["--no-globs", *args]
         return subprocess.run([str(node), str(_CLI_ENTRY), *args], check=False).returncode  # nosec B603
     except (OSError, ValueError) as error:
         print(f"markdownlint: {error}", file=sys.stderr)

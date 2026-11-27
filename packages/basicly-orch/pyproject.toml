@@ -34,3 +34,5 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "../../.basicly/core/kit/orch/orch_relay" = "orch_relay"
 "../../.basicly/core/kit/orch/orch_pace" = "orch_pace"
 "../../.basicly/core/kit/orch/orch_automode" = "orch_automode"
+"../../.basicly/core/hooks/local_runs.py" = "local_runs.py"
+"../../.basicly/core/hooks/shell_tokens.py" = "shell_tokens.py"
