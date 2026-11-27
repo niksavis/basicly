@@ -370,6 +370,25 @@ def test_a_vault_unassign_by_another_exits_3_and_with_take_releases(
     assert vault_claim.holder(repo.clone, repo.record) is None
 
 
+def test_a_claim_after_an_unshared_take_lands_without_a_sync(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _seeded(tmp_path, bare)
+    commands.claim(repo.ledger, repo.record, "someone", context=CONTEXT)
+    monkeypatch.setenv("BASICLY_TRACKER_SESSION", "s2")
+    due_share = vault_write.vault_hooks.due_share
+    monkeypatch.setattr(vault_write.vault_hooks, "due_share", lambda *_a, **_k: None)
+
+    commands.unassign(repo.ledger, repo.record, "other", take=True, context=CONTEXT)
+    monkeypatch.setattr(vault_write.vault_hooks, "due_share", due_share)
+    queued = [line["kind"] for line in _queued(repo)]
+    (landed,) = commands.claim(repo.ledger, repo.record, "other", context=CONTEXT)
+
+    assert "unassign" in queued
+    assert landed.record == repo.record
+    assert vault_claim.holder(repo.clone, repo.record)[1] == "s2"
+
+
 def test_a_vault_unassign_of_an_unheld_record_exits_1_and_an_unreachable_vault_exits_5(
     tmp_path: Path, bare: Path
 ) -> None:
