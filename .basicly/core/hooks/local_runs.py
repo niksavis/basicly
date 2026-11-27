@@ -35,6 +35,7 @@ _PYTEST_VALUE_FLAGS = frozenset({
 _RUNNERS = frozenset({"uv", "uvx", "python", "python3", "env", "timeout", "nice"})
 _NPM = frozenset({"npm", "pnpm", "yarn"})
 _ASSIGN = re.compile(r"^[A-Za-z_]\w*=")
+_REDIRECT = re.compile(r"^(?:\d+|&)?(?:>>?|<|>&|<&)(?P<target>.*)$")
 
 
 def _strip(tokens: list[str]) -> list[str]:
@@ -54,7 +55,10 @@ def _paths(args: list[str]) -> list[str]:
     found, rest = [], list(args)
     while rest:
         head = rest.pop(0)
-        if head in _PYTEST_VALUE_FLAGS:
+        redirect = _REDIRECT.match(head)
+        if redirect:
+            rest = rest[1:] if not redirect["target"] else rest
+        elif head in _PYTEST_VALUE_FLAGS:
             rest = rest[1:]
         elif not head.startswith("-") and "=" not in head:
             found.append(head.split("::", 1)[0])

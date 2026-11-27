@@ -25,12 +25,20 @@ REFUSED = [
     "basicly verify --mode=full --ci",
     "uv run basicly consumer-proof --record x-1",
     "python -m pytest -q",
+    "uv run pytest tests 2>&1",
+    "uv run pytest -q > out.txt",
+    "uv run pytest tests/test_a.py tests/test_b.py -q 2>/dev/null",
 ]
 
 ALLOWED = [
     "uv run pytest tests/test_a.py -q",
     "uv run pytest tests/test_a.py::test_one -q",
     "uv run pytest -k name tests/test_a.py",
+    "uv run pytest tests/test_delivery_pr.py -q -p no:randomly 2>&1",
+    "uv run pytest tests/test_a.py -q > out.txt 2>&1",
+    "uv run pytest tests/test_a.py -q 2> err.txt",
+    "uv run pytest tests/test_a.py -q &>out.txt",
+    "uv run pytest tests/test_a.py -q >>out.txt",
     "npm test -- src/a.test.ts",
     "uv run basicly verify --mode staged --affected",
     "rg -n pytest docs",
