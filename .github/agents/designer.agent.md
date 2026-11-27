@@ -53,8 +53,10 @@ and recommend one.
 - **Keyboard.** Give every action a key, and show the key next to its label.
   Keep the host's keys: arrows, Enter, Esc, Tab and Shift-Tab, `q`, `?`.
   Say what Ctrl-C does, because the frameworks disagree: Bubbles force-quits,
-  Textual copies, clig.dev exits. Bind recommended buttons to the number
-  keys 6 to 9 (handily-e83jxw).
+  Textual copies, clig.dev exits. Give a recommended button a number key
+  and put the digit in its label. In the handily board pane, agents keep
+  1 to 5 and recommended buttons take 6 to 9, top to bottom
+  (handily-e83jxw). A digit typed into a text field never presses a button.
 - **Focus.** Say where the focus is in each state. Mark it with a symbol such
   as `>` or with reverse video, never with colour alone. Esc or Tab always
   moves the focus out of a part (WCAG 2.2 SC 2.1.2, 2.4.7 and 1.4.1).
@@ -81,7 +83,7 @@ and recommend one.
   fit in the footer. When the footer is too narrow, cut it with `…` and keep
   `?`.
 - Sources, checked 2026-11-27: xterm ctlseqs (patch 411), no-color.org,
-  force-color.org, WCAG 2.2, UAX #11, clig.dev, Textual 8.2.8, Bubbles v2,
+  force-color.org, WCAG 2.2, UAX #11 (proposed update, revision 46), clig.dev, Textual 8.2.8, Bubbles v2,
   ratatui 0.30.2, the Claude Code fullscreen docs.
 
 ## Web

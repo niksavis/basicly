@@ -80,10 +80,10 @@ def test_the_designer_terminal_section_carries_the_handily_lessons() -> None:
         assert rule in terminal
     for rule in ("**Colour.**", "**Discoverable shortcuts.**"):
         assert rule in terminal
-    assert "keys 6 to 9 (handily-e83jxw)" in terminal
+    assert "recommended buttons take 6 to 9, top to bottom (handily-e83jxw)" in terminal
     assert "Never scroll the view on a press" in terminal
     assert "handily-7vcozj" in terminal
     assert "keyboard path" in terminal
-    assert "handily-kkzm06" in terminal
+    assert "never offer a press or release rule as the fix (handily-kkzm06)" in terminal
     assert "NO_COLOR" in terminal
     assert "terminal checklist" in body
