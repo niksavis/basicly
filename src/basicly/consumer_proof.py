@@ -322,7 +322,7 @@ def run_proof(
     listed = select(consumers(repo_root), scope.only)
     if not listed:
         raise ProofError(f"{CONFIG_FILE} names no [[release.consumers]]; add one before a release")
-    if git(repo_root, "status", "--porcelain"):
+    if git(repo_root, "--no-optional-locks", "status", "--porcelain"):
         raise ProofError(
             "the working tree is not clean; commit first, so the proof names one commit"
         )

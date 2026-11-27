@@ -338,12 +338,15 @@ def test_every_direct_git_status_call_passes_no_optional_locks() -> None:
         *(root / ".basicly" / "core" / "hooks").rglob("*.py"),
         *(root / ".basicly" / "core" / "kit").rglob("*.py"),
     ]
-    direct = re.compile(r'(\["git",|\bgit\(root,)[^\]\n]*"status"')
+    direct = re.compile(
+        r'(?:\["git"|\bgit\(\s*\w+)\s*,(?P<argv>[^\]\)]{0,200}?)"status"', re.DOTALL
+    )
     found = [
-        f"{path.relative_to(root)}:{number}"
+        f"{path.relative_to(root)}:{text.count(chr(10), 0, match.start()) + 1}"
         for path in sources
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
-        if direct.search(line) and "--no-optional-locks" not in line
+        for text in [path.read_text(encoding="utf-8")]
+        for match in direct.finditer(text)
+        if "--no-optional-locks" not in match["argv"]
     ]
 
     assert found == []
