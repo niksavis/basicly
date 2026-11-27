@@ -1,0 +1,1 @@
+- **The Agentic Kanban rules use fewer words.** The same 11 rules and every limit stay; the fragment goes from 2886 to 2608 characters (basicly-a1gy5du).
