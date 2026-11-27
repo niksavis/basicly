@@ -1,0 +1,1 @@
+- A warm read of a vault-backed tracker no longer parses the vault's event file to find the template; the template is cached on the file's bytes, so a warm `basicly tracker items` costs about 0.25 CPU s and 48 MB (basicly-upl5dtl).
