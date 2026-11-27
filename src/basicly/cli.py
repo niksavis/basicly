@@ -5382,8 +5382,8 @@ def _add_release_parser(subparsers: argparse._SubParsersAction) -> None:
     proof_parser.add_argument(
         "--throwaway-vault",
         action="store_true",
-        help="Give each vault consumer a new local vault and a fixed CI session; "
-        "reads and writes no shared vault",
+        help="Install the wheel and run each consumer's own CI only; skip the vault record "
+        "and the commit through the consumer hooks, so no vault is read or written",
     )
     subparsers.add_parser(
         "release-checks",

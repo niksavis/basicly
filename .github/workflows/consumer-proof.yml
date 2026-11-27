@@ -49,7 +49,7 @@ jobs:
       - name: Prepare pinned Lefthook runtime
         shell: bash
         run: python3 src/basicly/lefthook_artifacts.py --download
-      - name: Prove main with a throwaway vault
+      - name: Prove main by install and consumer CI
         shell: bash
         env:
           TMPDIR: ${{ runner.temp }}/proof

@@ -878,7 +878,7 @@ reuse = "pytest"
 modes = ["full"]
 
 # The nightly consumer-proof.yml workflow proves main in the public consumers handily and
-# terminal with a throwaway vault, and a release refuses while its failure issue is open
+# terminal by install and their own CI (no vault commit), and a release refuses while its failure issue is open
 # (basicly-e67wwwe). `basicly consumer-proof` installs a wheel of HEAD into a fresh clone of each consumer
 # below (the folder <name>, or "path", under the parent of this checkout or under
 # $BASICLY_CONSUMERS_ROOT), commits

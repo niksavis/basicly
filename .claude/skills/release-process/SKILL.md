@@ -44,7 +44,7 @@ It runs each `local_only` record check alone and prints its time. It runs the li
 
 ## 4. Check the nightly consumer proof
 
-When `.github/workflows/consumer-proof.yml` exists, a nightly job proves main in each public consumer on a GitHub runner, with a throwaway vault and no shared vault. A failed run opens one issue with the label `consumer-proof`; the next green run closes it. `basicly release` refuses while that issue is open, and when gh cannot read the issues. To prove main now, run `gh workflow run consumer-proof.yml` and wait for it to pass.
+When `.github/workflows/consumer-proof.yml` exists, a nightly job proves main in each public consumer on a GitHub runner: it installs the wheel and runs the consumer's own CI commands. It does not cover a tracker commit through the consumer's hooks with its vault; each consumer's own install pull request covers that, after the release. A failed run opens one issue with the label `consumer-proof`; the next green run closes it. `basicly release` refuses while that issue is open, and when gh cannot read the issues. To prove main now, run `gh workflow run consumer-proof.yml` and wait for it to pass.
 
 ## 5. Choose the version and run the dry run
 
