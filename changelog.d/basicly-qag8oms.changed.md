@@ -1,0 +1,1 @@
+- The `harness-loop` and `swarm` skills follow the current Anthropic prompting guidance: each rule gives one short reason, absolute wording stays only for destructive or hook-blocked actions, delegation is limited to parallel work and blind review, and harness-loop is about 9% shorter (basicly-qag8oms).
