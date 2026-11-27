@@ -16,6 +16,7 @@ from .schema import (
     MODEL_TIERS,
     ValidationError,
     catalog_item_selected,
+    validate_effort,
     validate_requires,
     validate_technologies,
 )
@@ -229,6 +230,7 @@ def _parse_agent(slug: str, data: dict, path: Path, source: str) -> AgentDefinit
             f"claude passthrough may not shadow the rendered key(s) {', '.join(shadowed)}",
             path,
         )
+    validate_effort(claude, path)
 
     technologies = validate_technologies(data.get("technologies") or [], path)
     requires = validate_requires(data.get("requires") or [], path)

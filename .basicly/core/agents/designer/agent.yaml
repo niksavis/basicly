@@ -7,6 +7,8 @@ returns: Returns mocks of every state in the repository's own mock conventions, 
 posture: Read-only.
 tier: high
 tools: [Read, Grep, Glob, Bash]
+claude:
+  effort: high
 slots:
   role:
     - text: |
