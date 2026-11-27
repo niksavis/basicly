@@ -114,6 +114,24 @@ def test_a_dirty_tree_or_no_consumer_list_refuses_by_name(tmp_path: Path) -> Non
         )
 
 
+def test_a_failed_wheel_build_names_its_log_and_prints_its_end(tmp_path: Path) -> None:
+    repo = workspace(tmp_path)
+
+    def failing(argv: list[str], cwd: Path, env: dict[str, str]) -> int:
+        if argv[:2] == ["uv", "build"]:
+            (cwd.parent / f"{cwd.name}.log").write_text(
+                "x\nlefthook artifacts are missing\n", "utf-8"
+            )
+            return 1
+        return fake_run(argv, cwd, env)
+
+    with pytest.raises(consumer_proof.ProofError) as refused:
+        consumer_proof.run_proof(repo, {}, failing, held, consumer_proof.Scope(tmp_path / "work"))
+
+    assert f"see {tmp_path / 'tool.log'}" in str(refused.value)
+    assert str(refused.value).endswith("lefthook artifacts are missing")
+
+
 @pytest.mark.parametrize(
     ("entry", "message"),
     [

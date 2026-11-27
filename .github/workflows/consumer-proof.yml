@@ -44,6 +44,9 @@ jobs:
             git -C "$target" config basicly.holder "consumer-proof"
           done
           (cd "$BASICLY_CONSUMERS_ROOT/handily" && npm ci)
+      - name: Prepare pinned Lefthook runtime
+        shell: bash
+        run: python3 src/basicly/lefthook_artifacts.py --download
       - name: Prove main with a throwaway vault
         shell: bash
         run: |
