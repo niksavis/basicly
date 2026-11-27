@@ -236,3 +236,11 @@ def test_the_committed_style_stays_within_its_system_prompt_budget() -> None:
     body = output_styles.discover_styles(REPO)[0].body
 
     assert len(body.split()) <= 375
+
+
+def test_the_committed_style_repeats_commands_and_facts_in_full() -> None:
+    prose = " ".join(output_styles.discover_styles(REPO)[0].body.split())
+    pointers = ["as above", "see above", "last answer", "earlier message", "previous message"]
+
+    assert "Make each message stand alone. Repeat in full each command and fact it needs." in prose
+    assert [phrase for phrase in pointers if phrase in prose.lower()] == []

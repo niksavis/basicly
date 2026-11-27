@@ -1,0 +1,1 @@
+- The Tired Engineer output style now tells the agent to repeat in full each command and fact a message needs, so a reader never has to look back at an earlier message.
