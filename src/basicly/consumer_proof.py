@@ -45,21 +45,6 @@ ISSUE_LABEL = "consumer-proof"
 ISSUE_SEARCH = "author:app/github-actions"
 ISSUE_REMEDY = "fix main, then run gh workflow run consumer-proof.yml until it passes"
 
-THROWAWAY_SESSION = "basicly-consumer-proof"
-SESSION_ENV = "BASICLY_TRACKER_SESSION"
-VAULT_LINE = re.compile(r"(?m)^vault\s*=.*$")
-LEDGER = ".basicly/ledger"
-PROOF_RECORD = (
-    "--title",
-    "Nightly consumer proof",
-    "--field",
-    "issue_type=task",
-    "--field",
-    "description=## Context\n\nA nightly consumer proof.",
-    "--field",
-    "acceptance_criteria=WHEN the proof commits, THE KIT SHALL accept this record.",
-)
-
 Run = Callable[[list[str], Path, dict[str, str]], int]
 Query = Callable[[list[str]], str | None]
 Records = Callable[[Path, dict[str, str], str], list[dict[str, object]]]
@@ -224,46 +209,6 @@ class Tools:
     throwaway: bool = False
 
 
-def _kit(clone: Path, env: dict[str, str], *args: str) -> dict[str, object]:
-    done = worktree.run(
-        [sys.executable, str(clone / KIT_CLI), *args], cwd=clone, env=env, check=False
-    )
-    try:
-        shown = json.loads(done.stdout)
-    except ValueError:
-        shown = None
-    if done.returncode != 0 or not isinstance(shown, dict):
-        given = shown if isinstance(shown, dict) else {}
-        said = " | ".join(
-            [str(given[k]) for k in ("refused", "fix") if given.get(k)]
-            + (done.stderr or "").strip().splitlines()[-10:]
-        )
-        raise ProofError(
-            f"the throwaway vault step {args[0]} exited {done.returncode}"
-            + (f": {said}" if said else "")
-        )
-    return shown
-
-
-def throwaway_vault(clone: Path, env: dict[str, str]) -> dict[str, str]:
-    if not vault_url(clone):
-        return env
-    bare = clone.parent / f"{clone.name}-vault.git"
-    git(clone.parent, "init", "-q", "--bare", str(bare))
-    url = bare.resolve().as_uri()
-    config = clone / VAULT_CONFIG
-    text = config.read_text(encoding="utf-8")
-    config.write_text(VAULT_LINE.sub(f'vault = "{url}"', text, count=1), encoding="utf-8")
-    git(clone, "update-index", "--skip-worktree", VAULT_CONFIG)
-    session = {**env, SESSION_ENV: THROWAWAY_SESSION}
-    _kit(clone, session, "vault-init", "--vault", url, "--yes")
-    record = _kit(clone, session, "create", LEDGER, *PROOF_RECORD).get("record")
-    if not isinstance(record, str) or not record:
-        raise ProofError("the throwaway vault minted no record")
-    _kit(clone, session, "claim", LEDGER, record)
-    return session
-
-
 def chosen_record(clone: Path, wheel: str, tools: Tools) -> tuple[str | None, str]:
     if vault_url(clone):
         return vault_record(clone, tools.env, vault_held)
@@ -281,18 +226,12 @@ def prove(clone: Path, consumer: Consumer, wheel: str, tools: Tools) -> dict[str
         return code == 0
 
     passed = step("install", ["uvx", "--from", wheel, "basicly", "install"])
-    if passed and tools.throwaway:
-        try:
-            env = throwaway_vault(clone, env)
-        except ProofError as refused:
-            steps.append({"step": "vault", "exit": 1, "error": str(refused)})
-            passed = False
-        tools = Tools(run, tools.records, env, throwaway=True)
-    record, why = chosen_record(clone, wheel, tools) if passed else (None, "")
-    if passed and record is None:
+    committing = passed and not tools.throwaway
+    record, why = chosen_record(clone, wheel, tools) if committing else (None, "")
+    if committing and record is None:
         steps.append({"step": "record", "exit": 1, "error": why})
         passed = False
-    if passed:
+    if committing and passed:
         passed = step("stage", ["git", "add", "-A"]) and step(
             "commit",
             [

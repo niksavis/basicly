@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -117,26 +115,6 @@ def test_a_dirty_tree_or_no_consumer_list_refuses_by_name(tmp_path: Path) -> Non
         )
 
 
-def test_a_failed_throwaway_vault_step_names_its_stderr(tmp_path: Path) -> None:
-    app = init(tmp_path / "app")
-    cli = app / consumer_proof.KIT_CLI
-    cli.parent.mkdir(parents=True)
-    cli.write_text(
-        "import json, sys\n"
-        "print(json.dumps({'exit': 2, 'refused': 'file:///v already has commits'}))\n"
-        "sys.stderr.write('usage: cli.py vault-init\\n')\nsys.exit(2)\n",
-        "utf-8",
-    )
-
-    with pytest.raises(consumer_proof.ProofError) as refused:
-        consumer_proof._kit(app, dict(os.environ), "vault-init", "--vault", "file:///v")
-
-    assert str(refused.value) == (
-        "the throwaway vault step vault-init exited 2: "
-        "file:///v already has commits | usage: cli.py vault-init"
-    )
-
-
 def test_a_failed_wheel_build_names_its_log_and_prints_its_end(tmp_path: Path) -> None:
     repo = workspace(tmp_path)
 
@@ -230,35 +208,20 @@ def test_a_wrong_core_set_is_refused_by_name() -> None:
         consumer_proof.cpu_sets({consumer_proof.CPUS_ENV: "16-21,all"})
 
 
-def test_a_throwaway_vault_gives_the_proof_a_held_record_and_no_shared_vault(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_throwaway_proof_installs_and_runs_consumer_ci_without_a_vault_commit(
+    tmp_path: Path,
 ) -> None:
-    app = init(tmp_path / "app")
-    git(app, "config", "basicly.holder", HOLDER)
-    kit = Path(__file__).resolve().parents[1] / ".basicly" / "core" / "kit" / "tracker"
-    shutil.copytree(
-        kit,
-        app / ".basicly" / "core" / "kit" / "tracker",
-        ignore=shutil.ignore_patterns("__pycache__"),
-    )
-    (app / ".basicly" / "ledger").mkdir()
-    (app / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
-    (app / consumer_proof.VAULT_CONFIG).write_text(
-        'vault = "https://example.invalid/v"\nprefix = "app"\n', "utf-8"
-    )
-    git(app, "add", "-A")
-    git(app, "commit", "-q", "-m", "chore: use a vault")
-    monkeypatch.setenv("BASICLY_TRACKER_STATE", str(tmp_path / "state"))
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    repo = workspace(tmp_path, '[["true"]]')
+    vault_consumer(tmp_path)
 
-    session = consumer_proof.throwaway_vault(app, env)
-    found, why = consumer_proof.vault_record(app, session, consumer_proof.vault_held)
+    result = consumer_proof.run_proof(
+        repo, {}, fake_run, nobody, consumer_proof.Scope(tmp_path / "work", throwaway=True)
+    )
 
-    url = consumer_proof.vault_url(app)
-    assert url == (tmp_path / "app-vault.git").resolve().as_uri()
-    assert session[consumer_proof.SESSION_ENV] == consumer_proof.THROWAWAY_SESSION
-    assert why == "" and isinstance(found, str) and found.startswith("app-")
-    assert git(app, "status", "--porcelain") == ""
+    steps = consumer_proof.consumer_results(result)[0]["steps"]
+    assert result["passed"] is True
+    assert isinstance(steps, list) and [step["step"] for step in steps] == ["install", "ci"]
+    assert git(tmp_path / "work" / "app", "log", "-1", "--format=%s") == "chore: use a vault"
 
 
 def vault_consumer(tmp_path: Path) -> None:
