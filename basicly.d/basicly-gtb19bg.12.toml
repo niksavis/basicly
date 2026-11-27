@@ -4,11 +4,11 @@ jobs = "auto"
 [[verify.checks]]
 name = "docs-index"
 command = ["uv", "run", "python", "-m", "pytest", "tests/test_docs_index.py", "tests/test_docs_drift.py", "tests/test_harness_loop_skill.py", "-q"]
-modes = ["fast", "staged"]
+modes = ["full"]
 inputs = ["docs/**/*.md", ".basicly/core/skills/harness-loop/**", "basicly.toml", "basicly.d/*.toml", "tests/test_docs_index.py", "tests/test_docs_drift.py", "tests/test_harness_loop_skill.py", "pyproject.toml", "uv.lock"]
 
 [[verify.checks]]
 name = "guidance-wording"
 command = ["uv", "run", "python", "-m", "pytest", "tests/test_approval_scope_guidance.py", "tests/test_baseline_retrieval.py", "tests/test_catalog_emphasis.py", "tests/test_task_authorization_guidance.py", "tests/test_verification_guidance.py", "-q"]
-modes = ["fast", "staged"]
+modes = ["full"]
 inputs = [".basicly/core/fragments/**", ".basicly/core/targets/**", ".basicly/core/templates/**", ".basicly/core/skills/**", ".basicly/core/output-styles/**", ".basicly-local/fragments/**", "AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md", ".agents/skills/**", ".claude/skills/**", "docs/design/basicly-a3ab.4-instruction-accounting.json", "tests/fixtures/baseline-decisions.json", ".scripts/eval_baseline_decisions.py", "src/basicly/**", "tests/test_approval_scope_guidance.py", "tests/test_baseline_retrieval.py", "tests/test_catalog_emphasis.py", "tests/test_task_authorization_guidance.py", "tests/test_verification_guidance.py", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]

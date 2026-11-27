@@ -253,7 +253,7 @@ def test_the_gate_is_wired_as_a_verify_check() -> None:
     wired = [check for check in checks if SCRIPT.name in " ".join(check["command"])]
     assert [check["name"] for check in wired] == ["marker-families", "marker-families-source"]
     assert all(check["command"][:3] == ["uv", "run", "python"] for check in wired)
-    assert all(check["modes"] == ["fast", "full"] for check in wired)
+    assert [check["modes"] for check in wired] == [["fast", "full"], ["full"]]
     assert wired[0]["local_only"] is True
     assert "local_only" not in wired[1]
     assert wired[1]["command"][-1] == "--source-only"

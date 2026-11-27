@@ -41,7 +41,7 @@ modes = ["full"]
 | Mode | Runs | Put here |
 | --- | --- | --- |
 | `staged` | ordinary `basicly verify` | checks for the staged candidate |
-| `fast` | local Git hooks and explicit fast mode | lint, types and focused checks |
+| `fast` | local Git hooks and explicit fast mode | checks of the staged files that end in seconds |
 | `full` | explicit full mode in CI | the whole suite |
 
 Ordinary verification reads a temporary copy of the index.
@@ -56,6 +56,19 @@ A configuration with only full checks must declare local checks before local ver
 An empty check configuration still has no checks to run.
 Loop and merge commands retain their separate modes.
 Their migration remains separate work.
+
+### Local hooks stay fast
+
+A local hook runs only checks of the staged files that end in seconds: format, lint, secret and identity scans, and the comment policy.
+A check that runs a test suite or a whole-repository type check belongs in `full`, and `tests/test_hook_budget.py` fails when one is in `fast` or `staged`.
+The one exception is a `local_only` check whose inputs are only ledger or waiver paths, because CI never reads records.
+
+Upgrade note for basicly-1513mc2: these 24 checks of this repository moved to `full` only.
+They are pyright, wired-or-deleted, bandit, mermaid, guidance-wording, docs-index, vulture, noqa-debt, except-form, marker-families-source, projection-check, projection-skills, projection-hooks, projection-agents, projection-permissions, projection-styles, module-size, board-schema, tree-growth, retention-scorer, docs-citations, board-foreign, code-citations and lint-imports.
+The kit hooks markdownlint and kit-boundary now read only the staged files, and catalog-lint runs only when a catalog path is staged.
+markdownlint lints the staged Markdown files that match the `globs` of your `.markdownlint-cli2` configuration; with no `globs`, it lints every staged Markdown file.
+The scaffolded consumer CI (`basicly-gates.yml`) has no full-scope markdownlint step, so commit-time Markdown lint now covers only staged files; add `npx --no-install markdownlint-cli2` to your CI to keep a whole-repository lint (basicly-ye1n3em).
+docs-claims, waivers, release-notes and corpus-drift stay in `fast`: they read records and are `local_only`, so CI cannot run them.
 
 ## Scope a check to what it reads
 

@@ -99,6 +99,25 @@ def test_decide_writes_the_entry_and_returns_the_relayed_decision(repo: Path) ->
     assert f"- risk: red CI; check: {CHECK}" in text
 
 
+@pytest.mark.parametrize(
+    ("field", "text"),
+    [("action", "uv run pytest -q"), ("proof", "uv run basicly verify --mode full")],
+)
+def test_decide_refuses_an_action_or_proof_that_names_a_local_test_set(
+    repo: Path, field: str, text: str
+) -> None:
+    fake = FakeTracker([])
+    bad = (
+        messages.Action("ci-edit", "x-0", "app", text, []) if field == "action" else act("ci-edit")
+    )
+    why = decision(proof=text) if field == "proof" else decision()
+
+    with pytest.raises(log.RefusedError, match=rf"refuses --{field}: it names a local test set"):
+        writer(repo, fake).decide(bad, why)
+
+    assert fake.comments == []
+
+
 @pytest.mark.parametrize("command", ["decide", "approve"])
 def test_risk_without_a_check_line_in_the_action_is_refused_by_name(
     repo: Path, command: str

@@ -229,4 +229,4 @@ def test_the_gate_is_wired_as_a_verify_check() -> None:
     wired = fragment["verify"]["checks"]
     assert [check["name"] for check in wired] == ["docs-citations"]
     assert SCRIPT.name in " ".join(wired[0]["command"])
-    assert wired[0]["modes"] == ["fast", "full"]
+    assert wired[0]["modes"] == ["full"]

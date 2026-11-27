@@ -283,7 +283,8 @@ def test_the_gate_is_wired_as_a_pre_commit_hook() -> None:
     spec = next(spec for spec in load_hook_specs() if spec.id == "kit-boundary")
     assert spec.script == "kit-boundary.py"
     assert spec.stage == "pre-commit"
-    assert spec.always_run is True
+    assert spec.pass_filenames is True
+    assert spec.files == r"^\.basicly/core/kit/.*\.py$"
 
 
 def test_no_kit_module_is_part_of_the_basicly_package() -> None:

@@ -205,5 +205,5 @@ def test_the_signal_is_wired_to_something_that_runs_it() -> None:
     entry = checks["tree-growth"]
     assert list(entry.command)[-1].endswith("check_tree_growth.py")
     assert list(entry.command)[:3] == ["uv", "run", "python"]
-    assert set(entry.modes) == {"fast", "full"}
+    assert set(entry.modes) == {"full"}
     assert not entry.fix_command

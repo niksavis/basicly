@@ -1,0 +1,1 @@
+- **Local hooks run only seconds-long checks of staged files; CI runs the rest.** Upgrade note: 24 checks move to mode `full`; markdownlint lints only staged files in your configured globs, and basicly-gates.yml has no full-scope lint step; docs/how-to/wire-up-the-verify-gate.md names each (basicly-1513mc2).
