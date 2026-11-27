@@ -86,7 +86,10 @@ def test_a_failing_ci_command_fails_the_proof_and_names_the_consumer(tmp_path: P
     result = prove(repo, tmp_path)
 
     assert result["passed"] is False
-    assert consumer_proof.failure(consumer_proof.consumer_results(result)[0]) == "step ci exited 1"
+    item = consumer_proof.consumer_results(result)[0]
+    assert consumer_proof.failure(item) == "step ci exited 1"
+    assert item["log"] == str(tmp_path / "work" / "app.log")
+    assert "$ false" in consumer_proof.tail(Path(str(item["log"])))
 
 
 def test_a_consumer_without_a_held_record_fails_before_its_commit(tmp_path: Path) -> None:
@@ -112,6 +115,23 @@ def test_a_dirty_tree_or_no_consumer_list_refuses_by_name(tmp_path: Path) -> Non
         consumer_proof.run_proof(
             repo, {}, fake_run, held, consumer_proof.Scope(tmp_path / "w2", only=("web",))
         )
+
+
+def test_a_failed_throwaway_vault_step_names_its_stderr(tmp_path: Path) -> None:
+    app = init(tmp_path / "app")
+    cli = app / consumer_proof.KIT_CLI
+    cli.parent.mkdir(parents=True)
+    cli.write_text(
+        "import sys\nsys.stderr.write('usage: cli.py vault-init\\n')\nsys.exit(2)\n", "utf-8"
+    )
+
+    with pytest.raises(consumer_proof.ProofError) as refused:
+        consumer_proof._kit(app, dict(os.environ), "vault-init", "--vault", "file:///v")
+
+    assert (
+        str(refused.value)
+        == "the throwaway vault step vault-init exited 2: usage: cli.py vault-init"
+    )
 
 
 def test_a_failed_wheel_build_names_its_log_and_prints_its_end(tmp_path: Path) -> None:

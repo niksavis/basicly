@@ -3191,6 +3191,10 @@ def cmd_consumer_proof(args: argparse.Namespace) -> int:
             f"{'pass' if item.get('passed') else 'FAIL'}: {item.get('name')}"
             + (f": {why}" if why else "")
         )
+        log = item.get("log")
+        if not item.get("passed") and isinstance(log, str):
+            for line in consumer_proof.tail(Path(log)).splitlines():
+                print(f"  {item.get('name')} | {line}")
     print(f"consumer-proof: {'PASS' if result['passed'] else 'FAIL'} for {result['commit']}")
     return 0 if result["passed"] else 1
 

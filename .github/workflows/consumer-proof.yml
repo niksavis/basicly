@@ -49,9 +49,20 @@ jobs:
         run: python3 src/basicly/lefthook_artifacts.py --download
       - name: Prove main with a throwaway vault
         shell: bash
+        env:
+          TMPDIR: ${{ runner.temp }}/proof
         run: |
+          mkdir -p "$TMPDIR"
           uv sync --frozen
           uv run basicly consumer-proof --only handily --only terminal --throwaway-vault
+      - name: Upload the proof logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: consumer-proof-logs
+          path: ${{ runner.temp }}/proof/**/*.log
+          retention-days: 3
+          if-no-files-found: ignore
       - name: Open or update the failure issue
         if: failure()
         shell: bash

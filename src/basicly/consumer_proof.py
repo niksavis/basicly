@@ -236,7 +236,11 @@ def _kit(clone: Path, env: dict[str, str], *args: str) -> dict[str, object]:
     except ValueError:
         shown = None
     if done.returncode != 0 or not isinstance(shown, dict):
-        raise ProofError(f"the throwaway vault step {args[0]} exited {done.returncode}")
+        said = " | ".join((done.stderr or "").strip().splitlines()[-10:])
+        raise ProofError(
+            f"the throwaway vault step {args[0]} exited {done.returncode}"
+            + (f": {said}" if said else "")
+        )
     return shown
 
 
@@ -318,7 +322,7 @@ def failure(item: dict[str, object]) -> str:
     return str(last.get("error") or f"step {last.get('step')} exited {last.get('exit')}")
 
 
-def _tail(path: Path, count: int = 20) -> str:
+def tail(path: Path, count: int = 20) -> str:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
@@ -329,8 +333,10 @@ def _tail(path: Path, count: int = 20) -> str:
 def build_wheel(repo_root: Path, out: Path, run: Run, env: dict[str, str]) -> Path:
     if run(["uv", "build", "--wheel", "-o", str(out)], repo_root, env) != 0:
         log = repo_root.parent / f"{repo_root.name}.log"
-        tail = _tail(log)
-        raise ProofError(f"uv build --wheel failed; see {log}" + (f":\n{tail}" if tail else ""))
+        tail_text = tail(log)
+        raise ProofError(
+            f"uv build --wheel failed; see {log}" + (f":\n{tail_text}" if tail_text else "")
+        )
     wheels = sorted(out.glob("*.whl"))
     if len(wheels) != 1:
         raise ProofError(f"expected one wheel in {out}, found {len(wheels)}")
@@ -362,7 +368,7 @@ def one(
             git(clone, "config", key, value)
     if (origin / "node_modules").is_dir():
         shutil.copytree(origin / "node_modules", clone / "node_modules", symlinks=True)
-    return prove(clone, consumer, wheel, tools)
+    return {**prove(clone, consumer, wheel, tools), "log": str(clone.parent / f"{clone.name}.log")}
 
 
 def run_proof(
