@@ -1,1 +1,1 @@
-- The nightly `consumer-proof.yml` job now prepares the pinned Lefthook files before it builds the wheel, and a failed wheel build in `basicly consumer-proof` names the real build log and prints its end (basicly-ns7ab3r).
+- The nightly `consumer-proof.yml` job prepares the pinned Lefthook files before it builds the wheel, and uploads its logs when it fails. `basicly consumer-proof` names the real build log, prints the end of each failed consumer log, and names the error output of a failed throwaway-vault step (basicly-ns7ab3r).
