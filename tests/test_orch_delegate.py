@@ -190,6 +190,84 @@ def test_an_installed_plugin_adds_a_coding_agent(monkeypatch: pytest.MonkeyPatch
     assert isinstance(adapters.adapter("echo"), adapters.Copilot)
 
 
+class Bare:
+    name = "bare"
+
+    def argv(self, _turn: object) -> list[str]:
+        return []
+
+    def reply(self, _done: object, _turn: object) -> object:
+        return None
+
+    def resume_command(self, session: str) -> str:
+        return session
+
+
+class Viewer(adapters.Copilot):
+    name = "viewer"
+    capabilities = adapters.Capabilities(True, True, True, False)
+
+
+def _broken() -> None:
+    raise ImportError("no module named viewer_kit")
+
+
+def _points(monkeypatch: pytest.MonkeyPatch, **loads: Any) -> None:
+    points = [
+        SimpleNamespace(name=name, load=load, value=f"{name}_kit:Adapter")
+        for name, load in loads.items()
+    ]
+    monkeypatch.setattr(adapters.importlib.metadata, "entry_points", lambda **_: points)
+
+
+def test_a_broken_plugin_is_refused_by_name_and_the_built_ins_still_run(
+    world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _points(monkeypatch, broken=_broken, bare=lambda: Bare)
+
+    with pytest.raises(log.RefusedError, match=r"refuses the plugin 'broken'.*ImportError"):
+        adapters.adapter("broken")
+    with pytest.raises(log.RefusedError, match=r"refuses the plugin 'bare'.*lacks capabilities"):
+        adapters.adapter("bare")
+    lines = delegate.run(
+        _args(vendor="claude", record="app-x1", prompt="p"), world.repo, world.base, world.ports
+    )
+
+    assert "answer: claude says: p" in lines
+    assert list(adapters.registry()) == ["claude", "codex", "copilot"]
+
+
+def test_a_turn_that_needs_an_undeclared_capability_is_refused_before_any_process(
+    world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _points(monkeypatch, viewer=lambda: Viewer)
+
+    with pytest.raises(log.RefusedError, match=r"viewer cannot edit in a lane.*lane_edits"):
+        delegate.run(
+            _args(vendor="viewer", record="app-x1", prompt="p"), world.repo, world.base, world.ports
+        )
+
+    assert not world.calls.exists()
+
+
+def test_list_prints_each_adapter_with_its_origin_and_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _points(monkeypatch, viewer=lambda: Viewer, broken=_broken)
+
+    lines = delegate.listing(_args(prompt=None))
+
+    assert lines == [
+        "claude  built-in  names_session resumes_read_only read_only lane_edits",
+        "codex  built-in  read_only lane_edits",
+        "copilot  built-in  names_session resumes_read_only read_only lane_edits",
+        "viewer  plugin viewer_kit:Adapter  names_session resumes_read_only read_only",
+        "broken  plugin broken_kit:Adapter  refused: ImportError: no module named viewer_kit",
+    ]
+    with pytest.raises(log.RefusedError, match="--list takes no other option"):
+        delegate.listing(_args(vendor="claude"))
+
+
 READ_ONLY_ARGV = {
     "claude": [
         *["-p", "p", "--output-format", "json", "--permission-mode", "plan"],
