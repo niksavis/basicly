@@ -14,7 +14,7 @@ LOCAL = ("fast", "staged")
 TEST_RUN = re.compile(
     r"(^|\s)(pytest|py\.test|vitest|jest)(\s|$)|\b(npm|pnpm|yarn) (run )?test\b|(^|\s)pyright(\s|$)"
 )
-LEDGER_PATHS = (".basicly/ledger/a.jsonl", "basicly.d/x.toml", "pyproject.toml")
+LEDGER_PATHS = (".basicly/ledger", "basicly.d/x.toml", "pyproject.toml")
 
 
 def _check_runner() -> Any:
@@ -43,7 +43,13 @@ def _ledger_only(check: dict[str, Any]) -> bool:
         bool(check.get("local_only"))
         and bool(inputs)
         and all(
-            glob.startswith((".basicly/ledger", "basicly.d/", "pyproject.toml", "basicly.toml"))
+            glob.startswith((
+                ".basicly/ledger",
+                "basicly.d/",
+                "pyproject.toml",
+                "basicly.toml",
+                "uv.lock",
+            ))
             for glob in inputs
         )
     )
@@ -104,4 +110,8 @@ def test_a_one_file_change_selects_only_seconds_long_local_checks() -> None:
         "test-naming",
         "spend-accuracy",
         "no-comments",
+        "docs-claims",
+        "waivers",
+        "release-notes",
+        "corpus-drift",
     }

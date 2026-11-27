@@ -257,4 +257,4 @@ def test_the_gate_is_declared_as_a_verify_check() -> None:
     entry = checks["noqa-debt"]
     assert SCRIPT.relative_to(REPO_ROOT).as_posix() in entry["command"]
     assert entry["command"][:3] == ["uv", "run", "python"]
-    assert set(entry["modes"]) == {"fast", "full"}
+    assert set(entry["modes"]) == {"full"}

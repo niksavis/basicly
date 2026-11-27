@@ -515,7 +515,7 @@ modes = ["full"]
 name = "docs-claims"
 command = ["uv", "run", "python", ".scripts/docs_claims.py", "--check"]
 fix_command = ["uv", "run", "python", ".scripts/docs_claims.py", "--fix"]
-modes = ["full"]
+modes = ["fast", "full"]
 
 # Module size, as a token ratchet (basicly-u2hl.5). No ruff rule measures module length, so
 # nothing in this stack noticed `cli.py` reaching 53,095 tokens — the owner's stated pain,
@@ -609,7 +609,7 @@ inputs = [
 [[verify.checks]]
 name = "waivers"
 command = ["uv", "run", "python", ".scripts/check_waivers.py"]
-modes = ["full"]
+modes = ["fast", "full"]
 
 # Release-note debt, as a per-record ratchet (basicly-7phc). `changelog.d` refuses a
 # fragment that is empty or misnamed, so every check it had bound on a fragment that
@@ -637,7 +637,7 @@ local_only = true
 [[verify.checks]]
 name = "release-notes"
 command = ["uv", "run", "python", ".scripts/check_release_notes.py"]
-modes = ["full"]
+modes = ["fast", "full"]
 local_only = true
 
 # A lane's recorded spend forecast against its actual, per bead, over the committed markers
@@ -709,7 +709,7 @@ inputs = ["src/basicly/**/*.py", "tests/**/*.py", "uv.lock"]
 [[verify.checks]]
 name = "corpus-drift"
 command = ["uv", "run", "python", ".scripts/check_corpus_drift.py"]
-modes = ["full"]
+modes = ["fast", "full"]
 local_only = true
 
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.

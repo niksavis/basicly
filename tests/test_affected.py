@@ -336,11 +336,11 @@ def test_parallel_checks_keep_their_snapshot_environment(
         ("docs/architecture/conventions.md", False),
     ],
 )
-def test_guidance_edit_selects_the_wording_tests_locally(path: str, selected: bool) -> None:
+def test_guidance_edit_selects_the_wording_tests_in_ci(path: str, selected: bool) -> None:
     root = Path(__file__).parent.parent
     check = next(
         check
-        for check in load_verify_config(root).for_mode("staged")
+        for check in load_verify_config(root).for_mode("full")
         if check.name == "guidance-wording"
     )
     named = {part for part in check.command if part.startswith("tests/")}
@@ -359,14 +359,16 @@ def test_guidance_edit_selects_the_wording_tests_locally(path: str, selected: bo
     ("path", "selected"),
     [
         (".basicly/ledger", True),
-        (".scripts/check_waivers.py", True),
-        (".basicly/core/kit/tracker/events.py", True),
-        ("tests/test_kit_tracker_events.py", True),
+        ("basicly.d/basicly-t10ipy.toml", True),
+        ("pyproject.toml", True),
+        (".scripts/check_waivers.py", False),
+        (".basicly/core/kit/tracker/events.py", False),
+        ("tests/test_kit_tracker_events.py", False),
         ("docs/architecture/conventions.md", False),
         ("src/basicly/ui.py", False),
     ],
 )
-def test_a_ledger_waiver_or_covered_code_edit_selects_the_live_ledger_tests_in_the_hook(
+def test_only_a_ledger_or_waiver_edit_selects_the_live_ledger_tests_in_the_hook(
     path: str, selected: bool
 ) -> None:
     root = Path(__file__).parent.parent
@@ -375,11 +377,6 @@ def test_a_ledger_waiver_or_covered_code_edit_selects_the_live_ledger_tests_in_t
         for check in load_verify_config(root).for_mode("fast")
         if check.name == "pytest-live-ledger"
     )
-    marked = {
-        name.relative_to(root).as_posix()
-        for name in (root / "tests").rglob("test_*.py")
-        if "@pytest.mark." + "live_ledger" in name.read_text(encoding="utf-8")
-    }
     assert check.local_only
-    assert marked <= set(check.inputs)
+    assert set(check.inputs) == {".basicly/ledger", "basicly.d/*.toml", "pyproject.toml", "uv.lock"}
     assert bool(load("check_reuse").matcher(check.inputs).match(path)) is selected

@@ -3,7 +3,7 @@ name = "pytest-live-ledger"
 command = ["pytest", "-q", "-n", "{workers}", "-m", "live_ledger"]
 modes = ["fast", "full"]
 local_only = true
-inputs = [".basicly/ledger/**", "basicly.d/*.toml", "pyproject.toml"]
+inputs = [".basicly/ledger", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
 
 [[verify.checks]]
 name = "pytest-fresh-runtime"

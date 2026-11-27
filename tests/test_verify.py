@@ -635,17 +635,17 @@ def _basicly_subcommand(command: tuple[str, ...]) -> str | None:
     return argv[1] if len(argv) > 1 and argv[0] == "basicly" else None
 
 
-def test_this_repos_fast_mode_runs_every_projection_gate() -> None:
+def test_this_repos_full_mode_runs_every_projection_gate() -> None:
 
     config = load_verify_config(_REPO_ROOT)
-    fast = {
+    full = {
         sub
         for check in config.checks
-        if "fast" in check.modes and (sub := _basicly_subcommand(check.command))
+        if "full" in check.modes and (sub := _basicly_subcommand(check.command))
     }
 
-    missing = _projection_check_subcommands() - fast
-    assert not missing, f"projection gates absent from this repo's fast mode: {sorted(missing)}"
+    missing = _projection_check_subcommands() - full
+    assert not missing, f"projection gates absent from this repo's full mode: {sorted(missing)}"
 
 
 def test_the_always_on_commands_fragment_lists_every_projection_gate() -> None:
@@ -769,7 +769,7 @@ def test_this_repo_runs_the_wired_or_deleted_gate_as_a_declared_verify_check() -
     check = _declared("wired-or-deleted")
 
     assert check.command[-1].endswith("wired_or_deleted.py")
-    assert "fast" in check.modes and "full" in check.modes
+    assert check.modes == {"full"}
 
 
 def test_the_gate_fails_when_no_vulture_check_is_declared(tmp_path: Path) -> None:

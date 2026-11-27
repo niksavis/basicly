@@ -120,7 +120,7 @@ def refusal(command: str, changed: frozenset[str] = frozenset()) -> str | None:
 def changed_files(cwd: Path) -> frozenset[str]:
     try:
         shown = subprocess.run(  # nosec B603 B607
-            ["git", "status", "--porcelain", "--untracked-files=all"],
+            ["git", "--no-optional-locks", "status", "--porcelain", "--untracked-files=all"],
             cwd=cwd,
             capture_output=True,
             text=True,
