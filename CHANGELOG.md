@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes local hooks fast and the tracker cheaper to read. Local hooks now run only seconds-long checks of staged files, and CI runs the rest. A warm read of a vault-backed tracker costs about 0.25 CPU s in place of 2. The always-on instructions are 16 percent shorter. Seven verification skills and seven more agents pin a Claude Code effort level. `orch delegate --list` shows what each coding-agent adapter can do.
+
+- Hooks: local hooks run only seconds-long staged checks, and 24 checks move to mode `full` in CI (basicly-1513mc2). The local-test-guard hook allows a redirection such as `2>&1` after one test file (basicly-kdrlpaz). A pre-commit job that deletes or renames a file no longer fails the commit (basicly-w7xw7d9). The tracker claim block escapes its paths (basicly-7b2t44m).
+- Tracker: a warm `basicly tracker items` on a vault-backed ledger checks its cache first and caches the template, so it costs about 0.25 CPU s and 48 MB (basicly-d1jt69u, basicly-upl5dtl).
+- Worktree: `basicly worktree merge --delivery pr` waits for every pull_request workflow before it merges (basicly-2gtixnl), and `basicly worktree cleanup` deletes a landed lane's retry and PR branches on origin (basicly-dtpch5y).
+- Guidance: CLAUDE.md goes from 11891 to 9998 characters and catalog lint refuses every emphasis marker (basicly-43ys5ak, basicly-a1gy5du). The `harness-loop` and `swarm` skills follow the current Anthropic prompting guidance (basicly-qag8oms, basicly-na5at2u). The Tired Engineer style repeats each command and fact in full (basicly-5n3vn14). The `designer` agent applies terminal UI rules (basicly-vec4m5f).
+- Effort: seven verification skills pin effort `high` (basicly-29aakqv), seven more agents pin an effort level, and catalog loading refuses an unknown effort value (basicly-h3muqik).
+- Orchestrator: each coding-agent adapter declares its capabilities, and a turn that needs an undeclared one is refused before any process starts (basicly-qpr2xmr.4.10).
+- Orchestrator tools need a reinstall from the tag, because `uv tool upgrade` ignores a tag pin: `uv tool install --force "basicly-orch @ git+https://github.com/niksavis/basicly@v0.51.0#subdirectory=packages/basicly-orch"`.
+
 ## v0.50.0 - 2026-11-27
 
 Delta: v0.49.6..v0.50.0
