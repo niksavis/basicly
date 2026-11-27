@@ -119,7 +119,7 @@ UNSCRUBBED_GIT_SPAWNS = {
     "hooks.py: git rev-parse --git-path hooks",
     "hooks.py: git rev-parse --git-common-dir --show-toplevel",
     "supervise.py: git -C ... rev-parse HEAD",
-    "supervise.py: git -C ... status --porcelain",
+    "supervise.py: git --no-optional-locks -C ... status --porcelain",
     "verify.py: git diff --cached --name-only -z --diff-filter=ACM",
 }
 _SPAWN_ATTRS = frozenset({"run", "Popen", "check_output", "call"})

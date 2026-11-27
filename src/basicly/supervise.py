@@ -1263,7 +1263,7 @@ def lane_activity(cwd: Path) -> str:
         check=False,
     )
     dirty = subprocess.run(  # noqa: S603 — argv list, no shell; see the note above
-        ["git", "-C", str(cwd), "status", "--porcelain"],  # noqa: S607 — PATH git, as everywhere
+        ["git", "--no-optional-locks", "-C", str(cwd), "status", "--porcelain"],  # noqa: S607 — PATH git, as everywhere
         capture_output=True,
         text=True,
         check=False,
