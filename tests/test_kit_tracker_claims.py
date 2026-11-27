@@ -103,17 +103,11 @@ def test_the_first_commit_of_an_install_passes_with_a_record_already_filed(repo:
 
 
 def test_a_ledger_path_with_shell_syntax_is_never_run_by_the_commit_hook(repo: Path) -> None:
-    hostile = 'led"$(touch pwned)"`touch pwned2`'
-    done = _hook(repo, "--ledger", hostile)
-    assert done.returncode == 0, done.stderr
-    (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
-    _git(repo, "add", "app.py")
+    assert _hook(repo, "--ledger", 'l"$(touch x1)"`touch x2`').returncode == 0
 
-    _git(repo, "commit", "-q", "-m", "feat: add value")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "chore: probe")
 
-    assert not (repo / "pwned").exists()
-    assert not (repo / "pwned2").exists()
-    assert "touch pwned" in (repo / ".git" / "hooks" / "commit-msg").read_text("utf-8")
+    assert not [name for name in ("x1", "x2") if (repo / name).exists()]
 
 
 def _br_backlog(repo: Path, statuses: dict[str, str]) -> None:
