@@ -1,0 +1,1 @@
+- The local-test-guard hook no longer reads a shell redirection such as `2>&1` or `> out.txt` as a test path, so a pytest run over one test file with a redirection is allowed; runs over a folder or several unchanged files stay refused (basicly-kdrlpaz).
