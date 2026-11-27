@@ -5,6 +5,7 @@ Reference for `basicly loop preflight` and `basicly loop supervise`.
 ## Task scope and optional spending limits
 
 The task request authorizes its lanes and their phase transitions; a pass needs no grant or token ceiling.
+Required verification, scope checks and destructive-action protections stay enabled.
 Record a token limit only when the user sets one:
 
 ```sh

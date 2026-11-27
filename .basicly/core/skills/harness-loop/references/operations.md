@@ -65,6 +65,7 @@ Other flags on both: `--runner <agent>` (`manual` gives a handoff), `--autonomy`
 The user's task request authorizes classification, decomposition and completion within its scope.
 Phase transitions need no second approval, grant or token budget. Do not create a synthetic grant to make an authorized task run.
 The required gates still apply, and risk classification picks them.
+A task request does not authorize an unrelated destructive action; destructive-action confirmations and host permission limits stay in force.
 Ask only for a missing fact, an action outside the task or a safety decision without approval.
 Honor a spending limit only when the user sets one, and report observed usage.
 Do not rewrite tracker events to resume old work, because the ledger is append-only.
@@ -221,12 +222,13 @@ Push cadence:
 
 ## Bounded specialist work
 
-Delegate only parallel lanes or a blind review; the owner does the rest, because a handoff loses context.
+Delegate only by the always-on Harness Loop rule: independent work, context pressure, independent review or a specialist capability.
 Give each specialist one task and a brief with its instructions, acceptance criteria, sources and done condition.
-`basicly brief <issue>` previews it. Pass the brief, not the parent conversation, and give each writer its own worktree.
+`basicly brief <issue>` previews it. Start a fresh context for unrelated work and pass the brief, not the parent conversation.
+Resume a saved context only for the same task, because another task's conversation misleads it. Give each writer its own worktree.
 The owner reviews and integrates the commits on a linear branch and keeps the specialist's branch.
 
-Land committed lanes before new dispatch, because waiting work ages. The engine records completion and integration
+Land committed lanes before new dispatch, because waiting work ages; the required gates still apply. The engine records completion and integration
 as `[harness-policy] integration` comments; outside the engine, record them on the task yourself.
 Read them with `basicly tracker show <issue>`.
 

@@ -17,4 +17,3 @@ The script rules:
 - A `verdict` other than pass or fail is malformed.
 - Every finding is listed on its own line, highest severity first. When another lens cites a `path:line` that this finding also cites, the line says "also cited by" that lens. Agreement of two lenses raises confidence and hides no claim.
 - Command evidence (a dollar prompt or `ran:`) cites a finding but never links it to another.
-- The `verdict` column shows each lens's pass or fail.

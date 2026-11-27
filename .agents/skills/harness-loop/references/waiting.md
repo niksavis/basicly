@@ -9,7 +9,7 @@ extra model turn that prints an unchanged status costs a full round trip.
 - Wait for completion in that call when it fits; otherwise read the same handle again with a bounded wait. An empty read is not completion.
 - Keep each wait inside the host's responsiveness limits.
 - Report the real exit status. A live handle with no status is still running, and no handle and no status is unresolved. Show a nonzero result or a cancellation, and save useful failure output.
-- Cancel only your own command, through the host's cancellation call. A lost connection does not prove that the process stopped.
+- Cancel only your own command, through the host's cancellation call, and confirm that it ended. A cancel request or a lost connection does not prove that the process stopped.
 - Return a short excerpt when the status changes, not the unchanged log.
 - Keep one watcher. A CLI watcher polls its service without a model turn per poll.
 
