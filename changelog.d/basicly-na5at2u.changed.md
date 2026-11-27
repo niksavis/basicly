@@ -1,0 +1,1 @@
+- The best-practices-audit checklist asks for at most one short reason per skill rule, and a test keeps the harness-loop and swarm safety rules and the high effort pins of the seven verification skills.
