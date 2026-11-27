@@ -439,7 +439,7 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
     reasons.extend(lagging_pins(repo_root, plan.current_version))
     if (macos := macos_gate.refusal(repo_root)) is not None:
         reasons.append(macos)
-    if (proof := consumer_proof.refusal(repo_root)) is not None:
+    if (proof := consumer_proof.open_issue_refusal(repo_root)) is not None:
         reasons.append(proof)
     return tuple(reasons)
 
