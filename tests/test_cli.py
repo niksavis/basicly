@@ -28,7 +28,7 @@ from basicly.config import (
 )
 from basicly.scaffolds import CONSUMER_CI_WORKFLOW, GENERATED_IGNORES, VSCODE_TASKS_JSON
 from basicly.skills import GENERATED_MARKER
-from tests.conftest import LIVE_TRACKER_DIRS, LIVE_TRACKER_PATHS, WORK_REPO_LEFT_OUT
+from tests.conftest import LIVE_TRACKER_DIRS, LIVE_TRACKER_PATHS, WORK_REPO_LEFT_OUT, copy_tracked
 from tests.markdownlint_runtime_fixture import provision_markdownlint_double
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -76,6 +76,17 @@ def run_basicly_consumer(cwd: Path, *args: str) -> subprocess.CompletedProcess[s
         text=True,
         check=False,
     )
+
+
+def test_the_work_repo_copy_skips_a_listed_path_that_is_not_a_regular_file(
+    tmp_path: Path,
+) -> None:
+    work = tmp_path / "repo"
+
+    copy_tracked(work, (Path("src"), Path("README.md")), live=False)
+
+    assert (work / "README.md").read_bytes() == (REPO_ROOT / "README.md").read_bytes()
+    assert not (work / "src").exists()
 
 
 def test_the_work_repo_fixture_copies_the_tracked_files_but_the_test_suite(
