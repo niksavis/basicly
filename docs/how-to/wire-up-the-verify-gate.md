@@ -63,9 +63,10 @@ A local hook runs only checks of the staged files that end in seconds: format, l
 A check that runs a test suite or a whole-repository type check belongs in `full`, and `tests/test_hook_budget.py` fails when one is in `fast` or `staged`.
 The one exception is a `local_only` check whose inputs are only ledger or waiver paths, because CI never reads records.
 
-Upgrade note for basicly-1513mc2: these 28 checks of this repository moved to `full` only.
-They are pyright, wired-or-deleted, docs-claims, corpus-drift, release-notes, bandit, waivers, mermaid, guidance-wording, docs-index, vulture, noqa-debt, except-form, marker-families-source, projection-check, projection-skills, projection-hooks, projection-agents, projection-permissions, projection-styles, module-size, board-schema, tree-growth, retention-scorer, docs-citations, board-foreign, code-citations and lint-imports.
+Upgrade note for basicly-1513mc2: these 24 checks of this repository moved to `full` only.
+They are pyright, wired-or-deleted, bandit, mermaid, guidance-wording, docs-index, vulture, noqa-debt, except-form, marker-families-source, projection-check, projection-skills, projection-hooks, projection-agents, projection-permissions, projection-styles, module-size, board-schema, tree-growth, retention-scorer, docs-citations, board-foreign, code-citations and lint-imports.
 The kit hooks markdownlint and kit-boundary now read only the staged files, and catalog-lint runs only when a catalog path is staged.
+docs-claims, waivers, release-notes and corpus-drift stay in `fast`: they read records and are `local_only`, so CI cannot run them.
 
 ## Scope a check to what it reads
 
