@@ -3742,7 +3742,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 84 tiers hold 192 modules and group into 9 bands. Every band may import every band below
+The 84 tiers hold 193 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3752,7 +3752,7 @@ against them.
 flowchart TB
   b1["1 · entry — 1 module<br/>cli"]
   b2["2 · drivers — 15<br/>supervise · loop · release · usage_report"]
-  b3["3 · loop mechanics — 52<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
+  b3["3 · loop mechanics — 53<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
   b4["4 · configuration and isolation — 3<br/>config · worktree"]
   b5["5 · agent runtime — 11<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 16<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
@@ -3922,15 +3922,15 @@ The gates below hang off layer 3 rather than sitting in the stack.
 
 ### 36.2 The verify pipeline
 
-**Three modes, and the check counts differ per mode** [measured 2026-11-26,
+**Three modes, and the check counts differ per mode** [measured 2026-11-27,
 `config.load_verify_config`]. Re-derive from the assembled configuration rather than by
 counting the file, because the drop-in layer contributes: a `basicly.d` fragment's entries are
 appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 40 | pre-commit and a local pre-push |
-| full | 48 | the local landing verify; continuous integration runs it with `--ci`, which skips the ten `local_only` checks that read tracker records |
+| fast | 41 | pre-commit and a local pre-push; the live-ledger tests run only when a staged path matches their inputs |
+| full | 48 | continuous integration runs it with `--ci`, which skips the ten `local_only` checks that read tracker records; `basicly release-checks` runs those checks before a cut |
 | staged | 6 | default direct verification of staged contents |
 
 The configuration declares 52 checks in total. They cover lint, format, three

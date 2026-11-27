@@ -353,3 +353,33 @@ def test_guidance_edit_selects_the_wording_tests_locally(path: str, selected: bo
     } <= named
     assert all((root / name).is_file() for name in named)
     assert bool(load("check_reuse").matcher(check.inputs).match(path)) is selected
+
+
+@pytest.mark.parametrize(
+    ("path", "selected"),
+    [
+        (".basicly/ledger/events.jsonl", True),
+        (".scripts/check_waivers.py", True),
+        (".basicly/core/kit/tracker/events.py", True),
+        ("tests/test_kit_tracker_events.py", True),
+        ("docs/architecture/conventions.md", False),
+        ("src/basicly/ui.py", False),
+    ],
+)
+def test_a_ledger_waiver_or_covered_code_edit_selects_the_live_ledger_tests_in_the_hook(
+    path: str, selected: bool
+) -> None:
+    root = Path(__file__).parent.parent
+    check = next(
+        check
+        for check in load_verify_config(root).for_mode("fast")
+        if check.name == "pytest-live-ledger"
+    )
+    marked = {
+        name.relative_to(root).as_posix()
+        for name in (root / "tests").rglob("test_*.py")
+        if "@pytest.mark." + "live_ledger" in name.read_text(encoding="utf-8")
+    }
+    assert check.local_only
+    assert marked <= set(check.inputs)
+    assert bool(load("check_reuse").matcher(check.inputs).match(path)) is selected

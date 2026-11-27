@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: consumer-proof
+
+"on":
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: consumer-proof
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove main in the public consumers
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Clone the public consumers
+        shell: bash
+        run: |
+          echo "BASICLY_CONSUMERS_ROOT=$RUNNER_TEMP/consumers" >> "$GITHUB_ENV"
+          BASICLY_CONSUMERS_ROOT="$RUNNER_TEMP/consumers"
+          mkdir -p "$BASICLY_CONSUMERS_ROOT"
+          for name in handily terminal; do
+            target="$BASICLY_CONSUMERS_ROOT/$name"
+            git clone -q "https://github.com/niksavis/$name.git" "$target"
+            git -C "$target" config user.name "basicly consumer proof"
+            git -C "$target" config user.email "consumer-proof@users.noreply.github.com"
+            git -C "$target" config basicly.holder "consumer-proof"
+          done
+          (cd "$BASICLY_CONSUMERS_ROOT/handily" && npm ci)
+      - name: Prove main with a throwaway vault
+        shell: bash
+        run: |
+          uv sync --frozen
+          uv run basicly consumer-proof --only handily --only terminal --throwaway-vault
+      - name: Open or update the failure issue
+        if: failure()
+        shell: bash
+        run: |
+          gh label create consumer-proof --color B60205 --force \
+            --description "The nightly consumer proof of main failed"
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          open="$(gh issue list --state open --label consumer-proof \
+            --search "author:app/github-actions" --json number --jq '.[0].number')"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "The consumer proof of main failed again: $url"
+          else
+            gh issue create --label consumer-proof \
+              --title "Nightly consumer proof of main failed" \
+              --body "The consumer proof of main failed: $url. basicly release refuses while this issue is open. Fix the cause on main and run gh workflow run consumer-proof.yml; a green run closes this issue."
+          fi
+      - name: Close the failure issue after a green run
+        if: success()
+        shell: bash
+        run: |
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh issue list --state open --label consumer-proof \
+            --search "author:app/github-actions" --json number --jq '.[].number' |
+            while read -r number; do
+              gh issue close "$number" --comment "The consumer proof of main passed: $url"
+            done

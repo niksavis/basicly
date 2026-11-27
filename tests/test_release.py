@@ -217,18 +217,35 @@ def test_an_existing_tag_is_refused(repo: Path) -> None:
     assert result.refused and any("already exists" in r for r in result.refusals)
 
 
-def test_a_cut_without_a_consumer_proof_of_head_is_refused(repo: Path) -> None:
+@pytest.mark.parametrize(
+    ("listed", "said"),
+    [
+        ('[{"number": 7, "url": "https://x.invalid/7"}]', "failed, see https://x.invalid/7"),
+        (None, "cannot read the open consumer-proof issues with gh"),
+        ("[]", ""),
+    ],
+)
+def test_an_open_nightly_proof_issue_or_unreadable_gh_refuses_the_cut(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, listed: str | None, said: str
+) -> None:
     config = repo / "basicly.toml"
     before = config.read_text(encoding="utf-8") if config.exists() else ""
     config.write_text(before + '\n[[release.consumers]]\nname = "app"\nci = []\n', encoding="utf-8")
+    nightly = repo / consumer_proof.NIGHTLY
+    nightly.parent.mkdir(parents=True, exist_ok=True)
+    nightly.write_text("on: schedule\n", encoding="utf-8")
     _git(repo, "add", "-A")
-    _git(repo, "commit", "-m", "chore: name a consumer")
+    _git(repo, "commit", "-m", "chore: name a consumer and its nightly proof")
+    asked: list[list[str]] = []
+    monkeypatch.setattr(consumer_proof.gh_cli, "run", lambda argv: asked.append(argv) or listed)
     plan = release.plan_release(repo, "0.4.0", date="2026-07-26")
 
     reasons = release.blocking_reasons(repo, plan, issue_id="fx-1")
 
-    head = _git(repo, "rev-parse", "HEAD")[:12]
-    assert any(r == f"no consumer proof for {head}; run: basicly consumer-proof" for r in reasons)
+    proof = [r for r in reasons if "consumer proof" in r or "consumer-proof" in r]
+    assert [said in r for r in proof] == ([True] if said else [])
+    assert asked[0][asked[0].index("--label") + 1] == consumer_proof.ISSUE_LABEL
+    assert not any("no consumer proof for" in r for r in reasons)
 
 
 def _consumers_and_proof(repo: Path) -> str:
@@ -271,21 +288,6 @@ def test_the_release_commit_sits_on_the_proved_commit_and_changes_only_release_f
         for path in changed
         if path not in release_files and not path.startswith(f"{release.FRAGMENT_DIR.as_posix()}/")
     ] == []
-
-
-@pytest.mark.usefixtures("no_regen")
-def test_a_commit_after_the_proof_refuses_the_cut(repo: Path) -> None:
-    _consumers_and_proof(repo)
-    (repo / "later.txt").write_text("x\n", encoding="utf-8")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-m", "fix: a change after the proof")
-    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
-
-    result = release.run_release(repo, plan, issue_id="fx-1")
-
-    head = _git(repo, "rev-parse", "HEAD").strip()[:12]
-    assert result.refused and not result.tagged
-    assert f"no consumer proof for {head}; run: basicly consumer-proof" in result.refusals
 
 
 def test_every_refusal_is_reported_from_one_run(repo: Path) -> None:

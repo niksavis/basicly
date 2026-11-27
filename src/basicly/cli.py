@@ -62,6 +62,7 @@ from . import (
     policy,
     projection,
     release,
+    release_checks,
     release_delivery,
     retention,
     review,
@@ -3174,9 +3175,13 @@ def cmd_release(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_consumer_proof(_args: argparse.Namespace) -> int:
+def cmd_consumer_proof(args: argparse.Namespace) -> int:
     try:
-        result = consumer_proof.run_proof(_repo_root(), consumer_proof.environ())
+        result = consumer_proof.run_proof(
+            _repo_root(),
+            consumer_proof.environ(),
+            scope=consumer_proof.Scope(only=tuple(args.only), throwaway=args.throwaway_vault),
+        )
     except consumer_proof.ProofError as refusal:
         print(f"consumer-proof: {refusal}", file=sys.stderr)
         return 1
@@ -3188,6 +3193,14 @@ def cmd_consumer_proof(_args: argparse.Namespace) -> int:
         )
     print(f"consumer-proof: {'PASS' if result['passed'] else 'FAIL'} for {result['commit']}")
     return 0 if result["passed"] else 1
+
+
+def cmd_release_checks(_args: argparse.Namespace) -> int:
+    outcome = release_checks.run_checks(_repo_root())
+    for line in outcome.lines:
+        print(line)
+    print(f"release-checks: {'PASS' if outcome.passed else 'FAIL'}")
+    return 0 if outcome.passed else 1
 
 
 def cmd_catalog(args: argparse.Namespace) -> int:
@@ -5351,9 +5364,27 @@ def _add_decompose_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_release_parser(subparsers: argparse._SubParsersAction) -> None:
-    subparsers.add_parser(
+    proof_parser = subparsers.add_parser(
         "consumer-proof",
         help="Install a wheel of HEAD into each [[release.consumers]] clone, commit, run its CI",
+    )
+    proof_parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Prove only this consumer; repeat for more",
+    )
+    proof_parser.add_argument(
+        "--throwaway-vault",
+        action="store_true",
+        help="Give each vault consumer a new local vault and a fixed CI session; "
+        "reads and writes no shared vault",
+    )
+    subparsers.add_parser(
+        "release-checks",
+        help="Run the record checks alone, and the live-ledger tests when their inputs "
+        "changed since the last release tag",
     )
     release_parser = subparsers.add_parser(
         "release",
@@ -6061,6 +6092,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "decompose": cmd_decompose,
         "release": cmd_release,
         "consumer-proof": cmd_consumer_proof,
+        "release-checks": cmd_release_checks,
         "loop": cmd_loop,
         "runner": cmd_runner,
         "rubric": cmd_rubric,
