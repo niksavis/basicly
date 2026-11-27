@@ -122,15 +122,18 @@ def test_a_failed_throwaway_vault_step_names_its_stderr(tmp_path: Path) -> None:
     cli = app / consumer_proof.KIT_CLI
     cli.parent.mkdir(parents=True)
     cli.write_text(
-        "import sys\nsys.stderr.write('usage: cli.py vault-init\\n')\nsys.exit(2)\n", "utf-8"
+        "import json, sys\n"
+        "print(json.dumps({'exit': 2, 'refused': 'file:///v already has commits'}))\n"
+        "sys.stderr.write('usage: cli.py vault-init\\n')\nsys.exit(2)\n",
+        "utf-8",
     )
 
     with pytest.raises(consumer_proof.ProofError) as refused:
         consumer_proof._kit(app, dict(os.environ), "vault-init", "--vault", "file:///v")
 
-    assert (
-        str(refused.value)
-        == "the throwaway vault step vault-init exited 2: usage: cli.py vault-init"
+    assert str(refused.value) == (
+        "the throwaway vault step vault-init exited 2: "
+        "file:///v already has commits | usage: cli.py vault-init"
     )
 
 
