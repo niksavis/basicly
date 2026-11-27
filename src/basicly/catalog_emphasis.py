@@ -28,7 +28,7 @@ MARKERS = (
     "DO NOT",
 )
 
-BUDGET = 1
+BUDGET = 0
 
 _MARKER_RE = re.compile(r"\b(" + "|".join(MARKERS) + r")\b")
 _FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
@@ -62,9 +62,7 @@ def _refusal(surface: str, sites: list[Site]) -> str:
     listed = ", ".join(f"{site.marker} in {site.source}" for site in sites)
     return (
         f"{surface}: {len(sites)} emphasis markers against a budget of {BUDGET} — {listed}. "
-        "Emphasis is scarce: a second marker makes the first one ordinary, so the projection "
-        "ends up shouting everywhere and read as flat. Drop all but the one rule that most "
-        "needs to survive a long session, and state the rest plainly."
+        "State each rule plainly, and let a hook or gate enforce the rule that must hold."
     )
 
 

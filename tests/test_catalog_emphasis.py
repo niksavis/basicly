@@ -58,10 +58,13 @@ def _skill(catalog: Path, instructions: str) -> None:
     )
 
 
-def test_one_marker_is_the_budget_and_passes(catalog: Path) -> None:
+def test_one_marker_is_refused(catalog: Path) -> None:
     _write(catalog, "a", "- IMPORTANT: never bypass a gate to force a green build.")
 
-    assert emphasis.violations(catalog) == []
+    found = emphasis.violations(catalog)
+
+    assert found, "the budget is 0, so one marker must be refused"
+    assert all("1 emphasis markers against a budget of 0" in line for line in found)
 
 
 def test_a_second_marker_in_another_fragment_is_refused(catalog: Path) -> None:
@@ -71,7 +74,7 @@ def test_a_second_marker_in_another_fragment_is_refused(catalog: Path) -> None:
     found = emphasis.violations(catalog)
 
     assert found, "two markers in one projection must be refused"
-    assert all("2 emphasis markers against a budget of 1" in line for line in found)
+    assert all("2 emphasis markers against a budget of 0" in line for line in found)
 
 
 def test_the_refusal_names_every_site(catalog: Path) -> None:
@@ -104,21 +107,21 @@ def test_every_always_on_projection_is_measured(catalog: Path) -> None:
 
 
 def test_a_marker_inside_a_code_span_is_not_emphasis(catalog: Path) -> None:
-    _write(catalog, "a", "- IMPORTANT: never bypass a gate.")
+    _write(catalog, "a", "- never bypass a gate.")
     _write(catalog, "b", "- The constant is `NEVER` and the flag is `--always`.")
 
     assert emphasis.violations(catalog) == []
 
 
 def test_a_marker_inside_a_fenced_block_is_not_emphasis(catalog: Path) -> None:
-    _write(catalog, "a", "- IMPORTANT: never bypass a gate.")
+    _write(catalog, "a", "- never bypass a gate.")
     _write(catalog, "b", "```python\nMUST = 1\nNEVER = 2\n```")
 
     assert emphasis.violations(catalog) == []
 
 
 def test_a_lowercase_word_is_not_a_marker(catalog: Path) -> None:
-    _write(catalog, "a", "- IMPORTANT: never bypass a gate.")
+    _write(catalog, "a", "- never bypass a gate.")
     _write(catalog, "b", "- You must never always do this; it is important to note.")
 
     assert emphasis.violations(catalog) == []
@@ -132,10 +135,10 @@ def test_a_skill_carries_its_own_budget(catalog: Path) -> None:
     assert any(line.startswith("skill s:") for line in found)
 
 
-def test_one_marker_in_a_skill_passes(catalog: Path) -> None:
+def test_one_marker_in_a_skill_is_refused(catalog: Path) -> None:
     _skill(catalog, "# S\n\nIMPORTANT: claim the record first.")
 
-    assert emphasis.violations(catalog) == []
+    assert any(line.startswith("skill s:") for line in emphasis.violations(catalog))
 
 
 def test_the_gate_runs_inside_catalog_lint(catalog: Path) -> None:
@@ -149,12 +152,15 @@ def test_the_committed_catalog_is_within_budget() -> None:
     assert emphasis.violations(REPO) == []
 
 
-def test_the_committed_catalog_actually_carries_a_marker() -> None:
+def test_the_scan_sees_a_marker_added_to_the_committed_gate_rule() -> None:
     body = (REPO / ".basicly/core/fragments/design/code-is-authoritative.fragment.yaml").read_text(
         encoding="utf-8"
     )
 
-    assert emphasis.markers_in(body) == ["IMPORTANT"]
+    assert emphasis.markers_in(body) == []
+    assert emphasis.markers_in(body.replace("never defeat", "IMPORTANT: never defeat")) == [
+        "IMPORTANT"
+    ]
 
 
 def _style(catalog: Path, body: str) -> None:
@@ -173,7 +179,7 @@ def test_an_output_style_carries_its_own_budget(catalog: Path) -> None:
     assert any(line.startswith("output style s:") for line in emphasis.violations(catalog))
 
 
-def test_one_marker_in_an_output_style_passes(catalog: Path) -> None:
+def test_one_marker_in_an_output_style_is_refused(catalog: Path) -> None:
     _style(catalog, "IMPORTANT: verdict first.")
 
-    assert emphasis.violations(catalog) == []
+    assert any(line.startswith("output style s:") for line in emphasis.violations(catalog))

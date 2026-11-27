@@ -24,7 +24,7 @@ body: |
   uv run pytest tests/test_cli.py -q
   ```
 
-  Before a local commit, verify the staged changes:
+  Before a local commit, verify the staged changes; it runs lint, format and type checks, so do not repeat them repository-wide:
 
   ```sh
   uv run basicly verify --mode staged --affected
@@ -32,9 +32,7 @@ body: |
 
   Full verification runs in CI only. Do not run the full suite locally on routine edits or integration.
 
-  The staged command includes lint, format and type checks. Do not repeat repository-wide lint or format checks for the same changes.
-
-  Projection gates (after editing catalog sources):
+  After editing catalog sources, run:
 
   ```sh
   uv run basicly check

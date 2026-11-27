@@ -3,10 +3,10 @@
 
 ### Code Is Authoritative
 
-IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`) unless the user explicitly requests observer repair. Fix the cause.
+Fix the cause, and never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`) unless the user explicitly requests observer repair.
 
-- For observer repair, work outside the harness controller; run affected checks directly and report bypasses and unfinished verification. Describe bypassed checks as bypassed, never as passing.
-- Never add prose to code: no comment and no docstring. Keep tool directives (example: `noqa`) and licence headers. The `no-comments` hook enforces the ban. Use `no-comments` for enforcement details.
+- For observer repair, work outside the harness controller; run affected checks directly and report bypasses and unfinished verification. Describe bypassed checks as bypassed, not as passing.
+- Never add prose to code: no comment and no docstring; tool directives (`noqa`) and licence headers stay. The `no-comments` hook enforces it.
 
 ### Secure Coding
 
@@ -49,7 +49,7 @@ While editing, run the affected test file (example):
 uv run pytest tests/test_cli.py -q
 ```
 
-Before a local commit, verify the staged changes:
+Before a local commit, verify the staged changes; it runs lint, format and type checks, so do not repeat them repository-wide:
 
 ```sh
 uv run basicly verify --mode staged --affected
@@ -57,9 +57,7 @@ uv run basicly verify --mode staged --affected
 
 Full verification runs in CI only. Do not run the full suite locally on routine edits or integration.
 
-The staged command includes lint, format and type checks. Do not repeat repository-wide lint or format checks for the same changes.
-
-Projection gates (after editing catalog sources):
+After editing catalog sources, run:
 
 ```sh
 uv run basicly check
@@ -74,11 +72,10 @@ uv run basicly permissions-check
 
 ### Project Overview
 
-- basicly distributes a harness for coding agents. One YAML catalog is projected into agent instruction files, skills and git hooks. Other repositories install it with `basicly install`.
-- Stack: Python 3.14 or later, managed with `uv`. The version lives only in `src/basicly/__init__.py`. Platforms: Linux runs full CI; Windows and macOS run focused hook and wheel consumer checks.
-- The `basicly` CLI is `src/basicly/cli.py`. This repository authors the catalog in `.basicly/core/`; its own overrides are in `.basicly-local/`. Scripts and CI helpers are in `.scripts/`.
+- Stack: Python 3.14 or later, managed with `uv`. The version lives only in `src/basicly/__init__.py`.
+- The CLI is `src/basicly/cli.py`; scripts and CI helpers are in `.scripts/`. The catalog is in `.basicly/core/`, this repository's overrides in `.basicly-local/`.
 - `docs/architecture/architecture.md` is the authoritative design reference.
-- A change under `.basicly/core/kit/` must work for a consumer with no engine. Name where that consumer gets the capability.
+- A change under `.basicly/core/kit/` must work for a consumer with no engine; name where that consumer gets the capability.
 
 ### Agentic Kanban
 
@@ -102,32 +99,31 @@ Agentic Kanban is the Kanban method for software work by AI agents. Agents run m
 
 ### Harness Loop
 
-- Before implementation after clone or pull, run `uv run --no-project --python '>=3.14' python .basicly/tracker-bootstrap.py`. Stop if persistent tracker memory is unavailable; follow the named setup or credential remedy before starting work.
-- Keep one responsible owner from task to completion; the tracker ledger and latest handover preserve shared history.
+- After clone or pull, before implementation, run `uv run --no-project --python '>=3.14' python .basicly/tracker-bootstrap.py`. Stop if it reports no persistent tracker memory, and follow its remedy.
+- Keep one responsible owner from task to completion; the ledger holds shared history.
 - Delegate only for independent work, context pressure, independent review or specialist capabilities.
-- Use `basicly session start` when useful. Direct work needs no controller or skill; `harness-loop` is for an owner handoff or `--execution worker`.
-- The user task request authorizes its scope, except the actions under Ask first. Do not request a grant or a mandatory token budget.
-- Keep verification gates and destructive-action protections enabled. Honor limits the user explicitly sets.
+- Direct work needs no controller or skill. Use `basicly session start` when useful, and `harness-loop` for an owner handoff or `--execution worker`.
+- The user task request authorizes its scope, except the Ask first actions. Do not request a grant or a mandatory token budget. Keep verification gates and destructive-action protections enabled. Honor limits the user explicitly sets.
 
 ### External Review
 
-- Before a research or design document recommends a third-party project, establish its licence, shipped mechanism and independent evidence. Read `.agents/skills/falsify-first/SKILL.md` before proceeding.
+- Before a research or design document recommends a third-party project, establish its licence, shipped mechanism and independent evidence with `falsify-first`.
 
 ### Decision Protocol
 
-- Decide small, reversible actions outside the confirmation list from code. Use safe read-only checks to resolve facts first. Ask when missing facts, conflicting sources or uncheckable assumptions change the result. Name the missing fact and useful options.
+- Decide small, reversible actions outside the confirmation list from code. Use safe read-only checks to resolve facts first. Ask when missing facts, conflicting sources or uncheckable assumptions change the result; name the missing fact and useful options.
 - With frozen scope, finish started work and demonstrated blockers within scope. Report broader blockers and ask before expanding. Record nonblocking adjacent findings in the tracker without implementing them.
 - Resolve conflicting rules in favor of safety and security. After two failed approaches, report the pattern and propose another.
 
 ### External Facts
 
-- For third-party interfaces, read our adapter and current vendor docs; use `interface-facts`, never memory.
-- Before absence/zero claims, search for the action and run a known-match control through the same search. An empty control invalidates it; a match must increase the examined count.
-- Use `falsify-first` before high-risk numbers, root causes or coverage claims enter a decision.
+- For a third-party interface, read our adapter and current vendor docs with `interface-facts`, not memory.
+- Before an absence or zero claim, search for the action and run a known-match control through the same search: an empty control voids the search, and a match must increase the examined count.
+- Use `falsify-first` before a high-risk number, root cause or coverage claim enters a decision.
 
 ### Ownership
 
-- Own the approved outcome and necessary harness fixes within the approved scope; fix demonstrated causes with the smallest effective regression or control.
+- Own the approved outcome and necessary harness fixes within scope; fix a demonstrated cause with the smallest effective regression or control.
 - Use current vendor and expert practice unless it makes install, use or upgrade less safe for a person who makes a mistake.
 
 ### Core Rules
@@ -137,44 +133,36 @@ Agentic Kanban is the Kanban method for software work by AI agents. Agents run m
 
 ### Mistake Proofing
 
-- Prevent wrong use or refuse wrong input by name before damage; give the correct command, never a default or empty success.
+- Prevent wrong use, or refuse wrong input by name, before damage; give the correct command, not a default or an empty success.
 - Default to safety; shared-state damage needs an explicit flag.
-- Keep each rule in one place, call it from every side, and prevent recurrence with a test or gate. A warning alone is insufficient.
+- Keep each rule in one place and call it from every side. Prevent recurrence with a test or gate; a warning alone does not.
 
 ### Model Tier Routing
 
-- Before specialist dispatch, use `tier-injection` to name a tier, and pass its alias as `model` on the Agent call, never a model id. `maximum` (Fable) is never a worker: it advises or orchestrates.
-
-### Catalog Authoring
-
-- Edit generated files through catalog sources using `catalog-authoring`. `basicly install` overwrites `.basicly/core/`; consumer overrides belong in `.basicly-local/`.
+- Before specialist dispatch, name a tier with `tier-injection` and pass its alias as `model` on the Agent call.
 
 ### Non-Interactive Shell
 
 - Prefer cross-platform, non-interactive commands: `cp -f`, `mv -f`, `rm -f`, `-y`, `ssh -o BatchMode=yes`.
-- Use arrays or inline lists, never `for x in $LIST`: zsh does not split unquoted variables. Check the processed count.
-- Before a multisite scripted replacement, state the expected count; compare afterwards and stop on a mismatch.
+- Before a scripted replacement at several sites, state the expected count, compare it afterwards, and stop on a mismatch.
 
 ### Quality Gate
 
-- While editing, run the tests affected by the change. Continuous integration runs the full suite.
+- Locally, run only the tests of your staged or changed files, or the single test you wrote or changed, not an affected or mapped set. CI runs the rest.
 - Keep all required gates enabled. Report what ran, what failed and what did not run.
 - After a failed check, or for a release candidate, read the `harness-loop` skill's verification reference.
-- CI never reads tracker records, because the tracker is agent memory and a work list, not the product. Mark a check that reads records `local_only = true`; CI runs `basicly verify --mode full --ci`.
 
 ### Rendered Surfaces
 
-- For rendered pages, use `validate-as-consumer`; inspect screenshots against each acceptance criterion with real data at every claimed viewport.
+- For a rendered page, use `validate-as-consumer`.
 
 ### Git Discipline
 
-- Run `git commit` alone; chaining push, tags or tracker writes after a refused commit leaves partial work.
-- Claim the record with `work-tracker`; use `conventional-commits` for the required Conventional Commits subject and trailing record id.
-- If a hook refuses, fix its named cause and commit again.
+- Run `git commit` alone, because a push, tag or tracker write chained after a refused commit leaves partial work.
 
 ### Session Completion
 
-- Use `session-finish` only when a session or long run ends, not for one small task. Fix refusal causes within approved scope; carry unresolved facts and diagnosis into the handover.
+- Use `session-finish` only when a session or long run ends.
 
 ### Release Fragments
 
