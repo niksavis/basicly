@@ -281,3 +281,22 @@ def test_a_prefix_that_cannot_name_a_record_is_refused_by_name(tmp_path: Path, b
 
     with pytest.raises(vault_view.ViewError, match="acme-x"):
         vault_view.present(reader, vault_view.Want("acme-x"), clock=time.time)
+
+
+def test_a_warm_view_reads_no_event_file_until_its_bytes_change(
+    tmp_path: Path, bare: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _push(tmp_path, bare, "m1", _carry(_record("acme-a1")))
+    reader, _folder = _view(tmp_path, bare)
+    parsed: list[int] = []
+    real = vault_view.vault_clone.valid_events
+    monkeypatch.setattr(
+        vault_view.vault_clone, "valid_events", lambda c: parsed.append(1) or real(c)
+    )
+
+    vault_view.present(reader, WANT, clock=time.time)
+    assert parsed == []
+    valid = reader.folder / vault_view.vault_clone.EVENTS_NAME
+    valid.write_text(valid.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    vault_view.present(reader, WANT, clock=time.time)
+    assert parsed
