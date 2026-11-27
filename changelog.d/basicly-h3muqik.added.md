@@ -1,1 +1,0 @@
-- Seven more catalog agents pin a Claude Code effort level: `auditor`, `researcher` and `designer` run at high, `decider`, `curator` and `validator` at medium, and `tester` at low. Catalog loading now refuses a `claude.effort` value outside low, medium, high, xhigh and max on an agent or a skill (basicly-h3muqik).
