@@ -1,0 +1,1 @@
+- **The always-on instructions are 16 percent shorter, and catalog lint refuses every emphasis marker.** Skill pointers and procedure detail move into the skills they name, duplicates go, and the emphasis budget drops to 0. With the Kanban rewrite of basicly-a1gy5du, CLAUDE.md goes from 11891 to 9998 characters (basicly-43ys5ak).

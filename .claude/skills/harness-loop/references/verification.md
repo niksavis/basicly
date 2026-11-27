@@ -17,3 +17,4 @@ short rule; this reference holds the cases.
 - After the last edit, review the diff and run the affected repository checks.
 - Read the output and the pass/fail summary, not only the exit code.
 - Keep all required gates enabled. Report a bypassed check as bypassed, not as passing.
+- CI does not read tracker records, because the tracker is agent memory and a work list, not the product. Mark a check that reads records `local_only = true`; CI runs `basicly verify --mode full --ci`, and `basicly check` names a workflow line that reads records.

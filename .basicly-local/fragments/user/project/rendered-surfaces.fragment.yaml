@@ -16,4 +16,4 @@ tags:
 status: active
 title: Rendered Surfaces
 body: |
-  - For rendered pages, use `validate-as-consumer`; inspect screenshots against each acceptance criterion with real data at every claimed viewport.
+  - For a rendered page, use `validate-as-consumer`.

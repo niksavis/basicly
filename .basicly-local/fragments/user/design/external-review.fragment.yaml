@@ -16,4 +16,4 @@ tags:
 status: active
 title: External Review
 body: |
-  - Before a research or design document recommends a third-party project, establish its licence, shipped mechanism and independent evidence. Read `.agents/skills/falsify-first/SKILL.md` before proceeding.
+  - Before a research or design document recommends a third-party project, establish its licence, shipped mechanism and independent evidence with `falsify-first`.
