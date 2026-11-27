@@ -1,0 +1,1 @@
+- Seven verification skills (`root-cause`, `falsify-first`, `repair-in-place`, `validate-as-consumer`, `interface-facts`, `decompose-plan`, `best-practices-audit`) pin Claude Code effort `high` for the turn they load in. A live probe on Claude Code 2.1.332 showed that a skill's effort applies when the model loads it (basicly-29aakqv).
