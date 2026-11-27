@@ -358,7 +358,7 @@ def test_guidance_edit_selects_the_wording_tests_locally(path: str, selected: bo
 @pytest.mark.parametrize(
     ("path", "selected"),
     [
-        (".basicly/ledger/events.jsonl", True),
+        (".basicly/ledger", True),
         (".scripts/check_waivers.py", True),
         (".basicly/core/kit/tracker/events.py", True),
         ("tests/test_kit_tracker_events.py", True),

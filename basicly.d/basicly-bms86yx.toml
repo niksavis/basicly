@@ -4,7 +4,8 @@ command = ["pytest", "-q", "-n", "{workers}", "-m", "live_ledger"]
 modes = ["fast", "full"]
 local_only = true
 inputs = [
-  ".basicly/ledger/**",
+  ".basicly/ledger",
+  "uv.lock",
   ".basicly/core/kit/tracker/**",
   "src/basicly/tracker.py",
   ".scripts/waivers.py",
