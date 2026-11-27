@@ -102,6 +102,14 @@ def test_the_first_commit_of_an_install_passes_with_a_record_already_filed(repo:
     assert refused.returncode != 0 and "Claim the record first" in refused.stderr
 
 
+def test_a_ledger_path_with_shell_syntax_is_never_run_by_the_commit_hook(repo: Path) -> None:
+    assert _hook(repo, "--ledger", 'l"$(touch x1)"`touch x2`').returncode == 0
+
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "chore: probe")
+
+    assert not [name for name in ("x1", "x2") if (repo / name).exists()]
+
+
 def _br_backlog(repo: Path, statuses: dict[str, str]) -> None:
     beads = repo / ".beads"
     beads.mkdir(exist_ok=True)
