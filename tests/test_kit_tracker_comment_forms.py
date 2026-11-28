@@ -60,3 +60,10 @@ def test_a_refused_vault_comment_has_its_comment_form_named(
 
     assert refused.value.code == 2
     assert "the form is: cli.py comment RECORD --vault URL --text TEXT" in capsys.readouterr().err
+
+
+def test_the_vault_comment_help_names_the_ledger_form_too() -> None:
+    shown = forms.comment().format_help()
+
+    assert "cli.py comment RECORD --vault" in shown or "--vault VAULT" in shown
+    assert "cli.py comment DIRECTORY RECORD --text TEXT" in shown

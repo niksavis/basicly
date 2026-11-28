@@ -2,6 +2,8 @@ from __future__ import annotations
 
 GROUP_SUBCOMMANDS = frozenset({"comments", "config", "dep", "gate"})
 
+PROCESS_WRITES = frozenset({"review", "confirm"})
+
 READ_SUBCOMMANDS = frozenset({
     "blocked",
     "comments list",

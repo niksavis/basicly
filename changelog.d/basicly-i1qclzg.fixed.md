@@ -1,0 +1,1 @@
+- **The tracker names every write form it accepts.** `basicly tracker write --` now lists review and confirm when it refuses an unknown verb, and `cli.py comment --help` in a vault repository also names the ledger form `cli.py comment DIRECTORY RECORD --text TEXT`. (basicly-i1qclzg)

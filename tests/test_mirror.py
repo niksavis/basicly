@@ -57,6 +57,16 @@ def test_an_untranslated_write_is_refused_and_names_both_repairs(kit: Any) -> No
     assert "UNMIRRORED_WRITES" in message
 
 
+def test_the_refusal_names_every_write_the_seam_accepts(kit: Any) -> None:
+
+    with pytest.raises(TrackerDivergenceError) as excinfo:
+        mirror.drafts(kit, ["frobnicate", "b-1"], "")
+
+    named = str(excinfo.value).split("the verbs that are: ")[1].split(". Add")[0].split(", ")
+    assert named == mirror.accepted_writes()
+    assert {"review", "confirm", "comments add", "create"} <= set(named)
+
+
 def test_a_comment_body_beginning_with_a_dash_survives(kit: Any) -> None:
 
     body = "-- checkpoint: ship approved"
