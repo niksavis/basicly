@@ -80,8 +80,10 @@ slots:
            answers.
   process:
     - text: |
-        - Each order states the goal, the limits and the expected proof; send
-          it with `orch send --order`. Check the reasoning in each report.
+        - Each order states the goal, the limits and the expected proof. Build
+          it with `orch send --order`, which prints it and sends nothing, then
+          send the printed text with your message tool. Check the reasoning in
+          each report.
         - For each report: decide, answer the project session, and write the
           decision on the orchestration record. Each decision states the
           reason, the condition, the proof command and the response if the

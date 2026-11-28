@@ -1,0 +1,1 @@
+- `orch decide` and `orch approve` name every failing `--risk` in one refusal and print an example command that passes.

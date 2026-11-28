@@ -1,0 +1,1 @@
+- `orch start` needs `--role` and refuses `--role orchestrator` while an Orchestrator session is live; a printed launch command starts with "printed, not started".

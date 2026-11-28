@@ -8,6 +8,11 @@ from orch_lessons.log import RefusedError
 
 PLACEHOLDER = re.compile(r"<[A-Za-z][A-Za-z0-9_ -]*>|\b(?:TODO|TBD|FIXME|XXX)\b")
 RISK_SEPARATOR = "=>"
+RISK_EXAMPLE_CHECK = "gh run watch --exit-status"
+RISK_EXAMPLE = (
+    f"--action 'git push origin main\n{RISK_EXAMPLE_CHECK}' "
+    f"--risk 'red CI {RISK_SEPARATOR} {RISK_EXAMPLE_CHECK}'"
+)
 
 
 @dataclass(frozen=True)
@@ -33,21 +38,26 @@ def no_placeholder(fields: Mapping[str, str | None], command: str) -> None:
             )
 
 
-def risks(raw: list[str], action: str) -> list[Risk]:
+def risks(raw: list[str], action: str, command: str = "orch decide") -> list[Risk]:
     lines = {line.strip() for line in action.splitlines() if line.strip()}
     parsed: list[Risk] = []
+    problems: list[str] = []
     for entry in raw:
         risk, separator, check = entry.partition(RISK_SEPARATOR)
         risk, check = risk.strip(), check.strip()
         if not separator or not risk or not check:
-            raise RefusedError(
-                f"risk {entry!r} names no check; write it as --risk "
-                f"'<risk> {RISK_SEPARATOR} <check line of the action>'"
-            )
-        if check not in lines:
-            raise RefusedError(
+            problems.append(f"risk {entry!r} names no check")
+        elif check not in lines:
+            problems.append(
                 f"risk {risk!r} maps to no check line of the action; "
-                f"add {check!r} as a line of --action, or drop the risk"
+                f"add {check!r} as a line of --action"
             )
-        parsed.append(Risk(risk, check))
+        else:
+            parsed.append(Risk(risk, check))
+    if problems:
+        raise RefusedError(
+            f"{command} refuses --risk: {'; '.join(problems)}. Write each risk as "
+            f"'RISK {RISK_SEPARATOR} CHECK', where CHECK is also one line of --action, "
+            f"or drop the risk. Example that passes: {RISK_EXAMPLE}"
+        )
     return parsed
