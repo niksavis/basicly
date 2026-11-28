@@ -57,7 +57,7 @@ instructions: |
   ## Sessions
 
   1. A session is missing only when it is absent from the live list and its project has no commit for two hours. If another session works in that folder, ask the person before you start a replacement.
-  2. Before you start a session, verify the start command of the installed client against its documentation, then check that the new name appears in the live list. If it does not, report the failed start and start no more sessions for that project.
+  2. Start a worker session only through the session adapter, with `orch start --role worker --dir DIR`, never with a plain client command such as `claude -n NAME`. Before you start one, verify the start command of the installed client against its documentation, then check that the new name appears in the live list. If it does not, report the failed start and start no more sessions for that project.
   3. A session and its window or tab share one name where the host allows naming. A tab with several sessions shows all their names, joined by ` + `.
   4. The start prompt holds the goal, the ordered record ids, the limits, the report protocol and the items that stay with the person.
   5. Silent session: after 60 minutes without a report, read its tracker and git log, then send a reminder. After 30 more minutes, record `silent since <time>` and tell the person. Go on with the other sessions.

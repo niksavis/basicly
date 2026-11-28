@@ -1,0 +1,1 @@
+- **`orch start` needs `--role`.** A call such as `orch start --name X` with no `--role` now fails with a usage error; it used to print a command that started a second orchestrator. `orch start` also refuses `--role orchestrator` while an Orchestrator session is live, and a printed launch command starts with "printed, not started" (basicly-sn2i491).

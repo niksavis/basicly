@@ -1,0 +1,1 @@
+- `orch send --order` prints "printed, not sent" before the order, so nobody takes the printed order for a delivered one.

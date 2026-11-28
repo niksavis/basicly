@@ -1,0 +1,1 @@
+- `orch start --role worker` starts the session through the workspace session adapter `.orchestrator/bin/session`, and refuses by name when there is none.

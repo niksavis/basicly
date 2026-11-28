@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import shlex
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +17,9 @@ log = importlib.import_module("orch_lessons.log")
 messages = importlib.import_module("orch_relay.messages")
 record = importlib.import_module("orch_relay.record")
 start = importlib.import_module("orch_relay.start")
+fields = importlib.import_module("orch_relay.fields")
+accept = importlib.import_module("orch_relay.accept")
+cli = importlib.import_module("orch_lessons.cli")
 
 T0 = datetime(2026, 11, 19, 9, 0, tzinfo=UTC)
 ACTION = "git push origin v1.2.0\ngh run list --commit abc123"
@@ -238,3 +242,131 @@ def test_decide_takes_a_gate_change_only_with_its_council_run(repo: Path, item: 
 
     assert "Council run: run-7: 3 of 3 for" in text
     assert fake.comments == [("x-0", text)]
+
+
+@pytest.mark.parametrize("command", ["orch decide", "orch approve"])
+def test_a_risk_refusal_names_every_problem_at_once_and_its_example_passes(
+    repo: Path, command: str
+) -> None:
+    with pytest.raises(log.RefusedError) as refused:
+        fields.risks(["red CI", "slow CI => gh run view 1"], ACTION, command)
+    said = str(refused.value)
+    assert said.startswith(f"{command} refuses --risk: ")
+    assert "risk 'red CI' names no check" in said
+    assert "risk 'slow CI' maps to no check line of the action" in said
+    argv = shlex.split(said.split("Example that passes: ", 1)[1])
+    assert argv[:2] == command.split()
+    fake = FakeTracker(["orchestration-record: goal"])
+    text = cli.relay(cli.parser().parse_args(argv[1:]), writer(repo, fake))
+    assert f"- risk: red CI; check: {fields.RISK_EXAMPLE_CHECK}" in text
+    assert fake.comments == [("x-0", text)]
+
+
+def test_send_order_says_it_printed_the_order_and_sent_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["send", "--order", "--to", "app", "--record", "x-1"]
+    argv += ["--goal", "ship", "--limits", "no push", "--proof", "tests pass"]
+    assert cli.run(argv, tmp_path, {}) == 0
+    first, *rest = capsys.readouterr().out.splitlines()
+    assert first.startswith("printed, not sent: ") and "SendMessage" in first
+    assert rest[0] == "Order to app on x-1."
+
+
+def test_a_decision_on_a_project_record_is_accepted_by_that_project(repo: Path) -> None:
+    fake = FakeTracker([])
+    on_project = messages.Action("ci-edit", "x-0", "app", ACTION, [], "app-7")
+    text = writer(repo, fake).decide(on_project, decision())
+    assert "Record: x-0\nProject record: app-7\n" in text
+    assert fake.comments == [("x-0", text)]
+    said = accept.check(text, "app-7", "app", ACTION, lambda: T0)
+    assert said.startswith("accepted decision for app-7 in app")
+    with pytest.raises(log.RefusedError, match=r"names record 'x-0', not 'app-8'"):
+        accept.check(text, "app-8", "app", ACTION, lambda: T0)
+
+
+def test_a_record_the_workspace_ledger_lacks_names_the_project_record_flag(repo: Path) -> None:
+    def refuse(_argv: list[str]) -> str:
+        raise log.RefusedError("the tracker refused: the ledger holds no record app-7")
+
+    with pytest.raises(log.RefusedError, match=r"with --project-record$"):
+        record.Tracker(repo, refuse).comment("app-7", "text")
+
+
+def test_start_requires_a_role() -> None:
+    with pytest.raises(SystemExit):
+        cli.parser().parse_args(["start", "--vendor", "claude", "--name", "app-x"])
+
+
+def _adapter(tmp_path: Path) -> Path:
+    root = tmp_path / ".orchestrator"
+    (root / start.ADAPTER).parent.mkdir(parents=True)
+    (root / start.ADAPTER).write_text("", encoding="utf-8")
+    return root
+
+
+def test_start_refuses_a_second_orchestrator_while_one_is_live(tmp_path: Path) -> None:
+    ask = start.Request("claude", "orchestrator", "Orchestrator", tmp_path)
+    with pytest.raises(log.RefusedError, match=r"a live Orchestrator session holds that role"):
+        start.plan(ask, tmp_path, _adapter(tmp_path), ["0123456789"])
+
+
+def test_start_says_a_role_other_than_worker_is_printed_not_started(tmp_path: Path) -> None:
+    ask = start.Request("claude", "orchestrator", "Orchestrator", tmp_path)
+    found = start.plan(ask, tmp_path, _adapter(tmp_path), [])
+    assert not found.run and found.note.startswith("printed, not started: ")
+    assert found.argv == ["claude", "--agent", "orchestrator", "-n", "Orchestrator"]
+
+
+def test_start_runs_a_worker_only_through_the_session_adapter(tmp_path: Path) -> None:
+    root = _adapter(tmp_path)
+    ask = start.Request("codex", "worker", "codex-app-fix", tmp_path / "app", "p.md")
+    found = start.plan(ask, tmp_path, root, [])
+    assert found.run and found.argv == [
+        str(root / start.ADAPTER),
+        "start",
+        "codex-app-fix",
+        "--dir",
+        str(tmp_path / "app"),
+        "--codex",
+        "--prompt",
+        "p.md",
+    ]
+    with pytest.raises(log.RefusedError, match=r"no session adapter at"):
+        start.plan(ask, tmp_path, None, [])
+    no_dir = start.Request("claude", "worker", "app-fix", None)
+    with pytest.raises(log.RefusedError, match=r"refuses --role worker without --dir"):
+        start.plan(no_dir, tmp_path, root, [])
+    copilot = start.Request("copilot", "worker", "app-fix", tmp_path)
+    with pytest.raises(log.RefusedError, match=r"refuses --vendor copilot for a worker"):
+        start.plan(copilot, tmp_path, root, [])
+
+
+def test_orch_start_runs_the_session_adapter_and_passes_its_exit_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / ".git").mkdir()
+    root = _adapter(tmp_path)
+    adapter = root / start.ADAPTER
+    adapter.write_text('#!/bin/sh\necho "adapter $*"\nexit 3\n', encoding="utf-8")
+    adapter.chmod(0o755)
+    argv = ["start", "--vendor", "claude", "--role", "worker", "--name", "app-fix"]
+    argv += ["--dir", str(tmp_path / "app")]
+    environ = {"ORCH_STATE_ROOT": str(root)}
+    assert cli.run(argv, tmp_path, environ) == 3
+    assert capsys.readouterr().out == f"adapter start app-fix --dir {tmp_path / 'app'}\n"
+
+
+def test_orch_start_refuses_by_name_when_the_session_adapter_hangs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".git").mkdir()
+    root = _adapter(tmp_path)
+    adapter = root / start.ADAPTER
+    adapter.write_text("#!/bin/sh\nsleep 5\n", encoding="utf-8")
+    adapter.chmod(0o755)
+    monkeypatch.setattr(cli, "START_TIMEOUT", 0.2)
+    argv = ["start", "--vendor", "claude", "--role", "worker", "--name", "app-fix"]
+    argv += ["--dir", str(tmp_path)]
+    with pytest.raises(log.RefusedError, match=r"did not finish within 0.2 s"):
+        cli.run(argv, tmp_path, {"ORCH_STATE_ROOT": str(root)})
