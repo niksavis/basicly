@@ -70,3 +70,13 @@ def test_a_bare_command_name_is_still_looked_up_on_path(tmp_path: Path) -> None:
     module = _load_check_runner()
 
     assert module.resolve_command(["git", "--version"], repo) == ["git", "--version"]
+
+
+def test_a_bare_command_name_runs_from_the_project_venv_when_it_holds_it(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    tool = repo / ".venv" / "bin" / "pytest"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\n", encoding="utf-8")
+    module = _load_check_runner()
+
+    assert module.resolve_command(["pytest", "-q"], repo) == [str(tool.resolve()), "-q"]

@@ -13,7 +13,16 @@ def resolve_command(command: Sequence[str], repo_root: PurePath) -> list[str]:
     if windows and path.drive and not path.is_absolute():
         raise ValueError("drive-relative executables are ambiguous; use a fully qualified path")
     separators = ("/", "\\") if windows else ("/",)
+    root = repo_root.resolve() if isinstance(repo_root, Path) else repo_root
     if not path.is_absolute() and any(separator in program for separator in separators):
-        root = repo_root.resolve() if isinstance(repo_root, Path) else repo_root
         return [str(root / path), *command[1:]]
+    if isinstance(root, Path) and not path.is_absolute():
+        tool = (
+            root
+            / ".venv"
+            / ("Scripts" if windows else "bin")
+            / (program + (".exe" if windows else ""))
+        )
+        if tool.is_file():
+            return [str(tool), *command[1:]]
     return list(command)
