@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from basicly import cli
+from basicly import cli, scaffold_write
 from basicly.scaffolds import (
     CONSUMER_CI_WORKFLOW,
     DIST_SOURCE,
@@ -22,10 +22,10 @@ def test_an_edited_scaffold_is_replaced_and_its_bytes_kept(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     tasks = tmp_path / ".vscode" / "tasks.json"
-    cli._scaffold_vscode_tasks(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL)
     tasks.write_text("{ /* mine */ }", encoding="utf-8")
 
-    cli._scaffold_vscode_tasks(tmp_path, force=True)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL, force=True)
 
     assert tasks.read_text(encoding="utf-8") == VSCODE_TASKS_JSON
     backup = tasks.with_suffix(tasks.suffix + BACKUP)
@@ -36,9 +36,9 @@ def test_an_edited_scaffold_is_replaced_and_its_bytes_kept(
 def test_a_current_scaffold_gets_no_backup(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    cli._scaffold_vscode_tasks(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL)
 
-    cli._scaffold_vscode_tasks(tmp_path, force=True)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL, force=True)
 
     assert not list((tmp_path / ".vscode").glob(f"*{BACKUP}"))
     assert "already current" in capsys.readouterr().out
@@ -48,10 +48,10 @@ def test_without_the_flag_an_edit_still_survives(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     tasks = tmp_path / ".vscode" / "tasks.json"
-    cli._scaffold_vscode_tasks(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL)
     tasks.write_text("{ /* mine */ }", encoding="utf-8")
 
-    cli._scaffold_vscode_tasks(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL)
 
     assert tasks.read_text(encoding="utf-8") == "{ /* mine */ }"
     assert "left unchanged" in capsys.readouterr().out
@@ -59,10 +59,10 @@ def test_without_the_flag_an_edit_still_survives(
 
 def test_the_ci_workflow_scaffold_honours_the_flag_too(tmp_path: Path) -> None:
     workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
     workflow.write_text("name: mine\n", encoding="utf-8")
 
-    cli._scaffold_ci_workflow(tmp_path, force=True)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL, force=True)
 
     assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW
     assert workflow.with_suffix(workflow.suffix + BACKUP).exists()
@@ -87,7 +87,7 @@ def test_an_upgrade_migrates_the_0_46_3_steps_that_read_records(
     workflow.parent.mkdir(parents=True)
     workflow.write_text(OLD_SCAFFOLD, encoding="utf-8")
 
-    assert cli._scaffold_ci_workflow(tmp_path) is True
+    assert scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL) is True
 
     said = capsys.readouterr().out
     assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW
@@ -108,9 +108,9 @@ def test_a_migration_keeps_the_consumer_own_steps_and_a_second_run_changes_nothi
     workflow.parent.mkdir(parents=True)
     workflow.write_text(OLD_SCAFFOLD + "\n# my own step\n", encoding="utf-8")
 
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
     capsys.readouterr()
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
 
     assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW + "\n# my own step\n"
     assert "left unchanged" in capsys.readouterr().out
@@ -123,7 +123,7 @@ def test_a_dry_run_migration_writes_nothing(
     workflow.parent.mkdir(parents=True)
     workflow.write_text(OLD_SCAFFOLD, encoding="utf-8")
 
-    cli._scaffold_ci_workflow(tmp_path, dry_run=True)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL, dry_run=True)
 
     assert workflow.read_text(encoding="utf-8") == OLD_SCAFFOLD
     assert "Would migrate" in capsys.readouterr().out
@@ -157,7 +157,7 @@ def test_the_overwrite_flag_still_replaces_a_workflow_that_refuses_migration(
     workflow.parent.mkdir(parents=True)
     workflow.write_text("        run: uvx basicly tracker ready\n", encoding="utf-8")
 
-    assert cli._scaffold_ci_workflow(tmp_path, force=True) is True
+    assert scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL, force=True) is True
     assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW
 
 
@@ -166,10 +166,10 @@ def test_an_upgrade_moves_a_stale_pin_without_the_flag(
 ) -> None:
 
     workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
     workflow.write_text(CONSUMER_CI_WORKFLOW.replace(DIST_SOURCE, OLD_PIN), encoding="utf-8")
 
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
 
     assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW
     assert "Re-pinned 6 basicly reference(s)" in capsys.readouterr().out
@@ -179,11 +179,11 @@ def test_a_repin_leaves_the_previous_copy_beside_it(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
     stale = CONSUMER_CI_WORKFLOW.replace(DIST_SOURCE, OLD_PIN)
     workflow.write_text(stale, encoding="utf-8")
 
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
 
     backup = workflow.with_suffix(workflow.suffix + BACKUP)
     assert backup.read_text(encoding="utf-8") == stale, (
@@ -195,9 +195,9 @@ def test_a_repin_leaves_the_previous_copy_beside_it(
 
 def test_a_run_that_repins_nothing_leaves_no_backup(tmp_path: Path) -> None:
     workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
 
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
 
     assert not workflow.with_suffix(workflow.suffix + BACKUP).exists(), (
         "the control: a backup on every run would litter the tree and stop meaning "
@@ -207,11 +207,11 @@ def test_a_run_that_repins_nothing_leaves_no_backup(tmp_path: Path) -> None:
 
 def test_the_repin_leaves_everything_but_the_pin_alone(tmp_path: Path) -> None:
     workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
     edited = CONSUMER_CI_WORKFLOW.replace(DIST_SOURCE, OLD_PIN) + "\n# my own step\n"
     workflow.write_text(edited, encoding="utf-8")
 
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
 
     after = workflow.read_text(encoding="utf-8")
     assert after.endswith("# my own step\n"), "the consumer's edit did not survive"
@@ -221,10 +221,10 @@ def test_the_repin_leaves_everything_but_the_pin_alone(tmp_path: Path) -> None:
 def test_a_scaffold_already_at_this_version_is_left_alone(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
     capsys.readouterr()
 
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
 
     assert "left unchanged" in capsys.readouterr().out
 
@@ -255,13 +255,13 @@ def test_upgrade_adds_runtime_setup_without_replacing_consumer_ci_steps(tmp_path
     assert original != CONSUMER_CI_WORKFLOW + "\n# consumer customization\n"
     workflow.write_text(original, encoding="utf-8")
 
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
 
     updated = workflow.read_text(encoding="utf-8")
     assert updated.endswith("\n# consumer customization\n")
     assert "hooks-build --runtime-only" in updated
     assert workflow.with_suffix(".yml.basicly-bak").read_text(encoding="utf-8") == original
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
     assert workflow.read_text(encoding="utf-8") == updated
 
 

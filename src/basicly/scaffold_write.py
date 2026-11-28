@@ -183,13 +183,12 @@ def _scaffold(repo_root: Path, label: str) -> Scaffold:
     return Scaffold(repo_root / label, TEMPLATES[label], label, record_path(repo_root))
 
 
-def write_one(repo_root: Path, label: str, *, force: bool, dry_run: bool = False) -> bool:
+def write_one(repo_root: Path, label: str, *, force: bool = False, dry_run: bool = False) -> bool:
     return write_scaffold(_scaffold(repo_root, label), force=force, dry_run=dry_run)
 
 
 def write_all(repo_root: Path, *, force: Collection[str], dry_run: bool = False) -> bool:
     written = [
-        write_scaffold(_scaffold(repo_root, label), force=label in force, dry_run=dry_run)
-        for label in TEMPLATES
+        write_one(repo_root, label, force=label in force, dry_run=dry_run) for label in TEMPLATES
     ]
     return all(written)

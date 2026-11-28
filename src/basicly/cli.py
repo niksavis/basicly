@@ -1433,18 +1433,6 @@ def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths, *, dry_run: bo
         )
 
 
-def _scaffold_vscode_tasks(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> bool:
-    return scaffold_write.write_one(
-        repo_root, scaffold_write.TASKS_LABEL, force=force, dry_run=dry_run
-    )
-
-
-def _scaffold_ci_workflow(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> bool:
-    return scaffold_write.write_one(
-        repo_root, scaffold_write.CI_WORKFLOW_LABEL, force=force, dry_run=dry_run
-    )
-
-
 def _scaffold_consumer_files(
     repo_root: Path, *, force: frozenset[str], dry_run: bool = False
 ) -> bool:

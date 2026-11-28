@@ -37,7 +37,7 @@ layers =
     release_preview | consumer_proof | release_checks
     board_snapshot
     board_usage | claude_user_settings
-    catalog_lint | contention | cost_rollup | curate | health | landing_gate | tracker_import | tracker_query | tracker_write | user_skills
+    catalog_lint | contention | cost_rollup | curate | health | landing_gate | scaffold_write | tracker_import | tracker_query | tracker_write | user_skills
     tracker_board_json
     commit | merge | release_delivery
     delivery_pr

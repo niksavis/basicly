@@ -62,7 +62,7 @@ def test_a_named_scaffold_never_overwrites_an_older_different_backup(tmp_path: P
     first = tasks.with_suffix(tasks.suffix + BACKUP)
     first.write_text("an older copy\n", encoding="utf-8")
 
-    cli._scaffold_vscode_tasks(tmp_path, force=True)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL, force=True)
 
     assert first.read_text(encoding="utf-8") == "an older copy\n"
     second = tasks.with_suffix(tasks.suffix + BACKUP + "-2")
@@ -75,7 +75,7 @@ def test_the_bare_flag_replaces_a_scaffold_that_holds_the_text_install_wrote(
     tasks = tmp_path / ".vscode" / "tasks.json"
     recorded = scaffold_write.record_path(tmp_path)
     recorded.parent.mkdir(parents=True)
-    cli._scaffold_vscode_tasks(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL)
     assert recorded.is_file()
 
     assert scaffold_write.edited(tmp_path) == []
