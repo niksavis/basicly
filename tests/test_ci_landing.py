@@ -371,3 +371,47 @@ def test_the_lander_leaves_the_cleanup_to_the_base_when_its_engine_runs_from_the
         "the lane landed; this engine runs from the lane, so clean it up from the base: "
         "basicly worktree cleanup lane"
     ]
+
+
+LOCAL_CHECKS = """[[verify.checks]]
+name = "docs-check"
+command = ["python3", "-c", "pass"]
+modes = ["full"]
+local_only = true
+
+[[verify.checks]]
+name = "unit-tests"
+command = ["pytest", "-q"]
+modes = ["full"]
+local_only = true
+"""
+
+
+def test_the_landing_gate_runs_no_local_test_set_and_names_the_owner_order(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    _commit(repo, "basicly.d/landing-checks.toml", LOCAL_CHECKS)
+
+    report = ci_landing.local_checks(repo)
+
+    assert report.passed
+    assert {result.name: result.status for result in report.results} == {
+        "docs-check": "pass",
+        "unit-tests": ci_landing.SKIPPED,
+    }
+    skipped = next(result for result in report.results if result.name == "unit-tests")
+    assert skipped.detail == f"unit-tests {ci_landing.NOT_RUN}"
+
+
+def test_the_stored_verify_record_lists_the_skipped_test_set(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _commit(repo, "basicly.d/landing-checks.toml", LOCAL_CHECKS)
+
+    ci_landing.local_checks(repo)
+
+    stored = json.loads((repo / ".basicly" / "usage" / "verify-run.json").read_text("utf-8"))
+    assert {check["name"]: check["status"] for check in stored["checks"]} == {
+        "docs-check": "pass",
+        "unit-tests": ci_landing.SKIPPED,
+    }

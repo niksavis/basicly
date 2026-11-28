@@ -10,7 +10,8 @@ from pathlib import Path
 import yaml
 
 from . import checkout, gh_cli, landing_guard, tracker, verify
-from .config import CONFIG_FILE, load_landing_workflows, load_verify_config
+from .config import CONFIG_FILE, VerifyCheck, load_landing_workflows, load_verify_config
+from .verify_artifact import write_run_artifact
 
 MODE = landing_guard.CI_MODE
 WORKFLOWS = ("quality-gates.yml", "basicly-gates.yml")
@@ -127,10 +128,33 @@ def same_outside_ledger(root: Path, first: str, second: str) -> bool:
     return done.returncode == 0
 
 
+TEST_RUNNERS = frozenset({"pytest"})
+NOT_RUN = (
+    "not run in a landing: owner rule 2026-11-26 (no test set in a landing); "
+    "owner order 2026-11-28, board task 16: remove it from landings"
+)
+SKIPPED = "skip"
+
+
+def _runs_tests(check: VerifyCheck) -> bool:
+    return any(Path(part).name in TEST_RUNNERS for part in check.command)
+
+
 def local_checks(worktree: Path) -> verify.VerifyReport:
     config = load_verify_config(worktree)
-    kept = tuple(check for check in config.checks if check.local_only)
-    return verify.run_verify(worktree, "full", replace(config, checks=kept), capture_receipts=True)
+    local = [check for check in config.checks if check.local_only]
+    kept = tuple(check for check in local if not _runs_tests(check))
+    skipped = tuple(
+        verify.CheckResult(check.name, SKIPPED, 0, f"{check.name} {NOT_RUN}", command=check.command)
+        for check in local
+        if _runs_tests(check)
+    )
+    report = verify.run_verify(
+        worktree, "full", replace(config, checks=kept), capture_receipts=True
+    )
+    combined = replace(report, results=(*report.results, *skipped))
+    write_run_artifact(worktree, combined)
+    return combined
 
 
 def _proofs(root: Path) -> dict[str, dict[str, str]]:

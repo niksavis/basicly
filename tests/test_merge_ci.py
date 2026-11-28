@@ -86,6 +86,60 @@ def test_failing_local_only_checks_stop_a_ci_landing_before_any_push(
     assert "local-only checks failed" in result.detail
 
 
+@pytest.mark.usefixtures("lane")
+def test_a_failed_local_only_check_shows_its_output_and_names_an_infrastructure_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    failed = (
+        verify.CheckResult(
+            "ledger-fsck", "fail", 1, "2 broken events", output="line one\nbroken: ev-1\n"
+        ),
+        verify.CheckResult(
+            "pytest-live-ledger",
+            "fail",
+            126,
+            "cannot run pytest (Permission denied)",
+            infrastructure_error=True,
+        ),
+    )
+    monkeypatch.setattr(ci_landing, "local_checks", lambda _w: verify.VerifyReport("full", failed))
+    monkeypatch.setattr(ci_landing, "prove", lambda *_a: pytest.fail("pushed after a failure"))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5", verify_mode="ci")
+
+    assert "ledger-fsck failed: 2 broken events" in result.detail
+    assert "broken: ev-1" in result.detail
+    assert "verify-fail-feat-ledger-fsck.log" in result.detail
+    assert (
+        "pytest-live-ledger could not start (infrastructure error, exit 126): "
+        "cannot run pytest (Permission denied)"
+    ) in result.detail
+
+
+@pytest.mark.usefixtures("lane")
+def test_a_failed_local_only_check_prints_no_secret_or_home_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token = "ghp_" + "a" * 36
+    failed = (
+        verify.CheckResult(
+            "ledger-fsck",
+            "fail",
+            1,
+            "broken under /home/someone/repo",
+            output=f"token {token}\nread /home/someone/repo/x.py\n",
+        ),
+    )
+    monkeypatch.setattr(ci_landing, "local_checks", lambda _w: verify.VerifyReport("full", failed))
+    monkeypatch.setattr(ci_landing, "prove", lambda *_a: pytest.fail("pushed after a failure"))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5", verify_mode="ci")
+
+    assert token not in result.detail
+    assert "/home/someone" not in result.detail
+    assert "ledger-fsck failed" in result.detail
+
+
 def test_a_pr_delivery_lands_through_the_adapter_and_never_dispatches_a_land_ref(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, lane: list[str]
 ) -> None:

@@ -20,10 +20,12 @@ from . import (
     owned_store,
     policy,
     rebase,
+    redact,
     run_record,
     tracker,
     tracker_paths,
     verify,
+    verify_log,
     write_preflight,
 )
 from .config import PolicyConfig, load_policy_config, load_worktree_config
@@ -49,6 +51,8 @@ STALE_BRANCH = "stale-branch"
 MERGE_UNPROVEN = "merge-unproven"
 
 ALREADY_LANDED = "already-landed"
+
+FAILURE_TAIL_LINES = 15
 
 PRE_GATE_STATUSES = (
     "not-ready",
@@ -183,10 +187,36 @@ def _verify_for_landing(
 def _local_only_gate(session: Session, clock: _Landing) -> MergeResult | None:
     report = ci_landing.local_checks(session.path)
     clock.note_checks(report)
+    for result in report.results:
+        if result.status == ci_landing.SKIPPED and result.detail.endswith(ci_landing.NOT_RUN):
+            print(f"  {session.name}: {result.detail}")
     if report.passed:
         return None
     detail = _verify_reasons(report) or ", ".join(report.failures)
-    return MergeResult(session.name, "verify-failed", f"local-only checks failed: {detail}")
+    shown = [
+        _failure_text(clock.repo_root, session.name, result)
+        for result in report.results
+        if result.status == "fail"
+    ]
+    return MergeResult(
+        session.name, "verify-failed", "\n".join([f"local-only checks failed: {detail}", *shown])
+    )
+
+
+def _failure_text(repo_root: Path, lane: str, result: verify.CheckResult) -> str:
+    log = verify_log.pointer(
+        verify_log.write(repo_root, f"{lane}-{result.name}", result.output), repo_root
+    )
+    said = redact.redact_committed(result.output)
+    tail = [f"      {line}" for line in said.strip().splitlines()[-FAILURE_TAIL_LINES:]]
+    kind = (
+        f"could not start (infrastructure error, exit {result.returncode})"
+        if result.infrastructure_error
+        else "failed"
+    )
+    detail = redact.redact_committed(result.detail or "no detail")
+    head = f"    {result.name} {kind}: {detail}" + (f"; {log}" if log else "")
+    return "\n".join([head, *tail])
 
 
 def _deliver_pr(
