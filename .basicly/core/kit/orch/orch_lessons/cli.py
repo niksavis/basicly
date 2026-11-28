@@ -10,7 +10,7 @@ import runner
 from orch_automode import commands as automode
 from orch_pace import commands as pace
 from orch_relay import accept, brief, classes, delegate, install, messages, record, start
-from orch_state import commands, relay_guard, store
+from orch_state import commands, relay_guard, start_steps, store
 
 from orch_lessons import doctor, log
 
@@ -146,7 +146,9 @@ def _read(args: argparse.Namespace, cwd: Path, environ: dict[str, str]) -> str |
         tracker = record.Tracker(log.repo_root(cwd))
         found = record.find(tracker)
         shown = brief.notes(tracker.notes(found))
-        return brief.render(found, shown, commands.session_lines(cwd, environ))
+        rendered = brief.render(found, shown, commands.session_lines(cwd, environ))
+        start_steps.mark(cwd, environ)
+        return rendered
     return None
 
 
@@ -213,6 +215,7 @@ DIRECT = {
 
 
 def run_relay(args: argparse.Namespace, cwd: Path, environ: dict[str, str]) -> int | None:
+    start_steps.gate(args.group, cwd, environ)
     if (direct := DIRECT.get(args.group)) is not None:
         return direct(args, cwd, environ)
     if (shown := _read(args, cwd, environ)) is not None:

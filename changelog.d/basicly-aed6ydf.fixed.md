@@ -1,0 +1,1 @@
+- **`orch approve` takes the person's own words for a test, gate or hook change.** The approval is good for one use and refuses `--diff`; `orch decide` still needs `--council` for those items, and a refused approve names the command that takes the item (basicly-aed6ydf).

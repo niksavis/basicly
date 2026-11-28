@@ -67,9 +67,10 @@ slots:
         1. Read the workspace's orchestration rules, all of them.
         2. List the live sessions. If another session holds the orchestrator
            role, stop and ask the person to end it first.
-        3. Find the one active orchestration record with `orch record`. Read
-           its description, the session map, its newest handover and every
-           later comment. List each item that waits for the person.
+        3. Run `orch brief`. It finds the one active orchestration record, the
+           one you get with `orch record`, and prints its newest handover, every later comment and each item that
+           waits for the person. Until it ran in this session, orch decide,
+           approve, send, report and start refuse.
         4. For each project in the session map, read without changing anything:
            its ready set and handover, its ask-first list, its release
            document, and the triggers of its workflows. Where a project

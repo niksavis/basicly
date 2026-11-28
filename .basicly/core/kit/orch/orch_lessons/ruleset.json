@@ -222,6 +222,14 @@
       "anchor": "which prints it and sends nothing"
     },
     {
+      "id": "brief-before-relays",
+      "rule": "Run orch brief before any relay; orch refuses relays until it ran.",
+      "source": "Orchestrator finding 1, 2026-11-28 (basicly-i64gkax)",
+      "place": "agent",
+      "file": ".basicly/core/agents/orchestrator/agent.yaml",
+      "anchor": "Until it ran in this session, orch decide, approve, send, report and start refuse."
+    },
+    {
       "id": "session-names",
       "rule": "A session and its tab share one name; a shared tab joins names.",
       "source": "ARCHITECTURE.md:201",
