@@ -57,7 +57,7 @@ class Request:
     vendor: str
     role: str
     name: str
-    folder: Path
+    folder: Path | None = None
     prompt: str | None = None
 
 
@@ -69,6 +69,11 @@ def _worker(ask: Request, store_root: Path | None) -> Plan:
         raise RefusedError(
             f"orch start refuses --role worker: no session adapter at {adapter}. "
             f"A worker starts only through the session adapter: {usage}"
+        )
+    if ask.folder is None:
+        raise RefusedError(
+            "orch start refuses --role worker without --dir: name the folder the worker "
+            f"works in, as in {usage}"
         )
     if ask.vendor not in ADAPTER_VENDORS:
         raise RefusedError(

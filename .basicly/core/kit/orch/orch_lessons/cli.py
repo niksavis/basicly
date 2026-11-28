@@ -109,7 +109,9 @@ def _relay_parsers(groups: argparse._SubParsersAction) -> None:
         required=True,
         help="worker starts a session through the session adapter; any other role is printed",
     )
-    launch.add_argument("--dir", type=Path, help="the worker's folder; default: this repository")
+    launch.add_argument(
+        "--dir", type=Path, help="the folder a worker works in; required for worker"
+    )
     launch.add_argument("--prompt", help="the start prompt file the session adapter sends")
 
 
@@ -168,13 +170,18 @@ def run_start(args: argparse.Namespace, cwd: Path, environ: dict[str, str]) -> i
     repo = log.repo_root(cwd)
     root = store.find(cwd, environ)
     live = relay_guard.live_orchestrators(root) if root is not None else []
-    ask = start.Request(args.vendor, args.role, args.name, args.dir or repo, args.prompt)
+    ask = start.Request(args.vendor, args.role, args.name, args.dir, args.prompt)
     found = start.plan(ask, repo, root, live)
     if not found.run:
         print(found.note)
         print(shlex.join(found.argv))
         return 0
-    done = runner.attempt(found.argv, START_TIMEOUT)
+    done = runner.bounded(found.argv, START_TIMEOUT)
+    if done.code == runner.TIMED_OUT and not done.out:
+        raise log.RefusedError(
+            f"the session adapter did not finish within {START_TIMEOUT} s: "
+            f"{shlex.join(found.argv)}; check the live list before you start it again"
+        )
     sys.stdout.write(done.out)
     sys.stderr.write(done.err)
     return done.code

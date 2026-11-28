@@ -13,6 +13,15 @@ RISK_EXAMPLE = (
     f"--action 'git push origin main\n{RISK_EXAMPLE_CHECK}' "
     f"--risk 'red CI {RISK_SEPARATOR} {RISK_EXAMPLE_CHECK}'"
 )
+EXAMPLE_HEADS = {
+    "orch decide": (
+        "orch decide --item push --repo app "
+        "--rule 'The orchestrator decides ask-first items.' --rule-date 2026-11-18 "
+        "--reason 'the lane passed its checks' --condition 'CI is green on the pushed commit' "
+        f"--proof '{RISK_EXAMPLE_CHECK}' --if-proof-fails 'revert the push and report it'"
+    ),
+    "orch approve": "orch approve --item deploy --repo app --words 'go'",
+}
 
 
 @dataclass(frozen=True)
@@ -38,6 +47,11 @@ def no_placeholder(fields: Mapping[str, str | None], command: str) -> None:
             )
 
 
+def example(command: str) -> str:
+    head = EXAMPLE_HEADS.get(command)
+    return f"{head} {RISK_EXAMPLE}" if head else RISK_EXAMPLE
+
+
 def risks(raw: list[str], action: str, command: str = "orch decide") -> list[Risk]:
     lines = {line.strip() for line in action.splitlines() if line.strip()}
     parsed: list[Risk] = []
@@ -58,6 +72,6 @@ def risks(raw: list[str], action: str, command: str = "orch decide") -> list[Ris
         raise RefusedError(
             f"{command} refuses --risk: {'; '.join(problems)}. Write each risk as "
             f"'RISK {RISK_SEPARATOR} CHECK', where CHECK is also one line of --action, "
-            f"or drop the risk. Example that passes: {RISK_EXAMPLE}"
+            f"or drop the risk. Example that passes: {example(command)}"
         )
     return parsed

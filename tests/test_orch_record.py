@@ -244,16 +244,22 @@ def test_decide_takes_a_gate_change_only_with_its_council_run(repo: Path, item: 
     assert fake.comments == [("x-0", text)]
 
 
-def test_a_risk_refusal_names_every_problem_at_once_and_its_example_passes() -> None:
+@pytest.mark.parametrize("command", ["orch decide", "orch approve"])
+def test_a_risk_refusal_names_every_problem_at_once_and_its_example_passes(
+    repo: Path, command: str
+) -> None:
     with pytest.raises(log.RefusedError) as refused:
-        fields.risks(["red CI", "slow CI => gh run view 1"], ACTION, "orch decide")
+        fields.risks(["red CI", "slow CI => gh run view 1"], ACTION, command)
     said = str(refused.value)
-    assert said.startswith("orch decide refuses --risk: ")
+    assert said.startswith(f"{command} refuses --risk: ")
     assert "risk 'red CI' names no check" in said
     assert "risk 'slow CI' maps to no check line of the action" in said
     argv = shlex.split(said.split("Example that passes: ", 1)[1])
-    assert argv[0] == "--action" and argv[2] == "--risk"
-    assert fields.risks([argv[3]], argv[1]) == [fields.Risk("red CI", fields.RISK_EXAMPLE_CHECK)]
+    assert argv[:2] == command.split()
+    fake = FakeTracker(["orchestration-record: goal"])
+    text = cli.relay(cli.parser().parse_args(argv[1:]), writer(repo, fake))
+    assert f"- risk: red CI; check: {fields.RISK_EXAMPLE_CHECK}" in text
+    assert fake.comments == [("x-0", text)]
 
 
 def test_send_order_says_it_printed_the_order_and_sent_nothing(
@@ -328,6 +334,39 @@ def test_start_runs_a_worker_only_through_the_session_adapter(tmp_path: Path) ->
     ]
     with pytest.raises(log.RefusedError, match=r"no session adapter at"):
         start.plan(ask, tmp_path, None, [])
+    no_dir = start.Request("claude", "worker", "app-fix", None)
+    with pytest.raises(log.RefusedError, match=r"refuses --role worker without --dir"):
+        start.plan(no_dir, tmp_path, root, [])
     copilot = start.Request("copilot", "worker", "app-fix", tmp_path)
     with pytest.raises(log.RefusedError, match=r"refuses --vendor copilot for a worker"):
         start.plan(copilot, tmp_path, root, [])
+
+
+def test_orch_start_runs_the_session_adapter_and_passes_its_exit_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / ".git").mkdir()
+    root = _adapter(tmp_path)
+    adapter = root / start.ADAPTER
+    adapter.write_text('#!/bin/sh\necho "adapter $*"\nexit 3\n', encoding="utf-8")
+    adapter.chmod(0o755)
+    argv = ["start", "--vendor", "claude", "--role", "worker", "--name", "app-fix"]
+    argv += ["--dir", str(tmp_path / "app")]
+    environ = {"ORCH_STATE_ROOT": str(root)}
+    assert cli.run(argv, tmp_path, environ) == 3
+    assert capsys.readouterr().out == f"adapter start app-fix --dir {tmp_path / 'app'}\n"
+
+
+def test_orch_start_refuses_by_name_when_the_session_adapter_hangs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".git").mkdir()
+    root = _adapter(tmp_path)
+    adapter = root / start.ADAPTER
+    adapter.write_text("#!/bin/sh\nsleep 5\n", encoding="utf-8")
+    adapter.chmod(0o755)
+    monkeypatch.setattr(cli, "START_TIMEOUT", 0.2)
+    argv = ["start", "--vendor", "claude", "--role", "worker", "--name", "app-fix"]
+    argv += ["--dir", str(tmp_path)]
+    with pytest.raises(log.RefusedError, match=r"did not finish within 0.2 s"):
+        cli.run(argv, tmp_path, {"ORCH_STATE_ROOT": str(root)})

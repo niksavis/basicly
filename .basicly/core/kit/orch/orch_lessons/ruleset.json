@@ -206,6 +206,22 @@
       "anchor": "verify the start command"
     },
     {
+      "id": "start-through-adapter",
+      "rule": "Start a worker session only through the session adapter.",
+      "source": "Orchestrator finding 11, 2026-11-28 (basicly-aq3oty2)",
+      "place": "skill",
+      "file": ".basicly/core/skills/orchestration/skill.yaml",
+      "anchor": "Start a worker session only through the session adapter"
+    },
+    {
+      "id": "send-prints-only",
+      "rule": "orch send --order prints the order; the message tool delivers it.",
+      "source": "Orchestrator finding 3, 2026-11-28 (basicly-4fp1vv3)",
+      "place": "agent",
+      "file": ".basicly/core/agents/orchestrator/agent.yaml",
+      "anchor": "which prints it and sends nothing"
+    },
+    {
       "id": "session-names",
       "rule": "A session and its tab share one name; a shared tab joins names.",
       "source": "ARCHITECTURE.md:201",

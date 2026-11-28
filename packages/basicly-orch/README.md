@@ -81,6 +81,8 @@ The config file names the repositories:
 
 `--risk 'RISK => CHECK'` on `orch decide` and `orch approve` must name a check that is also a line of `--action`; one refusal names every risk that fails and prints an example that passes. The item classes are one list in `orch_relay/classes.py`. The commands write records through the repository's own tracker kit, and run the secret scanner on the text first. They print the message; the vendor's own messaging carries it until the mail store moves into the kit.
 
+The session adapter is the workspace's own executable at `.orchestrator/bin/session`, beside the orch store; the kit does not ship one. `orch start --role worker` runs it as `session start NAME --dir DIR [--codex] [--prompt FILE]` and passes its output and exit code through.
+
 ## Coding agents
 
 `orch delegate` drives each coding agent through an adapter with one interface: the command line for a new turn and for a resumed turn, the reply (the final answer and the session id), and the agent's own resume command.
