@@ -140,7 +140,7 @@ def test_install_refuses_a_workflow_that_reads_records_in_a_shape_it_cannot_migr
     )
     workflow.write_text(odd, encoding="utf-8")
 
-    assert cli._scaffold_consumer_files(tmp_path, force=False) is False
+    assert cli._scaffold_consumer_files(tmp_path, force=frozenset()) is False
 
     err = capsys.readouterr().err
     assert workflow.read_text(encoding="utf-8") == odd
