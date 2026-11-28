@@ -19,6 +19,8 @@ doctor = importlib.import_module("orch_lessons.doctor")
 log = importlib.import_module("orch_lessons.log")
 messages = importlib.import_module("orch_relay.messages")
 cli = importlib.import_module("orch_lessons.cli")
+start_steps = importlib.import_module("orch_state.start_steps")
+reporter = importlib.import_module("orch_state.reporter")
 
 ORCH_ID = "0a1b2c3d-orchestrator-session"
 WORKER_ID = "9f8e7d6c-worker-session"
@@ -223,3 +225,63 @@ def test_doctor_reports_two_live_orchestrators(
 
     assert failed
     assert lines[1].startswith("relay entries: 2 live sessions are named Orchestrator")
+
+
+ORCH_ENV = {guard.HARNESS_ENV: ORCH_ID}
+OPEN_GROUPS = ["status", "state", "record", "accept", "brief", "lesson", "lessons", "doctor"]
+
+
+@pytest.mark.parametrize("group", OPEN_GROUPS)
+def test_an_orchestrator_before_its_start_steps_keeps_every_read_and_brief(
+    workspace: Path, group: str
+) -> None:
+    start_steps.gate(group, workspace, ORCH_ENV)
+
+
+def test_orch_status_runs_for_an_orchestrator_before_its_start_steps(workspace: Path) -> None:
+    assert cli.run(["status"], workspace, ORCH_ENV) == 0
+
+
+@pytest.mark.parametrize("group", sorted(start_steps.GATED))
+def test_an_orchestrator_before_orch_brief_is_refused_by_name(workspace: Path, group: str) -> None:
+    with pytest.raises(
+        log.RefusedError, match=r"Run orch brief first.*orch status, orch state set"
+    ):
+        start_steps.gate(group, workspace, ORCH_ENV)
+    start_steps.gate(group, workspace, {guard.HARNESS_ENV: WORKER_ID})
+    start_steps.gate(group, workspace, {})
+
+
+def test_orch_send_is_refused_before_orch_brief_and_runs_after_it(workspace: Path) -> None:
+    argv = ["send", "--order", "--to", "dev", "--record", "dev-1"]
+    argv += ["--goal", "ship", "--limits", "no push", "--proof", "tests pass"]
+    with pytest.raises(log.RefusedError, match=r"orch send refuses: this Orchestrator session"):
+        cli.run(argv, workspace, ORCH_ENV)
+    start_steps.mark(workspace, ORCH_ENV, _clock)
+    assert cli.run(argv, workspace, ORCH_ENV) == 0
+
+
+def test_a_new_session_start_asks_for_orch_brief_again(workspace: Path) -> None:
+    start_steps.mark(workspace, ORCH_ENV, _clock)
+    start_steps.gate("decide", workspace, ORCH_ENV)
+
+    def later() -> datetime:
+        return datetime(2026, 11, 19, 21, 0, tzinfo=UTC)
+
+    event = {"hook_event_name": "SessionStart", "session_id": ORCH_ID, "cwd": str(workspace)}
+    reporter.write_state(event, {}, later)
+    with pytest.raises(log.RefusedError, match=r"Run orch brief first"):
+        start_steps.gate("decide", workspace, ORCH_ENV)
+
+
+def test_each_owner_turn_names_the_missing_start_steps_until_orch_brief(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    turn = {"hook_event_name": "UserPromptSubmit", "cwd": str(workspace)}
+    reporter.remind({**turn, "session_id": ORCH_ID}, {})
+    assert capsys.readouterr().out == start_steps.PROMPT_LINE + "\n"
+    reporter.remind({**turn, "session_id": WORKER_ID}, {})
+    assert capsys.readouterr().out == ""
+    start_steps.mark(workspace, ORCH_ENV, _clock)
+    reporter.remind({**turn, "session_id": ORCH_ID}, {})
+    assert capsys.readouterr().out == ""

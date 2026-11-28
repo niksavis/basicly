@@ -134,7 +134,15 @@ class Writer:
             "words": words,
         }
         fields.require(given, "orch approve")
-        classes.require_class(act.item, classes.PERSON_APPROVES, "orch approve")
+        classes.require_class(
+            act.item, frozenset({classes.PERSON_APPROVES, classes.COUNCIL_DECIDES}), "orch approve"
+        )
+        once = classes.item_class(act.item) == classes.COUNCIL_DECIDES
+        if once and diff:
+            raise RefusedError(
+                f"orch approve refuses --diff for {act.item!r}: the person's approval of a "
+                "test, gate or hook change is good for one use; leave out --diff"
+            )
         if act.project_record:
             given["project-record"] = act.project_record
         fields.no_placeholder({k: v for k, v in given.items() if k != "words"}, "orch approve")

@@ -1,0 +1,1 @@
+- **The Orchestrator runs `orch brief` first.** Until `orch brief` ran in the Orchestrator session, `orch decide`, `approve`, `send`, `report` and `start` refuse by name, and each owner turn gets one line naming the missing start steps; `orch status`, `state`, `record`, `accept` and `brief` stay open (basicly-i64gkax).

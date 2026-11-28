@@ -172,9 +172,9 @@ def test_report_accepts_only_the_report_states_with_a_record(repo: Path, state: 
         ("deploy", None),
         ("push", "an ask-first item"),
         ("ci-edit", "an ask-first item"),
-        ("gate-bypass", "orch decide --council"),
-        ("hook-weakening", "orch decide --council"),
-        ("gate-exception", "orch decide --council"),
+        ("gate-bypass", None),
+        ("hook-weakening", None),
+        ("gate-exception", None),
         ("rule-change", None),
         ("hook-change", "unknown"),
         ("irreversible-destruction", "stays with the person in the worker's own window"),
@@ -370,3 +370,22 @@ def test_orch_start_refuses_by_name_when_the_session_adapter_hangs(
     argv += ["--dir", str(tmp_path)]
     with pytest.raises(log.RefusedError, match=r"did not finish within 0.2 s"):
         cli.run(argv, tmp_path, {"ORCH_STATE_ROOT": str(root)})
+
+
+@pytest.mark.parametrize("item", ["gate-exception", "gate-bypass", "hook-weakening"])
+def test_the_persons_own_words_approve_a_gate_change_for_one_use_only(
+    repo: Path, item: str
+) -> None:
+    fake = FakeTracker([])
+    text = writer(repo, fake).approve(act(item), "Allow it once")
+    assert '"Allow it once"' in text and "Good for one use, within 60 minutes of" in text
+    with pytest.raises(log.RefusedError, match=r"refuses --diff for"):
+        writer(repo, fake).approve(act(item), "Allow it once", True)
+    with pytest.raises(log.RefusedError, match=r"without --council"):
+        writer(repo, fake).decide(act(item), decision())
+    assert fake.comments == [("x-0", text)]
+
+
+def test_a_refused_approve_names_the_command_that_takes_the_item(repo: Path) -> None:
+    with pytest.raises(log.RefusedError, match=r"decides it with orch decide$"):
+        writer(repo, FakeTracker([])).approve(act("push"), "go")
