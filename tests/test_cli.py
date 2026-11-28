@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from basicly import cli, lefthook_binary, verify, write_preflight
+from basicly import cli, lefthook_binary, scaffold_write, verify, write_preflight
 from basicly.agents import GENERATED_MARKER as AGENT_GENERATED_MARKER
 from basicly.config import (
     CONFIG_FILE,
@@ -425,12 +425,12 @@ def test_tracker_prefix_enforces_leading_letter(tmp_path: Path) -> None:
 def test_scaffold_vscode_tasks_never_overwrites(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    cli._scaffold_vscode_tasks(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL)
     tasks_path = tmp_path / ".vscode" / "tasks.json"
     assert tasks_path.read_text(encoding="utf-8") == VSCODE_TASKS_JSON
 
     tasks_path.write_text("{ /* mine */ }", encoding="utf-8")
-    cli._scaffold_vscode_tasks(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.TASKS_LABEL)
     assert tasks_path.read_text(encoding="utf-8") == "{ /* mine */ }"
     assert "left unchanged" in capsys.readouterr().out
 
@@ -453,13 +453,13 @@ def test_purge_removes_only_pristine_vscode_tasks(tmp_path: Path) -> None:
 def test_scaffold_ci_workflow_writes_once_and_parses(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
     workflow_path = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
     data = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     assert set(data["jobs"]) == {"commit-messages", "gates"}
 
     workflow_path.write_text("name: mine\n", encoding="utf-8")
-    cli._scaffold_ci_workflow(tmp_path)
+    scaffold_write.write_one(tmp_path, scaffold_write.CI_WORKFLOW_LABEL)
     assert workflow_path.read_text(encoding="utf-8") == "name: mine\n"
     assert "left unchanged" in capsys.readouterr().out
 

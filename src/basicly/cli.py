@@ -70,6 +70,7 @@ from . import (
     rubrics,
     run_record,
     runner,
+    scaffold_write,
     scaffolds,
     shipped_core,
     skill_reference,
@@ -163,8 +164,6 @@ from .scaffolds import (
     VSCODE_TASKS_JSON,
     docstring_contradictions,
     install_notes,
-    prepare_ci_runtime,
-    repin,
 )
 from .schema import (
     CATEGORIES,
@@ -1434,103 +1433,10 @@ def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths, *, dry_run: bo
         )
 
 
-SCAFFOLD_BACKUP_SUFFIX = ".basicly-bak"
-
-
-def _write_scaffold(
-    path: Path, content: str, label: str, *, force: bool, dry_run: bool = False
+def _scaffold_consumer_files(
+    repo_root: Path, *, force: frozenset[str], dry_run: bool = False
 ) -> bool:
-
-    if path.exists():
-        if not force:
-            existing = path.read_text(encoding="utf-8")
-            repinned, moved = repin(existing)
-            migrated: list[str] = []
-            if content == CONSUMER_CI_WORKFLOW:
-                repinned, migrated = ci_records.migrate(prepare_ci_runtime(repinned))
-                if refusals := _ci_refusals(label, repinned):
-                    for refusal in refusals:
-                        print(refusal, file=sys.stderr)
-                    return False
-            if repinned != existing:
-                backup = path.with_suffix(path.suffix + SCAFFOLD_BACKUP_SUFFIX)
-                if not dry_run:
-                    backup.write_text(existing, encoding="utf-8")
-                    path.write_text(repinned, encoding="utf-8")
-                for change in migrated:
-                    print(f"{'Would migrate' if dry_run else 'Migrated'} {label}: {change}")
-                print(
-                    f"{'Would re-pin' if dry_run else 'Re-pinned'} {moved} basicly "
-                    f"reference(s) in {label} to v{__version__}; your previous copy "
-                    f"{'would be' if dry_run else 'is'} at {backup.name}"
-                )
-            else:
-                print(f"{label} already exists; left unchanged (--overwrite-scaffolds replaces it)")
-            return True
-        existing = path.read_text(encoding="utf-8")
-        if existing == content:
-            print(f"{label} already current")
-            return True
-        backup = path.with_suffix(path.suffix + SCAFFOLD_BACKUP_SUFFIX)
-        if not dry_run:
-            backup.write_text(existing, encoding="utf-8")
-            path.write_text(content, encoding="utf-8")
-        print(
-            f"{'Would replace' if dry_run else 'Replaced'} {label}; your previous copy "
-            f"{'would be' if dry_run else 'is'} at {backup.name}"
-        )
-        return True
-    if not dry_run:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-    print(f"{'Would write' if dry_run else 'Wrote'} {label}")
-    return True
-
-
-CI_WORKFLOW_LABEL = ".github/workflows/basicly-gates.yml"
-
-
-def _ci_refusals(label: str, migrated: str) -> list[str]:
-    return [
-        f"{label}:{number}: {reason}; CI never reads tracker records, so install changes "
-        f"nothing; fix: {ci_records.FIX}, then rerun basicly install"
-        for number, reason in ci_records.violations(migrated)
-    ]
-
-
-def _ci_workflow_refusals(repo_root: Path) -> list[str]:
-    path = repo_root / CI_WORKFLOW_LABEL
-    if not path.is_file():
-        return []
-    text = path.read_text(encoding="utf-8")
-    return _ci_refusals(
-        CI_WORKFLOW_LABEL, ci_records.migrate(prepare_ci_runtime(repin(text)[0]))[0]
-    )
-
-
-def _scaffold_vscode_tasks(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> bool:
-    return _write_scaffold(
-        repo_root / ".vscode" / "tasks.json",
-        VSCODE_TASKS_JSON,
-        ".vscode/tasks.json",
-        force=force,
-        dry_run=dry_run,
-    )
-
-
-def _scaffold_ci_workflow(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> bool:
-    return _write_scaffold(
-        repo_root / ".github" / "workflows" / "basicly-gates.yml",
-        CONSUMER_CI_WORKFLOW,
-        ".github/workflows/basicly-gates.yml",
-        force=force,
-        dry_run=dry_run,
-    )
-
-
-def _scaffold_consumer_files(repo_root: Path, *, force: bool, dry_run: bool = False) -> bool:
-    tasks = _scaffold_vscode_tasks(repo_root, force=force, dry_run=dry_run)
-    return _scaffold_ci_workflow(repo_root, force=force, dry_run=dry_run) and tasks
+    return scaffold_write.write_all(repo_root, force=force, dry_run=dry_run)
 
 
 def _report_missing_config_sections(repo_root: Path) -> None:
@@ -1662,7 +1568,7 @@ def _scaffold_repo(
     paths: ProjectPaths,
     technologies: list[str],
     *,
-    overwrite_scaffolds: bool,
+    overwrite_scaffolds: frozenset[str],
     dry_run: bool,
 ) -> bool:
 
@@ -1827,8 +1733,9 @@ def _install(args: argparse.Namespace) -> int:
     refuse_ignored_tracker_prefix(repo_root)
     _has_vault_tracker(repo_root)
     selection = frozenset(technologies) if technologies else load_technology_selection(repo_root)
-    if not getattr(args, "overwrite_scaffolds", False) and (
-        refusals := _ci_workflow_refusals(repo_root)
+    forced = scaffold_write.overwrite_set(repo_root, getattr(args, "overwrite_scaffolds", None))
+    if scaffold_write.CI_WORKFLOW_LABEL not in forced and (
+        refusals := scaffold_write.ci_workflow_refusals(repo_root)
     ):
         raise ValueError("\n".join(refusals))
     markdownlint.require_prerequisites(repo_root, selection)
@@ -1847,7 +1754,7 @@ def _install(args: argparse.Namespace) -> int:
         repo_root,
         paths,
         technologies,
-        overwrite_scaffolds=bool(getattr(args, "overwrite_scaffolds", False)),
+        overwrite_scaffolds=forced,
         dry_run=dry_run,
     ) or _hand_written_agents_refused(repo_root, selection):
         return 1
@@ -5070,10 +4977,14 @@ def _add_lifecycle_parsers(subparsers: argparse._SubParsersAction) -> None:
     )
     install_parser.add_argument(
         "--overwrite-scaffolds",
-        action="store_true",
+        nargs="*",
+        choices=scaffold_write.SCAFFOLD_LABELS,
+        metavar="SCAFFOLD",
         help=(
-            "Replace scaffolded files (.vscode/tasks.json, basicly-gates.yml) with the "
-            "current templates, keeping each previous copy as a .basicly-bak sibling"
+            "Replace each named scaffold (.vscode/tasks.json, "
+            ".github/workflows/basicly-gates.yml) with the current template, keeping the "
+            "previous copy as a .basicly-bak sibling; with no name, replace only scaffolds "
+            "that still hold the text install last wrote, and refuse when one is edited"
         ),
     )
     install_parser.add_argument(

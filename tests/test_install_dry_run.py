@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import cli, state
+from basicly import cli, scaffold_write, state
 
 if TYPE_CHECKING:
     import pytest
@@ -67,7 +67,9 @@ def test_a_dry_scaffold_writes_nothing_and_says_it_would(
 ) -> None:
     target = tmp_path / "nested" / "tasks.json"
 
-    cli._write_scaffold(target, "{}\n", "tasks.json", force=False, dry_run=True)
+    scaffold_write.write_scaffold(
+        scaffold_write.Scaffold(target, "{}\n", "tasks.json"), force=False, dry_run=True
+    )
 
     assert not target.exists()
     assert "Would write tasks.json" in capsys.readouterr().out
