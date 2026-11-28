@@ -23,6 +23,10 @@ _MIRRORED_WRITES: dict[str, Callable[[Any, Sequence[str], str], list[object]]] =
 }
 
 
+def accepted_writes() -> list[str]:
+    return sorted({*_MIRRORED_WRITES, *tracker_usage.PROCESS_WRITES})
+
+
 def drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[object]:
 
     surface, _ = tracker_usage.split_invocation(list(args))
@@ -32,7 +36,7 @@ def drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[object]:
     if translate is None:
         raise TrackerDivergenceError(
             f"{surface!r} is not a write this tracker knows how to record; the verbs that "
-            f"are: {', '.join(sorted(_MIRRORED_WRITES))}. Add a translation to "
+            f"are: {', '.join(accepted_writes())}. Add a translation to "
             f"mirror._MIRRORED_WRITES, or list it in mirror.UNMIRRORED_WRITES if it "
             f"states nothing about a record"
         )

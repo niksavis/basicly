@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from basicly import mirror, owned_store, re_record, redact, tracker_argv
+from basicly import mirror, owned_store, re_record, redact, tracker_argv, tracker_usage
 from basicly.owned_store import TrackerDivergenceError
 
 OWNED_PROVENANCE = "engine"
@@ -197,7 +197,7 @@ def land_drafts(repo_root: Path, drafts: Sequence[Any], what: str) -> None:
 
 def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
 
-    if args and args[0] in ("review", "confirm"):
+    if args and args[0] in tracker_usage.PROCESS_WRITES:
         if len(args) != 4 or args[2] != "--evidence":
             raise TrackerDivergenceError("review and confirm take <id> --evidence <JSON>")
         commands = owned_store.kit(repo_root, "commands")
